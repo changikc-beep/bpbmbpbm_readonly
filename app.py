@@ -20,7 +20,8 @@ st.markdown("""
     div[data-testid="stTabs"] button{font-size:.9rem;font-weight:600}
 </style>""", unsafe_allow_html=True)
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
+_GSHEET_CREDS = os.path.join(os.path.dirname(__file__), "bp-calculator-498206-4308cbd64cba.json")
 
 # ── 로컬 vs 클라우드 감지 ────────────────────────────────────────────────────
 # 로컬 인증 파일 있음 → 파일로 인증, Drive를 데이터 저장소로 사용
@@ -3424,7 +3425,7 @@ with t_outflow:
 # ══════════════════════════════════════════════════════════════════════════════
 # Google Sheets 동기화 헬퍼
 # ══════════════════════════════════════════════════════════════════════════════
-_GSHEET_CREDS = os.path.join(os.path.dirname(__file__), "bp-calculator-498206-4308cbd64cba.json")
+# _GSHEET_CREDS는 파일 상단에 정의됨
 _GSHEET_NAME  = "bp_calculator_sync"
 _GSHEET_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
