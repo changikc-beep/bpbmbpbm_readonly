@@ -23,18 +23,19 @@ st.markdown("""
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
 # ── 로컬 vs 클라우드 감지 ────────────────────────────────────────────────────
-# 로컬: config.json 파일이 존재 → 파일 직접 읽기/쓰기
-# 클라우드(Streamlit Cloud): config.json 없음 → Google Drive 읽기/쓰기
-_IS_CLOUD = not os.path.exists(CONFIG_FILE)
+# 로컬 인증 파일 있음 → 파일로 인증, Drive를 데이터 저장소로 사용
+# 클라우드(Streamlit Cloud) → Streamlit Secrets로 인증, Drive 사용
+_HAS_LOCAL_CREDS = os.path.exists(_GSHEET_CREDS)
+_IS_CLOUD        = not _HAS_LOCAL_CREDS   # 로컬 인증 파일 없으면 클라우드 모드
 
 def _get_gcp_creds(scopes):
-    """클라우드: Secrets JSON 문자열 파싱 / 로컬: 파일 읽기."""
+    """로컬: 인증 JSON 파일 / 클라우드: Streamlit Secrets."""
     from google.oauth2.service_account import Credentials
     import json as _json
-    if _IS_CLOUD:
-        info = _json.loads(st.secrets["gcp_service_account_json"])
-        return Credentials.from_service_account_info(info, scopes=scopes)
-    return Credentials.from_service_account_file(_GSHEET_CREDS, scopes=scopes)
+    if _HAS_LOCAL_CREDS:
+        return Credentials.from_service_account_file(_GSHEET_CREDS, scopes=scopes)
+    info = _json.loads(st.secrets["gcp_service_account_json"])
+    return Credentials.from_service_account_info(info, scopes=scopes)
 
 def _get_drive_service():
     """Google Drive API 서비스 반환."""
@@ -69,15 +70,14 @@ def _save_cfg_drive(c):
     _load_cfg_drive.clear()   # 캐시 무효화 → 다음 로드 시 Drive에서 재조회
 
 def load_cfg():
-    if _IS_CLOUD:
-        return _load_cfg_drive()
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """항상 Google Drive에서 로드 (로컬·클라우드 공통 원본)."""
+    return _load_cfg_drive()
 
 def save_cfg(c):
-    if _IS_CLOUD:
-        _save_cfg_drive(c)
-    else:
+    """항상 Google Drive에 저장 (로컬·클라우드 공통 원본)."""
+    _save_cfg_drive(c)
+    # 로컬 개발 편의용: Drive와 별도로 로컬 백업 유지
+    if _HAS_LOCAL_CREDS and os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(c, f, ensure_ascii=False, indent=2)
 
