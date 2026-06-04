@@ -1,0 +1,5 @@
+config.json
+bp-calculator-498206-4308cbd64cba.json
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
