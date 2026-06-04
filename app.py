@@ -27,15 +27,19 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 # 클라우드(Streamlit Cloud): config.json 없음 → Google Drive 읽기/쓰기
 _IS_CLOUD = not os.path.exists(CONFIG_FILE)
 
-def _get_drive_service():
-    """Google Drive API 서비스 반환 (클라우드 전용)."""
+def _get_gcp_creds(scopes):
+    """클라우드: Secrets JSON 문자열 파싱 / 로컬: 파일 읽기."""
     from google.oauth2.service_account import Credentials
+    import json as _json
+    if _IS_CLOUD:
+        info = _json.loads(st.secrets["gcp_service_account_json"])
+        return Credentials.from_service_account_info(info, scopes=scopes)
+    return Credentials.from_service_account_file(_GSHEET_CREDS, scopes=scopes)
+
+def _get_drive_service():
+    """Google Drive API 서비스 반환."""
     from googleapiclient.discovery import build
-    _SCOPES = ["https://www.googleapis.com/auth/drive"]
-    info = dict(st.secrets["gcp_service_account"])
-    # Streamlit Secrets는 private_key의 \n을 리터럴 문자열로 저장 → 실제 줄바꿈으로 변환
-    info["private_key"] = info["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
+    creds = _get_gcp_creds(["https://www.googleapis.com/auth/drive"])
     return build("drive", "v3", credentials=creds)
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -3429,14 +3433,8 @@ _GSHEET_SCOPES = [
 
 def _gsheet_connect():
     """gspread 클라이언트 반환. 실패 시 예외 발생."""
-    from google.oauth2.service_account import Credentials
     import gspread
-    if _IS_CLOUD:
-        info = dict(st.secrets["gcp_service_account"])
-        info["private_key"] = info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(info, scopes=_GSHEET_SCOPES)
-    else:
-        creds = Credentials.from_service_account_file(_GSHEET_CREDS, scopes=_GSHEET_SCOPES)
+    creds = _get_gcp_creds(_GSHEET_SCOPES)
     return gspread.authorize(creds)
 
 def _match_buyer_id(cell_val, buyers):
