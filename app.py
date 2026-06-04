@@ -32,9 +32,10 @@ def _get_drive_service():
     from google.oauth2.service_account import Credentials
     from googleapiclient.discovery import build
     _SCOPES = ["https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]), scopes=_SCOPES
-    )
+    info = dict(st.secrets["gcp_service_account"])
+    # Streamlit Secrets는 private_key의 \n을 리터럴 문자열로 저장 → 실제 줄바꿈으로 변환
+    info["private_key"] = info["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
     return build("drive", "v3", credentials=creds)
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -3430,7 +3431,12 @@ def _gsheet_connect():
     """gspread 클라이언트 반환. 실패 시 예외 발생."""
     from google.oauth2.service_account import Credentials
     import gspread
-    creds = Credentials.from_service_account_file(_GSHEET_CREDS, scopes=_GSHEET_SCOPES)
+    if _IS_CLOUD:
+        info = dict(st.secrets["gcp_service_account"])
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(info, scopes=_GSHEET_SCOPES)
+    else:
+        creds = Credentials.from_service_account_file(_GSHEET_CREDS, scopes=_GSHEET_SCOPES)
     return gspread.authorize(creds)
 
 def _match_buyer_id(cell_val, buyers):
