@@ -1853,20 +1853,15 @@ with t_pnl:
             st.warning(f"⚠️ {_rmc_dflt_cnt}건의 배치에 원료 취득단가가 없습니다. "
                        "출고 기록 탭에서 임가공 출고를 입력하거나, 스크랩 유형 관리 탭에서 기초재고를 설정하세요.")
 
-        _stor_cnt = sum(1 for r in _ph_all if r.get("storage_days"))
-
         st.markdown("---")
         _ra1, _ra2, _ra3, _ra4, _ra5, _ra6 = st.columns(6)
         _ra1.metric("거래 마진",          f"${_trade_net_r:+,.2f}",
                     delta=f"{_trade_net_r/_tot_bp*100:+.1f}%" if _tot_bp > 0 else None)
         _ra2.metric("원료 취득원가",      f"−${_tot_raw:,.2f}",
                     delta=f"${_tot_raw/_tot_inp:.4f}/kg" if _tot_inp > 0 else None)
-        _stor_delta_parts = []
-        if _stor_cnt:      _stor_delta_parts.append(f"{_stor_cnt}건 수동")
-        if _auto_stor_cnt: _stor_delta_parts.append(f"{_auto_stor_cnt}건 FIFO 자동")
+        _stor_delta = f"{_auto_stor_cnt}건 FIFO 자동" if _auto_stor_cnt else "미입력"
         _ra3.metric("직접 판관비 (보관)", f"−${_tot_storage:,.2f}",
-                    delta=" + ".join(_stor_delta_parts) if _stor_delta_parts else "미입력",
-                    delta_color="off")
+                    delta=_stor_delta, delta_color="off")
         _ra4.metric("간접 판관비",        f"−${_sga_total:,.2f}")
         _ra5.metric("기타 원가",          f"−${_other_cost:,.2f}")
         _nc_r2 = "normal" if _real_net_r >= 0 else "inverse"
@@ -2667,117 +2662,11 @@ with t_outflow:
     st.markdown("### 📦 원료 재고 관리 (이동평균법)")
     st.caption("스크랩 유형별 기초재고와 입고 이력을 등록합니다.  \n"
                "이동평균단가 → 손익 분석 탭 실질 손익에 자동 반영.  \n"
-               "입고일 **YYYY-MM-DD** + 톤백 수 입력 시 FIFO 창고비 자동 계산 정확도↑  \n"
-               "⚠️ 기초재고(기준일·재고량·평균단가)는 엑셀 업로드와 무관하게 별도 보존됩니다.")
+               "입고일 **YYYY-MM-DD** + 톤백 수 입력 시 FIFO 창고비 자동 계산 정확도↑")
 
     if "raw_material_inventory" not in cfg:
         cfg["raw_material_inventory"] = {}
         save_cfg(cfg)
-
-    # ── 입고 이력 Excel 일괄 업로드 ──────────────────────────────────────────
-    with st.expander("📥 입고 이력 Excel 일괄 업로드 / 템플릿 다운로드", expanded=False):
-        st.markdown(
-            "**컬럼:** `스크랩유형` · `입고일(YYYY-MM-DD)` · `입고량(kg)` · `톤백(개)` · `입고단가($/kg)` · `비고`  \n"
-            "- `톤백(개)` 선택 입력 — 있으면 창고비 계산에 실제 톤백 사용, 없으면 중량역산(÷510)  \n"
-            "- 엑셀에 포함된 스크랩 유형의 **입고 이력만** 교체됩니다 (기초재고는 절대 변경 안 됨)"
-        )
-        _xl_c1, _xl_c2 = st.columns(2)
-        with _xl_c1:
-            try:
-                _tpl_rows = []
-                for _tsc in cfg.get("scrap_types", []):
-                    _tid  = _tsc["id"]; _tnm = _tsc["name"]
-                    _tpurs = sorted(
-                        cfg.get("raw_material_inventory",{}).get(_tid,{}).get("purchases",[]),
-                        key=lambda x: x.get("date",""))
-                    if _tpurs:
-                        for _tp in _tpurs:
-                            _tpl_rows.append({
-                                "스크랩유형":         _tnm,
-                                "입고일(YYYY-MM-DD)": _tp.get("date",""),
-                                "입고량(kg)":         float(_tp.get("quantity_kg",0)),
-                                "톤백(개)":           int(_tp.get("ton_bags",0) or 0),
-                                "입고단가($/kg)":      float(_tp.get("unit_cost",0)),
-                                "비고":               _tp.get("notes","") or _tp.get("note",""),
-                            })
-                    else:
-                        _tpl_rows.append({"스크랩유형":_tnm,"입고일(YYYY-MM-DD)":"",
-                                          "입고량(kg)":0,"톤백(개)":0,"입고단가($/kg)":0,"비고":"← 여기에 입력"})
-                _df_tpl = pd.DataFrame(_tpl_rows) if _tpl_rows else pd.DataFrame(
-                    columns=["스크랩유형","입고일(YYYY-MM-DD)","입고량(kg)","톤백(개)","입고단가($/kg)","비고"])
-                _tpl_buf = BytesIO()
-                with pd.ExcelWriter(_tpl_buf, engine="openpyxl") as _ew:
-                    _df_tpl.to_excel(_ew, index=False, sheet_name="입고이력")
-                _tpl_buf.seek(0)
-                st.download_button("⬇️ 현재 데이터 기반 템플릿 다운로드", data=_tpl_buf,
-                    file_name="입고이력_템플릿.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True)
-            except Exception as _xe:
-                st.error(f"템플릿 생성 오류: {_xe}")
-        with _xl_c2:
-            _ul_file = st.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"],
-                                        key="inv_xl_upload", label_visibility="collapsed")
-            if _ul_file is not None:
-                try:
-                    _ul_df = pd.read_excel(_ul_file, sheet_name=0, dtype=str)
-                    _ul_df.columns = [str(c).strip() for c in _ul_df.columns]
-                    _req_cols = ["스크랩유형","입고일(YYYY-MM-DD)","입고량(kg)","입고단가($/kg)"]
-                    _missing  = [c for c in _req_cols if c not in _ul_df.columns]
-                    if _missing:
-                        st.error(f"필수 컬럼 누락: {_missing}")
-                    else:
-                        _ul_df = _ul_df.dropna(subset=["스크랩유형","입고일(YYYY-MM-DD)"])
-                        _ul_df["입고량(kg)"]    = pd.to_numeric(_ul_df["입고량(kg)"],    errors="coerce").fillna(0)
-                        _ul_df["입고단가($/kg)"] = pd.to_numeric(_ul_df["입고단가($/kg)"], errors="coerce").fillna(0)
-                        if "톤백(개)" in _ul_df.columns:
-                            _ul_df["톤백(개)"] = pd.to_numeric(_ul_df["톤백(개)"], errors="coerce").fillna(0)
-                        _ul_df = _ul_df[_ul_df["입고량(kg)"] > 0].copy()
-                        if _ul_df.empty:
-                            st.warning("유효한 데이터가 없습니다.")
-                        else:
-                            _sc_name_map = {s["name"]: s["id"] for s in cfg.get("scrap_types",[])}
-                            st.markdown("**📋 업로드 미리보기**")
-                            _prev_rows = []
-                            _ul_grp = _ul_df.groupby("스크랩유형")
-                            for _gnm, _gdf in _ul_grp:
-                                _gid = _sc_name_map.get(str(_gnm).strip())
-                                _tb_cnt = int(_gdf["톤백(개)"].sum()) if "톤백(개)" in _gdf.columns else "—"
-                                _prev_rows.append({
-                                    "스크랩유형": _gnm, "매칭": "✅" if _gid else "❌ 미등록",
-                                    "건수": len(_gdf),
-                                    "총 입고량(kg)": f"{_gdf['입고량(kg)'].sum():,.0f}",
-                                    "총 톤백(개)": _tb_cnt,
-                                })
-                            st.dataframe(pd.DataFrame(_prev_rows), hide_index=True, use_container_width=True)
-                            _unmatched = [r["스크랩유형"] for r in _prev_rows if "❌" in r["매칭"]]
-                            if _unmatched:
-                                st.warning(f"미등록 스크랩유형 → 저장 시 무시: {_unmatched}")
-                            if st.button("💾 업로드 확정 (교체 저장)", key="inv_xl_confirm",
-                                         type="primary", use_container_width=True):
-                                _saved_types = []
-                                for _gnm, _gdf in _ul_grp:
-                                    _gid = _sc_name_map.get(str(_gnm).strip())
-                                    if not _gid: continue
-                                    if _gid not in cfg["raw_material_inventory"]:
-                                        cfg["raw_material_inventory"][_gid] = {"opening": None, "purchases": []}
-                                    _new_purs = []
-                                    for _, _row in _gdf.iterrows():
-                                        _tb_val = int(float(_row.get("톤백(개)",0) or 0)) if "톤백(개)" in _row.index else 0
-                                        _new_purs.append({
-                                            "date":        str(_row["입고일(YYYY-MM-DD)"]).strip(),
-                                            "quantity_kg": float(_row["입고량(kg)"]),
-                                            "ton_bags":    _tb_val,
-                                            "unit_cost":   float(_row["입고단가($/kg)"]),
-                                            "notes":       str(_row.get("비고","") or ""),
-                                        })
-                                    cfg["raw_material_inventory"][_gid]["purchases"] = _new_purs
-                                    _saved_types.append(str(_gnm))
-                                save_cfg(cfg)
-                                st.success(f"저장 완료: {', '.join(_saved_types)}")
-                                st.rerun()
-                except Exception as _ue:
-                    st.error(f"파일 읽기 오류: {_ue}")
 
     # ── 스크랩 유형별 상세 ────────────────────────────────────────────────────
     _ph_all_inv = cfg.get("processing_history", [])
@@ -2876,213 +2765,8 @@ with t_outflow:
                     else:
                         st.error("입고일·입고량·단가를 모두 입력하세요.")
 
-    st.divider()
 
-    # ── Excel 일괄 업로드 / 템플릿 다운로드 ──────────────────────────────────
-    with st.expander("📥 출고 이력 Excel 일괄 업로드 / 템플릿 다운로드", expanded=False):
-        st.markdown(
-            "**컬럼:** `출고유형` · `출고일(YYYY-MM-DD)` · `스크랩유형` · `임가공사` · `출고량(kg)` · `비고`  \n"
-            "- `출고유형` 값: **임가공출고** (톨링) 또는 **직접판매** — 반드시 구분해서 입력  \n"
-            "- **임가공출고**는 `임가공사` 필수 입력, **직접판매**는 비워도 됩니다  \n"
-            "- 엑셀에 포함된 *(출고유형, 스크랩유형)* 조합의 기존 기록은 **전체 교체**됩니다  \n"
-            "- 엑셀에 없는 조합의 데이터는 변경되지 않습니다"
-        )
-        _of_xl_c1, _of_xl_c2 = st.columns(2)
-
-        # ─ 템플릿 다운로드 ─
-        with _of_xl_c1:
-            try:
-                _of_tpl_rows = []
-                # 임가공 출고
-                for _odr in sorted(cfg.get("dispatch_records", []),
-                                   key=lambda x: x.get("date","")):
-                    _of_tpl_rows.append({
-                        "출고유형":          "임가공출고",
-                        "출고일(YYYY-MM-DD)": _odr.get("date",""),
-                        "스크랩유형":        _of_sc_rev.get(_odr.get("scrap_type_id",""),""),
-                        "임가공사":          _of_pr_rev.get(_odr.get("processor_id",""),""),
-                        "출고량(kg)":        float(_odr.get("quantity_kg",0)),
-                        "톤백(개)":          int(_odr.get("ton_bags",0) or 0),
-                        "비고":              _odr.get("notes",""),
-                    })
-                # 직접 판매
-                for _ods in sorted(cfg.get("direct_sales", []),
-                                   key=lambda x: x.get("date","")):
-                    _of_tpl_rows.append({
-                        "출고유형":          "직접판매",
-                        "출고일(YYYY-MM-DD)": _ods.get("date",""),
-                        "스크랩유형":        _of_sc_rev.get(_ods.get("scrap_type_id",""),""),
-                        "임가공사":          "",
-                        "출고량(kg)":        float(_ods.get("quantity_kg",0)),
-                        "톤백(개)":          int(_ods.get("ton_bags",0) or 0),
-                        "판매단가($/kg)":    _ods.get("sale_price_per_kg",""),
-                        "비고":              _ods.get("notes",""),
-                    })
-                # 데이터 없으면 빈 예시 행 추가
-                if not _of_tpl_rows:
-                    _sc_ex = next(iter(_of_sc_opts.keys()), "스크랩유형명")
-                    _pr_ex = next(iter(_of_pr_opts.keys()), "임가공사명")
-                    _of_tpl_rows += [
-                        {"출고유형":"임가공출고","출고일(YYYY-MM-DD)":"2026-01-10",
-                         "스크랩유형":_sc_ex,"임가공사":_pr_ex,"출고량(kg)":10000,"톤백(개)":20,"판매단가($/kg)":"","비고":"예시"},
-                        {"출고유형":"직접판매","출고일(YYYY-MM-DD)":"2026-01-20",
-                         "스크랩유형":_sc_ex,"임가공사":"","출고량(kg)":5000,"톤백(개)":10,"판매단가($/kg)":5.35,"비고":"예시"},
-                    ]
-                _of_tpl_buf = BytesIO()
-                with pd.ExcelWriter(_of_tpl_buf, engine="openpyxl") as _oew:
-                    pd.DataFrame(_of_tpl_rows).to_excel(_oew, index=False, sheet_name="출고이력")
-                _of_tpl_buf.seek(0)
-                st.download_button(
-                    "⬇️ 현재 데이터 기반 템플릿 다운로드",
-                    data=_of_tpl_buf,
-                    file_name="출고이력_템플릿.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
-            except Exception as _ofe:
-                st.error(f"템플릿 생성 오류: {_ofe}")
-
-        # ─ 업로드 ─
-        with _of_xl_c2:
-            _of_ul_file = st.file_uploader(
-                "엑셀 파일 업로드 (.xlsx)",
-                type=["xlsx"],
-                key="of_xl_upload",
-                label_visibility="collapsed",
-            )
-            if _of_ul_file is not None:
-                try:
-                    _of_ul_df = pd.read_excel(_of_ul_file, sheet_name=0, dtype=str)
-                    _of_ul_df.columns = [str(c).strip() for c in _of_ul_df.columns]
-                    _of_req = ["출고유형","출고일(YYYY-MM-DD)","스크랩유형","출고량(kg)"]
-                    _of_miss = [c for c in _of_req if c not in _of_ul_df.columns]
-                    if _of_miss:
-                        st.error(f"필수 컬럼 누락: {_of_miss}")
-                    else:
-                        _of_ul_df = _of_ul_df.dropna(subset=["출고유형","출고일(YYYY-MM-DD)","스크랩유형"])
-                        _of_ul_df["출고량(kg)"] = pd.to_numeric(_of_ul_df["출고량(kg)"], errors="coerce").fillna(0)
-                        if "톤백(개)" in _of_ul_df.columns:
-                            _of_ul_df["톤백(개)"] = pd.to_numeric(_of_ul_df["톤백(개)"], errors="coerce").fillna(0)
-                        _of_ul_df = _of_ul_df[_of_ul_df["출고량(kg)"] > 0].copy()
-                        # 출고유형 정규화 (공백·대소문자 무관)
-                        _of_ul_df["출고유형"] = _of_ul_df["출고유형"].str.strip()
-                        _valid_types = {"임가공출고", "직접판매"}
-                        _of_bad_types = set(_of_ul_df["출고유형"].unique()) - _valid_types
-                        if _of_bad_types:
-                            st.error(f"출고유형 값 오류 (임가공출고 / 직접판매 만 허용): {_of_bad_types}")
-                        elif _of_ul_df.empty:
-                            st.warning("유효한 데이터가 없습니다.")
-                        else:
-                            # 미리보기
-                            st.markdown("**📋 업로드 미리보기**")
-                            _of_prev = []
-                            for (_otype, _osnm), _og in _of_ul_df.groupby(["출고유형","스크랩유형"]):
-                                _osid  = _of_sc_opts.get(str(_osnm).strip())
-                                _oprnm = (_og.get("임가공사","") if "임가공사" in _og.columns else pd.Series(dtype=str))
-                                _oprids = set()
-                                if _otype == "임가공출고" and "임가공사" in _og.columns:
-                                    _oprnms_ul = _og["임가공사"].dropna().unique()
-                                    _bad_pr = [n for n in _oprnms_ul if str(n).strip() and
-                                               str(n).strip() not in _of_pr_opts]
-                                    _pr_ok = "✅" if not _bad_pr else f"⚠️ 미등록: {_bad_pr}"
-                                else:
-                                    _pr_ok = "—"
-                                _of_prev.append({
-                                    "출고유형": _otype,
-                                    "스크랩유형": _osnm,
-                                    "스크랩 매칭": "✅" if _osid else "❌ 미등록",
-                                    "임가공사 매칭": _pr_ok,
-                                    "건수": len(_og),
-                                    "총 출고량(kg)": f"{_og['출고량(kg)'].sum():,.0f}",
-                                })
-                            st.dataframe(pd.DataFrame(_of_prev), hide_index=True,
-                                         use_container_width=True)
-
-                            _of_sc_err = [r["스크랩유형"] for r in _of_prev if "❌" in r["스크랩 매칭"]]
-                            if _of_sc_err:
-                                st.warning(f"미등록 스크랩유형 → 저장 시 무시: {_of_sc_err}")
-
-                            # 임가공출고 임가공사 누락 경고
-                            if "임가공사" in _of_ul_df.columns:
-                                _no_pr = _of_ul_df[
-                                    (_of_ul_df["출고유형"] == "임가공출고") &
-                                    (_of_ul_df["임가공사"].isna() | (_of_ul_df["임가공사"].str.strip() == ""))
-                                ]
-                                if not _no_pr.empty:
-                                    st.warning(f"⚠️ 임가공출고 {len(_no_pr)}건에 임가공사가 없습니다 — 저장 시 해당 건은 건너뜁니다.")
-
-                            if st.button("💾 업로드 확정 (교체 저장)", key="of_xl_confirm",
-                                         type="primary", use_container_width=True):
-                                if "dispatch_records" not in cfg: cfg["dispatch_records"] = []
-                                if "direct_sales"     not in cfg: cfg["direct_sales"]     = []
-
-                                # (출고유형, 스크랩유형ID) 집합 — 이 조합만 교체
-                                _replace_keys_dr = set()
-                                _replace_keys_ds = set()
-                                for (_otype, _osnm), _ in _of_ul_df.groupby(["출고유형","스크랩유형"]):
-                                    _osid = _of_sc_opts.get(str(_osnm).strip())
-                                    if not _osid: continue
-                                    if _otype == "임가공출고": _replace_keys_dr.add(_osid)
-                                    else:                      _replace_keys_ds.add(_osid)
-
-                                # 교체 대상 조합만 제거
-                                cfg["dispatch_records"] = [
-                                    r for r in cfg["dispatch_records"]
-                                    if r.get("scrap_type_id") not in _replace_keys_dr
-                                ]
-                                cfg["direct_sales"] = [
-                                    r for r in cfg["direct_sales"]
-                                    if r.get("scrap_type_id") not in _replace_keys_ds
-                                ]
-
-                                # 신규 레코드 추가
-                                _saved_dr, _saved_ds = 0, 0
-                                for _, _orow in _of_ul_df.iterrows():
-                                    _otype = str(_orow["출고유형"]).strip()
-                                    _osnm  = str(_orow.get("스크랩유형","")).strip()
-                                    _osid  = _of_sc_opts.get(_osnm)
-                                    if not _osid: continue
-                                    _odate = str(_orow.get("출고일(YYYY-MM-DD)","")).strip()
-                                    _oqty  = float(_orow.get("출고량(kg)", 0) or 0)
-                                    _otb   = int(float(_orow.get("톤백(개)", 0) or 0)) if "톤백(개)" in _orow.index else 0
-                                    _onote = str(_orow.get("비고","") or "")
-                                    if _otype == "임가공출고":
-                                        _oprnm = str(_orow.get("임가공사","") or "").strip()
-                                        _oprid = _of_pr_opts.get(_oprnm)
-                                        if not _oprid: continue   # 임가공사 없으면 스킵
-                                        cfg["dispatch_records"].append({
-                                            "id":            str(uuid.uuid4())[:8],
-                                            "date":          _odate,
-                                            "processor_id":  _oprid,
-                                            "scrap_type_id": _osid,
-                                            "quantity_kg":   _oqty,
-                                            "ton_bags":      _otb,
-                                            "notes":         _onote,
-                                        })
-                                        _saved_dr += 1
-                                    else:  # 직접판매
-                                        _oprice_raw = _orow.get("판매단가($/kg)","") if "판매단가($/kg)" in _orow.index else ""
-                                        try:
-                                            _oprice = float(_oprice_raw) if str(_oprice_raw).strip() not in ("","nan") else None
-                                        except (ValueError, TypeError):
-                                            _oprice = None
-                                        cfg["direct_sales"].append({
-                                            "id":               str(uuid.uuid4())[:8],
-                                            "date":             _odate,
-                                            "scrap_type_id":    _osid,
-                                            "quantity_kg":      _oqty,
-                                            "ton_bags":         _otb,
-                                            "sale_price_per_kg": _oprice,
-                                            "notes":            _onote,
-                                        })
-                                        _saved_ds += 1
-                                save_cfg(cfg)
-                                st.success(f"저장 완료 — 임가공출고 {_saved_dr}건 / 직접판매 {_saved_ds}건")
-                                st.rerun()
-                except Exception as _oue:
-                    st.error(f"파일 읽기 오류: {_oue}")
-
-    # ── 임가공 출고 이력 ──────────────────────────────────────────────────────
+        # ── 임가공 출고 이력 ──────────────────────────────────────────────────────
     st.markdown("### 🏭 임가공 출고 이력")
     st.caption("스크랩을 임가공사(톨링)로 출고한 날짜와 수량을 기록합니다. "
                "각 B/L 배치가 어느 입고 Lot에서 비롯되었는지 추적하는 기준이 됩니다.")
