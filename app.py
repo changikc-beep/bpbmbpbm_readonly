@@ -97,10 +97,27 @@ def _ph_input_kg(rec):
     conv = rec.get("conversion_rate_pct") or rec.get("conversion_rate")
     return out / (conv / 100) if (out and conv and conv > 0) else 0
 
-def _ph_export_usd(rec):
-    """수출비 총액(USD) — 신포맷: export_cost_usd / 구포맷: per_kg × out"""
+def _ph_export_usd(rec, cfg=None):
+    """수출비 총액(USD).
+    우선순위: ① 배치 직접값(구버전 호환) → ② HBL 수출비 생산량 비례 배분 → ③ 구포맷 per_kg
+    """
+    # ① 배치에 직접 저장된 값 (구버전 호환)
     if rec.get("export_cost_usd") is not None:
-        return rec["export_cost_usd"]
+        return float(rec["export_cost_usd"])
+    # ② HBL 레벨 수출비 비례 배분
+    if cfg and rec.get("shipment_id"):
+        ship = next((s for s in cfg.get("shipments", []) if s.get("id") == rec["shipment_id"]), {})
+        hbl_eu = float(ship.get("export_cost_usd") or 0)
+        if hbl_eu > 0:
+            total_out = sum(
+                float(r.get("output_kg", 0) or 0)
+                for r in cfg.get("processing_history", [])
+                if r.get("shipment_id") == rec["shipment_id"]
+            )
+            rec_out = float(rec.get("output_kg", 0) or 0)
+            if total_out > 0 and rec_out > 0:
+                return round(hbl_eu * rec_out / total_out, 2)
+    # ③ 구포맷 fallback
     per_kg = rec.get("export_cost_per_kg_bp", 0) or 0
     out    = rec.get("output_kg", 0) or 0
     return per_kg * out
@@ -794,6 +811,8 @@ Ni/Co 지불율과 M-1 INDEX를 적용한 단가로 먼저 대금을 수취합�
                         index=list(buyer_opts.keys()).index(cur_b_lbl[0]) if cur_b_lbl else 0,key=f"sh_buy_{real_i}")
                     new_wkg=st.number_input("선적 중량 (kg)",value=float(s.get("weight_kg",0)),step=1.0,format="%.0f",key=f"sh_wkg_{real_i}")
                     new_iusd=st.number_input("Invoice (USD, 잠정정산액)",value=float(s.get("invoice_usd",0)),step=1.0,format="%.2f",key=f"sh_iusd_{real_i}")
+                    new_eusd=st.number_input("수출비 (USD)",value=float(s.get("export_cost_usd") or 0),step=1.0,format="%.2f",key=f"sh_eusd_{real_i}",
+                        help="Ocean Freight, THC 등 이 선적건 전체 수출비 합계. 배치별 생산량 비례로 자동 배분됩니다.")
                 with e3:
                     new_pm=st.selectbox("Provisional 월",["—"]+hist_opts,
                         index=(["—"]+hist_opts).index(s.get("prov_month","—")) if s.get("prov_month","—") in ["—"]+hist_opts else 0,
@@ -913,6 +932,7 @@ Ni/Co 지불율과 M-1 INDEX를 적용한 단가로 먼저 대금을 수취합�
                             "hbl":new_hbl,"invoice_no":new_inv,
                             "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
                             "weight_kg":new_wkg,"invoice_usd":new_iusd,
+                            "export_cost_usd":new_eusd if new_eusd else None,
                             "prov_month":new_pm,"final_month":new_fm,
                             "status":new_stat,"etd":new_etd,"eta":new_eta,"notes":new_note,
                             "moisture_pct":new_moisture if new_moisture else None,
@@ -1300,7 +1320,7 @@ with t_pnl:
         _tot_sc_rev  = sum((r.get("scrap_sale_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 스크랩 매각수익
         _tot_pf      = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 임가공비
         _tot_repr    = _tot_sc_rev + _tot_pf   # BP 재매입 원가 합계 (= 스크랩 + 임가공비)
-        _tot_eu      = sum(_ph_export_usd(r) for r in _ph_all)
+        _tot_eu      = sum(_ph_export_usd(r, cfg) for r in _ph_all)
         _tot_bp      = sum((r.get("bp_sale_per_kg",0) or 0) * (r.get("output_kg",0) or 0) for r in _ph_all)
         # 순이익 = BP매각 + 스크랩매각 - BP재매입 - 수출비  (스크랩 상계 → 임가공비+수출비만 남음)
         _tot_net  = _tot_bp + _tot_sc_rev - _tot_repr - _tot_eu
@@ -1454,7 +1474,7 @@ with t_pnl:
             _mi    = _ph_input_kg(_mr)
             _msc   = (_mr.get("scrap_sale_per_kg",0) or 0) * _mi
             _mpf   = (_mr.get("processing_fee_per_kg",0) or 0) * _mi
-            _meu   = _ph_export_usd(_mr)
+            _meu   = _ph_export_usd(_mr, cfg)
             _mbp   = (_mr.get("bp_sale_per_kg",0) or 0) * _mo
             _mrc, _ = _get_rmc_fifo(_mr, _default_rmc_s1)
             # 보관비: 수동 storage_days 우선, 없으면 FIFO 자동 fallback
@@ -1553,7 +1573,7 @@ with t_pnl:
             _ip_r   = _ph_input_kg(_rr)
             _pf_r   = float(_rr.get("processing_fee_per_kg") or 0) * _ip_r
             _sc_r   = float(_rr.get("scrap_sale_per_kg") or 0) * _ip_r
-            _eu_r   = _ph_export_usd(_rr)
+            _eu_r   = _ph_export_usd(_rr, cfg)
             _bp_r   = float(_rr.get("bp_sale_per_kg") or 0) * _op_r
             # 거래 마진: BP매각 + 스크랩매각수익 − 재매입원가(sc+pf) − 수출비
             # sc 상계 후 → bp − pf − eu (임가공비와 수출비만 남음)
@@ -1990,7 +2010,7 @@ with t_pnl:
                 _sc2  = (_rp2.get("scrap_sale_per_kg",0) or 0) * _ip2
                 _pf2  = (_rp2.get("processing_fee_per_kg",0) or 0) * _ip2
                 _repr2= _sc2 + _pf2   # BP 재매입원가
-                _eu2_total = _ph_export_usd(_rp2)
+                _eu2_total = _ph_export_usd(_rp2, cfg)
                 _epk2 = _eu2_total / _op2 if _op2>0 else 0
                 _bp2  = _rp2.get("bp_sale_per_kg",0) or 0
                 # 실적 마진(수출비 제외) — 이론 마진과 동일 기준으로 비교
@@ -2467,12 +2487,16 @@ with t_proc:
                          _t2_ship.get("status",""),"—")
 
             # HBL 정보 요약 바
-            _ti1,_ti2,_ti3,_ti4,_ti5 = st.columns(5)
+            _ti1,_ti2,_ti3,_ti4,_ti5,_ti6 = st.columns(6)
             _ti1.metric("선적일",    _t2_ship.get("loading_date","—"))
             _ti2.metric("매입사",    f"{_t2_buyer.get('name','?')} ({_t2_buyer.get('product','?')})")
             _ti3.metric("선적 중량", f"{_t2_ship.get('weight_kg',0):,.0f} kg")
             _ti4.metric("Invoice",   f"${_t2_ship.get('invoice_usd',0):,.0f}")
-            _ti5.metric("상태",      _stat2_lbl)
+            _ti6.metric("상태",      _stat2_lbl)
+            _eu_disp = _t2_ship.get("export_cost_usd")
+            _ti5.metric("수출비",
+                        f"${_eu_disp:,.0f}" if _eu_disp else "—",
+                        help="선적 정산 탭에서 입력")
 
             # 연결된 배치 목록
             _t2_batches = [(i,p) for i,p in enumerate(ph_list)
@@ -2537,13 +2561,14 @@ with t_proc:
             # ── HBL 손익 요약 ─────────────────────────────────────────────────
             if _t2_batches:
                 st.markdown("---")
-                _h2_bp=0.0; _h2_pf=0.0; _h2_eu=0.0
+                _h2_bp=0.0; _h2_pf=0.0
                 for _, _bph2 in _t2_batches:
                     _h2out = float(_bph2.get("output_kg",0) or 0)
                     _h2inp = _ph_input_kg(_bph2)
                     _h2_bp += float(_bph2.get("bp_sale_per_kg",0) or 0) * _h2out
                     _h2_pf += float(_bph2.get("processing_fee_per_kg",0) or 0) * _h2inp
-                    _h2_eu += _ph_export_usd(_bph2)
+                # 수출비: HBL 레벨 값 직접 사용
+                _h2_eu = float(_t2_ship.get("export_cost_usd") or 0)
                 _h2_net = _h2_bp - _h2_pf - _h2_eu
                 _h2_mg  = _h2_net / _h2_bp * 100 if _h2_bp > 0 else 0
                 _hm1,_hm2,_hm3,_hm4 = st.columns(4)
@@ -4239,7 +4264,7 @@ with t_report:
         _inp = _ph_input_kg(_r)
         _pnl_by_month[_mo]["bp"]   += float(_r.get("bp_sale_per_kg",0) or 0) * _out
         _pnl_by_month[_mo]["pf"]   += float(_r.get("processing_fee_per_kg",0) or 0) * _inp
-        _pnl_by_month[_mo]["eu"]   += _ph_export_usd(_r)
+        _pnl_by_month[_mo]["eu"]   += _ph_export_usd(_r, cfg)
         _pnl_by_month[_mo]["raw"]  += _rpt_raw(_r)
         _pnl_by_month[_mo]["stor"] += _rpt_stor(_r)
         _pnl_by_month[_mo]["out"]  += _out
@@ -4439,7 +4464,7 @@ with t_report:
                 _ip4  = _ph_input_kg(_r4)
                 _hbl4_agg[_hid4]["bp"]   += float(_r4.get("bp_sale_per_kg",0) or 0) * _op4
                 _hbl4_agg[_hid4]["pf"]   += float(_r4.get("processing_fee_per_kg",0) or 0) * _ip4
-                _hbl4_agg[_hid4]["eu"]   += _ph_export_usd(_r4)
+                _hbl4_agg[_hid4]["eu"]   += _ph_export_usd(_r4, cfg)
                 _hbl4_agg[_hid4]["raw"]  += _rpt_raw(_r4)
                 _hbl4_agg[_hid4]["stor"] += _rpt_stor(_r4)
                 _hbl4_agg[_hid4]["out"]  += _op4
