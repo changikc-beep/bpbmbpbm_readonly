@@ -3251,7 +3251,7 @@ with t_outflow:
     # ══════════════════════════════════════════════════════════════════════════
     st.divider()
     st.markdown("### 💴 원배출자(SK) 지급 계산")
-    st.caption("월별 입고량 × SK 납품단가 = 월별 지급액. 단가는 매월 직접 입력하세요.")
+    st.caption("입고 기록의 원료단가를 기본값으로 자동 계산합니다. 실제 SK 납품단가가 다르면 직접 수정 후 저장하세요.")
 
     if "sk_prices" not in cfg:
         cfg["sk_prices"] = {}
@@ -3265,96 +3265,114 @@ with t_outflow:
             _sk_inv  = cfg.get("raw_material_inventory", {}).get(_sk_scid, {})
             _sk_purs = _sk_inv.get("purchases", [])
 
-            # 월별 입고량 집계
-            _sk_by_mo = {}
+            # 월별 입고량 + 가중평균 단가 집계 (기존 unit_cost 활용)
+            _sk_by_mo = {}   # month → {qty, amount}
             for _sp in _sk_purs:
                 _sp_mo  = (_sp.get("date") or "")[:7]
                 _sp_qty = float(_sp.get("quantity_kg") or 0)
-                if _sp_mo:
-                    _sk_by_mo[_sp_mo] = _sk_by_mo.get(_sp_mo, 0.0) + _sp_qty
+                _sp_uc  = float(_sp.get("unit_cost") or 0)
+                if _sp_mo and _sp_qty > 0:
+                    if _sp_mo not in _sk_by_mo:
+                        _sk_by_mo[_sp_mo] = {"qty": 0.0, "amount": 0.0}
+                    _sk_by_mo[_sp_mo]["qty"]    += _sp_qty
+                    _sk_by_mo[_sp_mo]["amount"] += _sp_qty * _sp_uc
 
             if not _sk_by_mo:
                 st.info("입고 이력이 없습니다.")
                 continue
 
-            # 저장된 단가 로드
+            # 저장된 수동 단가 로드 (있으면 우선 적용)
             _sk_saved = cfg.get("sk_prices", {}).get(_sk_scid, {})
 
-            # 편집용 DataFrame 구성
+            # 편집용 DataFrame 구성 — 기본값: 입고 기록 가중평균 단가
             _sk_rows = []
             for _mo in sorted(_sk_by_mo.keys()):
-                _qty   = _sk_by_mo[_mo]
-                _price = float(_sk_saved.get(_mo, 0.0) or 0.0)
+                _qty     = _sk_by_mo[_mo]["qty"]
+                _amt_pur = _sk_by_mo[_mo]["amount"]
+                _avg_pur = _amt_pur / _qty if _qty else 0.0
+                # 수동 저장 단가 우선, 없으면 입고 기록 가중평균
+                _price = float(_sk_saved.get(_mo, _avg_pur) or _avg_pur)
                 _sk_rows.append({
                     "월":             _mo,
                     "입고량 (kg)":    round(_qty, 0),
-                    "SK 단가 ($/kg)": _price,
+                    "입고 기록 단가": round(_avg_pur, 5),   # 참고용 (고정)
+                    "SK 단가 ($/kg)": round(_price, 5),     # 편집 가능
                 })
 
             _sk_df = pd.DataFrame(_sk_rows)
 
-            # 편집 테이블
+            st.caption("💡 **SK 단가** = 입고 기록 단가로 자동 채워집니다. 실제 납품단가가 다르면 해당 셀을 직접 수정하세요.")
             _sk_edited = st.data_editor(
                 _sk_df,
                 column_config={
-                    "월":             st.column_config.TextColumn("월", disabled=True),
-                    "입고량 (kg)":    st.column_config.NumberColumn("입고량 (kg)", disabled=True, format="%,.0f"),
-                    "SK 단가 ($/kg)": st.column_config.NumberColumn("SK 단가 ($/kg)", format="%.5f",
-                                                                     min_value=0.0, step=0.0001),
+                    "월":              st.column_config.TextColumn("월", disabled=True),
+                    "입고량 (kg)":     st.column_config.NumberColumn("입고량 (kg)", disabled=True, format="%,.0f"),
+                    "입고 기록 단가":  st.column_config.NumberColumn("입고 기록 단가 ($/kg)", disabled=True, format="$%.5f"),
+                    "SK 단가 ($/kg)":  st.column_config.NumberColumn("SK 납품단가 ($/kg)", format="$%.5f",
+                                                                      min_value=0.0, step=0.0001),
                 },
                 use_container_width=True,
                 hide_index=True,
                 key=f"sk_editor_{_sk_scid}",
             )
 
-            # 지급액 계산 및 표시
+            # 지급액 계산
             _sk_edited["지급액 (USD)"] = (_sk_edited["입고량 (kg)"] * _sk_edited["SK 단가 ($/kg)"]).round(2)
             _sk_total_qty = _sk_edited["입고량 (kg)"].sum()
             _sk_total_pay = _sk_edited["지급액 (USD)"].sum()
             _sk_avg_price = _sk_total_pay / _sk_total_qty if _sk_total_qty > 0 else 0.0
 
-            # 지급액 표시
+            # 결과 테이블 (합계 행 포함)
             _sk_result_rows = []
             for _, _sr in _sk_edited.iterrows():
                 _sk_result_rows.append({
-                    "월":          _sr["월"],
-                    "입고량 (kg)": _sr["입고량 (kg)"],
-                    "SK 단가":     _sr["SK 단가 ($/kg)"],
-                    "지급액 (USD)":_sr["지급액 (USD)"],
+                    "월":            _sr["월"],
+                    "입고량 (kg)":   _sr["입고량 (kg)"],
+                    "SK 단가($/kg)": _sr["SK 단가 ($/kg)"],
+                    "지급액 (USD)":  _sr["지급액 (USD)"],
                 })
             _sk_result_rows.append({
-                "월":          "합계",
-                "입고량 (kg)": _sk_total_qty,
-                "SK 단가":     _sk_avg_price,
-                "지급액 (USD)":_sk_total_pay,
+                "월":            "합계",
+                "입고량 (kg)":   _sk_total_qty,
+                "SK 단가($/kg)": _sk_avg_price,
+                "지급액 (USD)":  _sk_total_pay,
             })
             st.dataframe(
                 pd.DataFrame(_sk_result_rows).style.apply(
                     lambda row: ["font-weight:700"] * len(row) if row["월"] == "합계" else [""] * len(row),
                     axis=1
                 ).format(na_rep="—", formatter={
-                    "입고량 (kg)": "{:,.0f}",
-                    "SK 단가":     lambda v: f"${v:.5f}" if v else "—",
-                    "지급액 (USD)":lambda v: f"${v:,.2f}" if v else "—",
+                    "입고량 (kg)":   "{:,.0f}",
+                    "SK 단가($/kg)": lambda v: f"${v:.5f}" if v else "—",
+                    "지급액 (USD)":  lambda v: f"${v:,.2f}" if v else "—",
                 }),
                 use_container_width=True, hide_index=True,
             )
 
             _sk_m1, _sk_m2, _sk_m3 = st.columns(3)
-            _sk_m1.metric("총 입고량",   f"{_sk_total_qty:,.0f} kg")
-            _sk_m2.metric("총 지급액",   f"${_sk_total_pay:,.2f}")
-            _sk_m3.metric("평균 단가",   f"${_sk_avg_price:.5f}/kg")
+            _sk_m1.metric("총 입고량", f"{_sk_total_qty:,.0f} kg")
+            _sk_m2.metric("총 지급액", f"${_sk_total_pay:,.2f}")
+            _sk_m3.metric("평균 단가", f"${_sk_avg_price:.5f}/kg")
 
-            # 저장
-            if st.button("💾 단가 저장", key=f"sk_save_{_sk_scid}", type="primary"):
+            # 수동 수정분만 저장 (입고 기록 단가와 다른 경우)
+            if st.button("💾 수정 단가 저장", key=f"sk_save_{_sk_scid}", type="primary",
+                         help="입고 기록 단가와 다르게 수정한 경우에만 저장하세요. 동일하면 저장 불필요."):
                 if "sk_prices" not in cfg:
                     cfg["sk_prices"] = {}
                 if _sk_scid not in cfg["sk_prices"]:
                     cfg["sk_prices"][_sk_scid] = {}
+                _saved_cnt = 0
                 for _, _sr in _sk_edited.iterrows():
-                    cfg["sk_prices"][_sk_scid][_sr["월"]] = float(_sr["SK 단가 ($/kg)"])
+                    _mo_key = _sr["월"]
+                    _new_p  = float(_sr["SK 단가 ($/kg)"])
+                    _orig_p = round(float(_sk_by_mo[_mo_key]["amount"] / _sk_by_mo[_mo_key]["qty"]), 5) if _sk_by_mo[_mo_key]["qty"] else 0
+                    if abs(_new_p - _orig_p) > 0.00001:   # 입고 기록과 다를 때만
+                        cfg["sk_prices"][_sk_scid][_mo_key] = _new_p
+                        _saved_cnt += 1
+                    elif _mo_key in cfg.get("sk_prices", {}).get(_sk_scid, {}):
+                        del cfg["sk_prices"][_sk_scid][_mo_key]  # 원래대로 돌아오면 삭제
                 save_cfg(cfg)
-                st.toast("✅ SK 단가 저장 완료")
+                st.toast(f"✅ {_saved_cnt}개월 수정 단가 저장")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4017,22 +4035,15 @@ with t_report:
     st.subheader("요약 보고서")
 
     # ── 헤더 바 ──────────────────────────────────────────────────────────────
-    ro1, ro2, ro3 = st.columns(3)
+    ro1, ro2 = st.columns([2, 1])
     with ro1:
         rpt_month = ref if ref != "직접 입력" else f"{date.today().year}-{date.today().month:02d}"
         st.markdown(f"**기준월**: `{rpt_month}`  |  **작성일**: `{date.today()}`")
         st.markdown(f"**Ni**: `${NI:,.2f}/t`  **Co**: `${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
     with ro2:
-        buyer_opts_rpt = [f"{b['name']} ({b['product']})" for b in active_buyers]
-        if buyer_opts_rpt:
-            rpt_buyer_lbl = st.selectbox("마진 비교 기준 매입사", buyer_opts_rpt, key="rpt_buyer")
-            rpt_buyer = active_buyers[buyer_opts_rpt.index(rpt_buyer_lbl)]
-        else:
-            rpt_buyer = None
-    with ro3:
         if active_buyers:
             xl_bytes = generate_excel_report(cfg, NI, CO, XR, rpt_month,
-                                             rpt_buyer["id"] if rpt_buyer else "")
+                                             active_buyers[0]["id"])
             st.download_button("📥 Excel 보고서 다운로드", data=xl_bytes,
                                file_name=f"BP_BM_요약보고서_{rpt_month}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4167,9 +4178,9 @@ with t_report:
             styles = [""] * len(row)
             cols = list(row.index)
             if "🔴 즉시배출(kg)" in cols and row["🔴 즉시배출(kg)"] > 0:
-                styles[cols.index("🔴 즉시배출(kg)")] = "background-color:#fadbd8;font-weight:600"
+                styles[cols.index("🔴 즉시배출(kg)")] = "color:#c0392b;font-weight:700"
             if "🟡 긴급배출(kg)" in cols and row["🟡 긴급배출(kg)"] > 0:
-                styles[cols.index("🟡 긴급배출(kg)")] = "background-color:#fef9e7;font-weight:600"
+                styles[cols.index("🟡 긴급배출(kg)")] = "color:#d35400;font-weight:700"
             return styles
 
         st.dataframe(
@@ -4190,9 +4201,9 @@ with t_report:
                 def _style_lot_row(row):
                     st_val = row.get("상태","")
                     if "🔴" in st_val:
-                        return ["background-color:#fadbd8"] * len(row)
+                        return ["color:#c0392b;font-weight:600" if c in ("상태","잔여일","잔량(kg)") else "" for c in row.index]
                     if "🟡" in st_val:
-                        return ["background-color:#fef9e7"] * len(row)
+                        return ["color:#d35400;font-weight:600" if c in ("상태","잔여일","잔량(kg)") else "" for c in row.index]
                     return [""] * len(row)
 
                 st.dataframe(
