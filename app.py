@@ -954,10 +954,12 @@ Ni/Co 지불율과 M-1 INDEX를 적용한 단가로 먼저 대금을 수취합�
                                 "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
                                 "other_adj_usd":new_other_adj if new_other_adj else None,
                                 "other_adj_desc":new_other_desc})
-                            save_cfg(cfg); st.success("저장 완료"); st.rerun()
+                            save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with cb:
-                    if st.button("🗑️ 삭제",key=f"sh_del_{real_i}"):
-                        cfg["shipments"].pop(real_i); save_cfg(cfg); st.rerun()
+                    with st.popover("🗑️ 삭제", use_container_width=True):
+                        st.warning(f"**{s.get('hbl','?')}** 선적건을 삭제합니다.")
+                        if st.button("삭제 확인", key=f"sh_del_cfm_{real_i}", type="primary", use_container_width=True):
+                            cfg["shipments"].pop(real_i); save_cfg(cfg); st.rerun()
 
         # ── 전체 요약 테이블 ──
         if show_ships:
@@ -1006,7 +1008,7 @@ Ni/Co 지불율과 M-1 INDEX를 적용한 단가로 먼저 대금을 수취합�
                 "prov_month":a_pm,"final_month":a_fm,"status":"provisional","eta":"","notes":"",
                 "moisture_pct":None,"buyer_ni_content":None,"buyer_co_content":None,
                 "other_adj_usd":None,"other_adj_desc":""})
-            save_cfg(cfg); st.success("추가 완료!"); st.rerun()
+            save_cfg(cfg); st.toast("✅ 추가 완료!"); st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1108,9 +1110,11 @@ with t_freight:
                                 "documentation":q_dc, "terminal_handling":q_th, "notes":q_notes})
                             save_cfg(cfg); st.success("견적 저장됨"); st.rerun()
                     with qs2:
-                        if st.button("🗑️ 견적 삭제", key=f"fwd_qdel_{fi}_{qi}", use_container_width=True):
-                            cfg["forwarders"][fi]["quotes"].pop(qi)
-                            save_cfg(cfg); st.rerun()
+                        with st.popover("🗑️", use_container_width=True):
+                            st.warning(f"견적 **{q.get('label','?')}** 삭제")
+                            if st.button("삭제 확인", key=f"fwd_qdel_cfm_{fi}_{qi}", type="primary", use_container_width=True):
+                                cfg["forwarders"][fi]["quotes"].pop(qi)
+                                save_cfg(cfg); st.rerun()
 
             st.markdown("---")
             fb1, fb2, fb3 = st.columns(3)
@@ -1125,11 +1129,13 @@ with t_freight:
             with fb2:
                 if st.button("💾 포워더 저장", key=f"fwd_save_{fi}", use_container_width=True):
                     cfg["forwarders"][fi].update({"name":fnm, "active":fact})
-                    save_cfg(cfg); st.success("저장됨"); st.rerun()
+                    save_cfg(cfg); st.toast("✅ 저장됨"); st.rerun()
             with fb3:
-                if st.button("🗑️ 포워더 삭제", key=f"fwd_del_{fi}", use_container_width=True):
-                    cfg["forwarders"].pop(fi)
-                    save_cfg(cfg); st.rerun()
+                with st.popover("🗑️ 포워더 삭제", use_container_width=True):
+                    st.warning(f"포워더 **{fwd.get('name','?')}** 전체 삭제 (견적 포함)")
+                    if st.button("삭제 확인", key=f"fwd_del_cfm_{fi}", type="primary", use_container_width=True):
+                        cfg["forwarders"].pop(fi)
+                        save_cfg(cfg); st.rerun()
 
     st.divider()
     st.subheader("새 포워더 추가")
@@ -2240,10 +2246,12 @@ with t_buy:
                 with s3:
                     if st.button("💾 저장",key=f"bsave_{i}",use_container_width=True):
                         cfg["buyers"][i].update({"name":nn,"product":np_,"ni_payable":nnp,"co_payable":ncp,"ni_content":nnc,"co_content":ncc,"active":na})
-                        save_cfg(cfg); st.success("저장 완료"); st.rerun()
+                        save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with s4:
-                    if st.button("🗑️ 삭제",key=f"bdel_{i}",use_container_width=True):
-                        cfg["buyers"].pop(i); save_cfg(cfg); st.rerun()
+                    with st.popover("🗑️", use_container_width=True):
+                        st.warning(f"매입사 **{b['name']}** 삭제")
+                        if st.button("삭제 확인", key=f"bdel_cfm_{i}", type="primary", use_container_width=True):
+                            cfg["buyers"].pop(i); save_cfg(cfg); st.rerun()
     st.divider()
     st.subheader("새 매입사 추가")
     with st.form("add_buyer"):
@@ -2381,10 +2389,12 @@ with t_proc:
                 with pc3:
                     if st.button("💾 저장", key=f"psave_{pi}", use_container_width=True):
                         cfg["processors"][pi].update({"name": pnm, "active": pact, "conditions": new_conds})
-                        save_cfg(cfg); st.success("저장 완료"); st.rerun()
+                        save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with pc4:
-                    if st.button("🗑️ 삭제", key=f"pdel_{pi}", use_container_width=True):
-                        cfg["processors"].pop(pi); save_cfg(cfg); st.rerun()
+                    with st.popover("🗑️", use_container_width=True):
+                        st.warning(f"임가공사 **{proc['name']}** 삭제")
+                        if st.button("삭제 확인", key=f"pdel_cfm_{pi}", type="primary", use_container_width=True):
+                            cfg["processors"].pop(pi); save_cfg(cfg); st.rerun()
                 st.markdown("---")
 
             st.markdown("**➕ 새 임가공사 추가**")
@@ -2457,16 +2467,28 @@ with t_proc:
         st.markdown("---")
 
         # ── HBL 선택 ─────────────────────────────────────────────────────────
+        # 배치 수 사전 계산
+        _t2_batch_cnt = {}
+        for _ph_c in ph_list:
+            _sid_c = _ph_c.get("shipment_id","")
+            if _sid_c:
+                _t2_batch_cnt[_sid_c] = _t2_batch_cnt.get(_sid_c, 0) + 1
+        _unlinked_cnt = sum(1 for _ph_c in ph_list if not _ph_c.get("shipment_id",""))
+
         _t2_hbl_d = {"─ HBL 선택 ─": None}
         for _s2 in sorted(ship_list_ph, key=lambda x: x.get("loading_date",""), reverse=True):
-            _b2    = buyer_map_ph.get(_s2.get("buyer_id",""), {})
-            _icon2 = {"provisional":"🟡","final":"🟢","paid":"🔵"}.get(_s2.get("status",""),"⚪")
+            _b2     = buyer_map_ph.get(_s2.get("buyer_id",""), {})
+            _icon2  = {"provisional":"🟡","final":"🟢","paid":"🔵"}.get(_s2.get("status",""),"⚪")
+            _bcnt2  = _t2_batch_cnt.get(_s2["id"], 0)
+            _bcnt_lbl = f"  [{_bcnt2}건]" if _bcnt2 else "  [배치없음]"
             _t2_hbl_d[
                 f"{_icon2}  {_s2.get('hbl','—')}  |  "
                 f"{_s2.get('loading_date','?')[:7]}  "
                 f"{_b2.get('name','?')} ({_b2.get('product','?')})"
+                f"{_bcnt_lbl}"
             ] = _s2["id"]
-        _t2_hbl_d["🔖 미연결 배치"] = "__unlinked__"
+        _unlinked_lbl = f"🔖 미연결 배치" + (f"  [{_unlinked_cnt}건]" if _unlinked_cnt else "  [없음]")
+        _t2_hbl_d[_unlinked_lbl] = "__unlinked__"
 
         _t2_sel = st.selectbox("HBL 선택", list(_t2_hbl_d.keys()), key="t2_hbl_sel",
                                label_visibility="collapsed")
@@ -2542,10 +2564,12 @@ with t_proc:
                             "bp_sale_per_kg":      _e_bps,
                             "notes":               _e_note,
                         })
-                        save_cfg(cfg); st.success("저장"); st.rerun()
+                        save_cfg(cfg); st.toast("✅ 저장"); st.rerun()
                 with _es2:
-                    if st.button("🗑️ 삭제", key=f"slim_del_{_rk}", use_container_width=True):
-                        ph_list_ref.pop(idx); save_cfg(cfg); st.rerun()
+                    with st.popover("🗑️", use_container_width=True):
+                        st.warning(f"배치 **{_bpo.get('name','?')} × {_bso.get('name','?')}** 삭제")
+                        if st.button("삭제 확인", key=f"slim_del_cfm_{_rk}", type="primary", use_container_width=True):
+                            ph_list_ref.pop(idx); save_cfg(cfg); st.rerun()
 
         # ── 뷰 분기 ──────────────────────────────────────────────────────────
         if _t2_sid is None:
@@ -2636,7 +2660,7 @@ with t_proc:
                         "buyer_id":              _t2_buyer.get("id","") if _t2_buyer else "",
                         "notes":                 _fnnotes,
                     })
-                    save_cfg(cfg); st.success("추가 완료!"); st.rerun()
+                    save_cfg(cfg); st.toast("✅ 추가 완료!"); st.rerun()
 
             # ── HBL 손익 요약 ─────────────────────────────────────────────────
             if _t2_batches:
@@ -2693,11 +2717,13 @@ with t_stype:
                 if st.button("💾 저장",key=f"st_save_{si}",use_container_width=True):
                     cfg["scrap_types"][si].update({"name":snm,"ni_content":sni,"co_content":sco,
                                                    "active":sact,"storage_rate_eur":float(srate)})
-                    save_cfg(cfg); st.success("저장 완료"); st.rerun()
+                    save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
             _sdd1,_sdd2=st.columns([1,3])
             with _sdd1:
-                if st.button("🗑️ 삭제",key=f"st_del_{si}",use_container_width=True):
-                    cfg["scrap_types"].pop(si); save_cfg(cfg); st.rerun()
+                with st.popover("🗑️", use_container_width=True):
+                    st.warning(f"스크랩 유형 **{sc['name']}** 삭제")
+                    if st.button("삭제 확인", key=f"st_del_cfm_{si}", type="primary", use_container_width=True):
+                        cfg["scrap_types"].pop(si); save_cfg(cfg); st.rerun()
     st.divider()
     st.subheader("새 스크랩 유형 추가")
     with st.form("add_scrap"):
@@ -2751,7 +2777,7 @@ with t_outflow:
 
     if "raw_material_inventory" not in cfg:
         cfg["raw_material_inventory"] = {}
-        save_cfg(cfg)
+        # 저장은 하지 않음 — 실제 입력 시 save_cfg 호출
 
     # ── 스크랩 유형별 상세 ────────────────────────────────────────────────────
     _ph_all_inv = cfg.get("processing_history", [])
@@ -2821,11 +2847,13 @@ with t_outflow:
                     _del_sel_i = st.selectbox("삭제할 입고 건", _del_lbls_i, key=f"inv_del_sel_{_isid}")
                 with _deld2:
                     st.markdown("&nbsp;", unsafe_allow_html=True)
-                    if st.button("🗑️ 삭제", key=f"inv_del_btn_{_isid}", use_container_width=True):
-                        _di_i = _del_lbls_i.index(_del_sel_i)
-                        _pur_copy_i = list(_purs_i); _pur_copy_i.pop(_di_i)
-                        cfg["raw_material_inventory"][_isid]["purchases"] = _pur_copy_i
-                        save_cfg(cfg); st.rerun()
+                    with st.popover("🗑️", use_container_width=True):
+                        st.warning(f"입고 건 삭제:\n{_del_sel_i}")
+                        if st.button("삭제 확인", key=f"inv_del_cfm_{_isid}", type="primary", use_container_width=True):
+                            _di_i = _del_lbls_i.index(_del_sel_i)
+                            _pur_copy_i = list(_purs_i); _pur_copy_i.pop(_di_i)
+                            cfg["raw_material_inventory"][_isid]["purchases"] = _pur_copy_i
+                            save_cfg(cfg); st.rerun()
             else:
                 st.info("등록된 입고 이력이 없습니다.")
             st.markdown("##### 입고 추가")
@@ -2887,10 +2915,12 @@ with t_outflow:
             _dr_del_sel = st.selectbox("삭제할 출고 건", _dr_del_opts, key="dr_del_sel")
         with _drd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            if st.button("🗑️ 삭제", key="dr_del_btn", use_container_width=True):
-                _dri = _dr_del_opts.index(_dr_del_sel)
-                cfg["dispatch_records"].pop(_dri)
-                save_cfg(cfg); st.rerun()
+            with st.popover("🗑️", use_container_width=True):
+                st.warning(f"임가공 출고 삭제:\n{_dr_del_sel}")
+                if st.button("삭제 확인", key="dr_del_cfm", type="primary", use_container_width=True):
+                    _dri = _dr_del_opts.index(_dr_del_sel)
+                    cfg["dispatch_records"].pop(_dri)
+                    save_cfg(cfg); st.rerun()
     else:
         st.info("등록된 임가공 출고 기록이 없습니다.")
 
@@ -2963,10 +2993,12 @@ with t_outflow:
             _ds_del_sel = st.selectbox("삭제할 판매 건", _ds_del_opts, key="ds_del_sel")
         with _dsd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            if st.button("🗑️ 삭제", key="ds_del_btn", use_container_width=True):
-                _dsi = _ds_del_opts.index(_ds_del_sel)
-                cfg["direct_sales"].pop(_dsi)
-                save_cfg(cfg); st.rerun()
+            with st.popover("🗑️", use_container_width=True):
+                st.warning(f"직접 판매 삭제:\n{_ds_del_sel}")
+                if st.button("삭제 확인", key="ds_del_cfm", type="primary", use_container_width=True):
+                    _dsi = _ds_del_opts.index(_ds_del_sel)
+                    cfg["direct_sales"].pop(_dsi)
+                    save_cfg(cfg); st.rerun()
     else:
         st.info("등록된 직접 판매 출고 이력이 없습니다.")
 
@@ -3408,10 +3440,15 @@ with t_idx:
                 _ok, _msg = _sync_from_gsheets(cfg)
             if _ok:
                 save_cfg(cfg)
-                st.success("✅ 동기화 완료\n" + _msg)
+                from datetime import datetime as _dt
+                st.session_state["last_sync_time"] = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.toast("✅ 동기화 완료")
                 st.rerun()
             else:
                 st.error(_msg)
+        _last_sync = st.session_state.get("last_sync_time")
+        if _last_sync:
+            st.caption(f"마지막 동기화: {_last_sync}")
     with _gs_c2:
         st.info(
             "**동기화 범위**  \n"
@@ -3428,10 +3465,16 @@ with t_idx:
         df_h.columns=["기준월","Ni INDEX($/ton)","Co INDEX($/ton)"]
         st.dataframe(df_h.style.format({"Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}"}),
                      use_container_width=True,hide_index=True)
-        dm=st.selectbox("삭제할 월",[h["month"] for h in sorted(history,key=lambda x:x["month"],reverse=True)])
-        if st.button("🗑️ 삭제"):
-            cfg["index_history"]=[h for h in history if h["month"]!=dm]
-            save_cfg(cfg); st.success(f"{dm} 삭제"); st.rerun()
+        _idx_del_c1, _idx_del_c2 = st.columns([4, 1])
+        with _idx_del_c1:
+            dm=st.selectbox("삭제할 월",[h["month"] for h in sorted(history,key=lambda x:x["month"],reverse=True)])
+        with _idx_del_c2:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            with st.popover("🗑️", use_container_width=True):
+                st.warning(f"INDEX **{dm}** 삭제")
+                if st.button("삭제 확인", key="idx_del_cfm", type="primary", use_container_width=True):
+                    cfg["index_history"]=[h for h in history if h["month"]!=dm]
+                    save_cfg(cfg); st.toast(f"✅ {dm} 삭제"); st.rerun()
     else: st.info("저장된 INDEX 이력이 없습니다.")
     st.divider()
     st.subheader("새 INDEX 추가 / 수정")
@@ -3463,14 +3506,20 @@ with t_idx:
             _df_eur.style.format({"EUR/USD": "{:.4f}"}),
             use_container_width=True, hide_index=True
         )
-        _eur_del_m = st.selectbox(
-            "삭제할 월",
-            [r["month"] for r in sorted(eur_rates, key=lambda x: x["month"], reverse=True)],
-            key="eur_del_sel"
-        )
-        if st.button("🗑️ 삭제", key="eur_del_btn"):
-            cfg["eur_usd_rates"] = [r for r in eur_rates if r["month"] != _eur_del_m]
-            save_cfg(cfg); st.success(f"{_eur_del_m} 삭제"); st.rerun()
+        _eur_del_c1, _eur_del_c2 = st.columns([4, 1])
+        with _eur_del_c1:
+            _eur_del_m = st.selectbox(
+                "삭제할 월",
+                [r["month"] for r in sorted(eur_rates, key=lambda x: x["month"], reverse=True)],
+                key="eur_del_sel"
+            )
+        with _eur_del_c2:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            with st.popover("🗑️", use_container_width=True):
+                st.warning(f"EUR/USD **{_eur_del_m}** 삭제")
+                if st.button("삭제 확인", key="eur_del_cfm", type="primary", use_container_width=True):
+                    cfg["eur_usd_rates"] = [r for r in eur_rates if r["month"] != _eur_del_m]
+                    save_cfg(cfg); st.toast(f"✅ {_eur_del_m} 삭제"); st.rerun()
     else:
         st.info("등록된 EUR/USD 환율이 없습니다. 기본값 1.10이 적용됩니다.")
 
