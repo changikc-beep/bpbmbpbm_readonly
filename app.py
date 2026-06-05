@@ -68,7 +68,8 @@ def _save_cfg_drive(c):
     content = json.dumps(c, ensure_ascii=False, indent=2).encode("utf-8")
     media   = MediaInMemoryUpload(content, mimetype="application/json")
     svc.files().update(fileId=file_id, media_body=media).execute()
-    _load_cfg_drive.clear()   # 캐시 무효화 → 다음 로드 시 Drive에서 재조회
+    _load_cfg_drive.clear()   # Drive 캐시 무효화
+    _fifo_lot_trace.clear()   # FIFO 계산 캐시 무효화
 
 def load_cfg():
     """항상 Google Drive에서 로드 (로컬·클라우드 공통 원본)."""
@@ -221,6 +222,7 @@ def _ph_storage_cost(rec, cfg):
     stor_rate = _storage_rate_eur(cfg, rec.get("scrap_type_id",""))
     return round(tb * float(days) * stor_rate * eur_rate, 2)
 
+@st.cache_data(show_spinner=False)
 def _fifo_lot_trace(cfg, scrap_id):
     """2단계 FIFO Lot 추적.
 
@@ -928,19 +930,31 @@ Ni/Co 지불율과 M-1 INDEX를 적용한 단가로 먼저 대금을 수취합�
                 ca,cb=st.columns(2)
                 with ca:
                     if st.button("💾 저장",key=f"sh_save_{real_i}"):
-                        cfg["shipments"][real_i].update({
-                            "hbl":new_hbl,"invoice_no":new_inv,
-                            "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
-                            "weight_kg":new_wkg,"invoice_usd":new_iusd,
-                            "export_cost_usd":new_eusd if new_eusd else None,
-                            "prov_month":new_pm,"final_month":new_fm,
-                            "status":new_stat,"etd":new_etd,"eta":new_eta,"notes":new_note,
-                            "moisture_pct":new_moisture if new_moisture else None,
-                            "buyer_ni_content":new_buyer_ni if new_buyer_ni!=default_ni or s.get("buyer_ni_content") else None,
-                            "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
-                            "other_adj_usd":new_other_adj if new_other_adj else None,
-                            "other_adj_desc":new_other_desc})
-                        save_cfg(cfg); st.success("저장 완료"); st.rerun()
+                        _save_err = []
+                        # 선적일 형식 검사
+                        if new_ld:
+                            try: datetime.strptime(new_ld, "%Y-%m-%d")
+                            except ValueError: _save_err.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD)")
+                        # HBL 중복 체크 (자기 자신 제외)
+                        if new_hbl:
+                            _dup = [s2 for j2,s2 in enumerate(shipments) if j2!=real_i and s2.get("hbl","").strip()==new_hbl.strip()]
+                            if _dup: _save_err.append(f"HBL '{new_hbl}' 이(가) 이미 존재합니다")
+                        if _save_err:
+                            for _e in _save_err: st.error(_e)
+                        else:
+                            cfg["shipments"][real_i].update({
+                                "hbl":new_hbl,"invoice_no":new_inv,
+                                "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
+                                "weight_kg":new_wkg,"invoice_usd":new_iusd,
+                                "export_cost_usd":new_eusd if new_eusd else None,
+                                "prov_month":new_pm,"final_month":new_fm,
+                                "status":new_stat,"etd":new_etd,"eta":new_eta,"notes":new_note,
+                                "moisture_pct":new_moisture if new_moisture else None,
+                                "buyer_ni_content":new_buyer_ni if new_buyer_ni!=default_ni or s.get("buyer_ni_content") else None,
+                                "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
+                                "other_adj_usd":new_other_adj if new_other_adj else None,
+                                "other_adj_desc":new_other_desc})
+                            save_cfg(cfg); st.success("저장 완료"); st.rerun()
                 with cb:
                     if st.button("🗑️ 삭제",key=f"sh_del_{real_i}"):
                         cfg["shipments"].pop(real_i); save_cfg(cfg); st.rerun()
@@ -1595,6 +1609,7 @@ with t_pnl:
                     "load_date": _hs.get("loading_date","—"),
                     "매입사":    f"{_hb.get('name','?')} ({_hb.get('product','?')})",
                     "procs":     set(),
+                    "scrap_ids": set(),   # FIFO Lot 조회용
                     "out":  0.0, "bp_rev": 0.0, "pf": 0.0,
                     "eu":   0.0, "raw":    0.0,  "stor": 0.0,
                     "batches": [],
@@ -1605,6 +1620,7 @@ with t_pnl:
             _h["eu"]     += _eu_r;  _h["raw"] += _raw_r
             _h["stor"]   += _stor_r
             if _proc_nm != "—": _h["procs"].add(_proc_nm)
+            if _rr.get("scrap_type_id"): _h["scrap_ids"].add(_rr["scrap_type_id"])
             _h["batches"].append({
                 "임가공사":   _proc_nm,
                 "스크랩":     _sc_nm,
@@ -1752,6 +1768,50 @@ with t_pnl:
                         }),
                         use_container_width=True, hide_index=True,
                     )
+
+                    # ── 원료 Lot 구성 ──────────────────────────────────────
+                    st.markdown("**📦 원료 Lot 구성 (FIFO)**")
+                    _lot_any = False
+                    for _lot_scid in sorted(_h.get("scrap_ids", set())):
+                        _lot_sc_nm = _scm_pnl.get(_lot_scid, {}).get("name", "?")
+                        try:
+                            _lot_bl, _, _ = _fifo_lot_trace(cfg, _lot_scid)
+                            _lot_data = _lot_bl.get(_hid, {}).get("lots", {})
+                            if not _lot_data:
+                                continue
+                            _lot_total_qty = sum(v["qty"] for v in _lot_data.values())
+                            _lot_rows = []
+                            for _lot_lbl, _lv in sorted(
+                                _lot_data.items(),
+                                key=lambda x: x[1].get("lot_date") or ""
+                            ):
+                                _lot_qty  = _lv["qty"]
+                                _lot_pct  = _lot_qty / _lot_total_qty * 100 if _lot_total_qty else 0
+                                _lot_date = (_lv.get("lot_date") or "")[:7] or "기초재고"
+                                _lot_uc   = _lv.get("unit_cost")
+                                _lot_rows.append({
+                                    "입고월":     _lot_date,
+                                    "Lot":        _lot_lbl,
+                                    "소진량(kg)": round(_lot_qty, 0),
+                                    "비중(%)":    round(_lot_pct, 1),
+                                    "취득단가":   _lot_uc,
+                                })
+                            if _lot_rows:
+                                _lot_any = True
+                                if len(_h.get("scrap_ids", set())) > 1:
+                                    st.caption(f"**{_lot_sc_nm}**")
+                                st.dataframe(
+                                    pd.DataFrame(_lot_rows).style.format(na_rep="—", formatter={
+                                        "소진량(kg)": "{:,.0f}",
+                                        "비중(%)":    "{:.1f}%",
+                                        "취득단가":   lambda v: f"${v:.5f}" if v is not None else "—",
+                                    }),
+                                    use_container_width=True, hide_index=True,
+                                )
+                        except Exception:
+                            pass
+                    if not _lot_any:
+                        st.caption("FIFO Lot 정보 없음 (입출고 기록 탭에서 출고 기록 입력 필요)")
 
         _tot_real_hbl = sum(
             (_h["bp_rev"] - _h["pf"] - _h["eu"]) - _h["raw"] - _h["stor"]
@@ -2227,6 +2287,23 @@ with t_proc:
     # 서브탭 1 — 전체 내역 : 계약 조건 + 누적 실적
     # ══════════════════════════════════════════════════════════════════════════
     with proc_tab1:
+        # ── 배치 누락 경고 ───────────────────────────────────────────────────
+        _dr_list_warn = cfg.get("dispatch_records", [])
+        _ph_list_warn = cfg.get("processing_history", [])
+        _warn_msgs = []
+        for _sc_w in scrap_list:
+            _scid_w  = _sc_w["id"]
+            _dr_qty  = sum(float(r.get("quantity_kg",0)) for r in _dr_list_warn if r.get("scrap_type_id")==_scid_w)
+            _ph_inp  = sum(_ph_input_kg(r) for r in _ph_list_warn if r.get("scrap_type_id")==_scid_w)
+            _remain  = _dr_qty - _ph_inp
+            if _remain > 100:   # 100kg 초과 미처리 시 경고
+                _warn_msgs.append(f"**{_sc_w['name']}** — 출고 {_dr_qty:,.0f}kg 중 투입 미기록 {_remain:,.0f}kg (임가공사 보유 추정)")
+        if _warn_msgs:
+            with st.expander(f"⚠️ 배치 미기록 항목 {len(_warn_msgs)}건", expanded=True):
+                st.caption("출고 기록은 있으나 처리 배치가 연결되지 않은 스크랩입니다. 임가공사 관리 → HBL별 탭에서 배치를 추가하세요.")
+                for _wm in _warn_msgs:
+                    st.markdown(f"- {_wm}")
+
         if not cfg.get("processors"):
             st.info("등록된 임가공사가 없습니다.")
         else:
@@ -2352,8 +2429,16 @@ with t_proc:
                     _ns_pm   = st.selectbox("Provisional 월", ["—"]+hist_opts)
                     _ns_etd  = st.text_input("ETD (선택)", placeholder="2026-04-05")
                 if st.form_submit_button("➕ 선적건 추가"):
-                    if not _ns_hbl or not _ns_ld:
-                        st.error("HBL과 선적일을 입력하세요.")
+                    _ns_errs = []
+                    if not _ns_hbl: _ns_errs.append("HBL을 입력하세요.")
+                    if not _ns_ld:  _ns_errs.append("선적일을 입력하세요.")
+                    else:
+                        try: datetime.strptime(_ns_ld, "%Y-%m-%d")
+                        except ValueError: _ns_errs.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD)")
+                    if _ns_hbl and any(s.get("hbl","").strip()==_ns_hbl.strip() for s in ship_list_ph):
+                        _ns_errs.append(f"HBL '{_ns_hbl}' 이(가) 이미 존재합니다.")
+                    if _ns_errs:
+                        for _e in _ns_errs: st.error(_e)
                     else:
                         cfg["shipments"].append({
                             "id": str(uuid.uuid4())[:8],
@@ -3799,94 +3884,37 @@ with t_report:
     # ── 공통 데이터 준비 ──────────────────────────────────────────────────────
     _rpt_ships    = cfg.get("shipments", [])
     _rpt_ph_all   = cfg.get("processing_history", [])
+    _rpt_buyer_m0 = {b["id"]: b for b in cfg["buyers"]}
+    _rpt_ship_m0  = {s["id"]: s for s in _rpt_ships}
+
+    # ── 연간 누계 요약 ────────────────────────────────────────────────────────
+    _cur_year = date.today().year
+    st.markdown(f"#### 📅 {_cur_year}년 누계")
+    _yr_ph    = [r for r in _rpt_ph_all
+                 if (_rpt_ship_m0.get(r.get("shipment_id",""),{}).get("loading_date","") or "")[:4] == str(_cur_year)]
+    _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year) and s.get("hbl")]
+    _yr_bp    = sum(float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0) for r in _yr_ph)
+    _yr_pf    = sum(float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _yr_ph)
+    _yr_eu    = sum(_ph_export_usd(r, cfg) for r in _yr_ph)
+    _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
+    _yr_inv   = sum(float(s.get("invoice_usd",0) or 0) for s in _yr_ships)
+    _yr_net   = _yr_bp - _yr_pf - _yr_eu
+    _ya1,_ya2,_ya3,_ya4,_ya5,_ya6 = st.columns(6)
+    _ya1.metric("선적 건수",    f"{len(_yr_ships)}건")
+    _ya2.metric("선적 중량",    f"{sum(float(s.get('weight_kg',0)) for s in _yr_ships):,.0f} kg")
+    _ya3.metric("BP 생산",      f"{_yr_out:,.0f} kg")
+    _ya4.metric("Invoice 합계", f"${_yr_inv:,.0f}")
+    _ya5.metric("BP 매각액",    f"${_yr_bp:,.0f}")
+    _ya6.metric("매출이익",     f"${_yr_net:+,.0f}",
+                delta_color="normal" if _yr_net >= 0 else "inverse")
+
+    st.divider()
+
+    # ── 공통 데이터 재사용 ───────────────────────────────────────────────────
     _rpt_buyer_m  = {b["id"]: b for b in cfg["buyers"]}
     _rpt_ship_m   = {s["id"]: s for s in _rpt_ships}
     _rpt_sc_m     = {s["id"]: s for s in cfg.get("scrap_types", [])}
     _rpt_proc_m   = {p["id"]: p for p in cfg.get("processors", [])}
-
-    # ── Section 1: BP/BM 매각 단가 ───────────────────────────────────────────
-    st.markdown("#### ① BP/BM 매각 단가 현황")
-    if not active_buyers:
-        st.info("매입사를 등록하세요.")
-    else:
-        _bp_rows = []
-        for b in active_buyers:
-            nv, cv, tot, pkg = bp_price(NI, CO, b["ni_content"], b["co_content"],
-                                        b["ni_payable"], b["co_payable"])
-            _bp_rows.append({"매입사": b["name"], "품목": b["product"],
-                "Ni 지불율": b["ni_payable"], "Co 지불율": b["co_payable"],
-                "Ni Value($/t)": round(nv,2), "Co Value($/t)": round(cv,2),
-                "단가($/kg)": round(pkg,5), "단가(원/kg)": round(pkg*XR,2)})
-        def _style_bp_r(row):
-            c = "#1F4E79" if row["품목"]=="BP" else "#1E8449"
-            return [f"background-color:{c};color:white"]*len(row)
-        st.dataframe(pd.DataFrame(_bp_rows).style
-            .apply(_style_bp_r, axis=1)
-            .format({"Ni 지불율":"{:.2f}","Co 지불율":"{:.2f}",
-                     "Ni Value($/t)":"${:,.2f}","Co Value($/t)":"${:,.2f}",
-                     "단가($/kg)":"${:.5f}","단가(원/kg)":"₩{:,.2f}"}),
-            use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # ── Section 2 & 3: 원가·마진 매트릭스 ───────────────────────────────────
-    st.markdown("#### ② 원가·마진 매트릭스")
-    if active_procs and active_scraps:
-        mc1, mc2 = st.columns(2)
-        with mc1:
-            st.caption("**재매입 원가** = 임가공비 ÷ 전환율  _(스크랩 매각↔재매입 상계 후, $/kg)_")
-            _cd = {"스크랩 유형": [s["name"] for s in active_scraps]}
-            for _proc in active_procs:
-                _cv = []
-                for _sc in active_scraps:
-                    _c = _proc.get("conditions",{}).get(_sc["id"],{})
-                    _pf = _c.get("processing_fee"); _cv2 = _c.get("conversion_rate")
-                    _cv.append(round(_pf/(_cv2/100),4) if (_pf is not None and _cv2 and _cv2>0) else None)
-                _cd[_proc["name"]] = _cv
-            _df_c = pd.DataFrame(_cd).set_index("스크랩 유형")
-            st.dataframe(_df_c.style
-                .map(lambda v: "background-color:#fdebd0" if (v is not None and not (isinstance(v,float) and pd.isna(v))) else "color:#aaa")
-                .format(lambda v: f"${float(v):.4f}" if (v is not None and not (isinstance(v,float) and pd.isna(v))) else "—", na_rep="—"),
-                use_container_width=True)
-        with mc2:
-            _rb_lbl = rpt_buyer_lbl if rpt_buyer else "매입사 선택 필요"
-            st.caption(f"**예상 마진** = 매각단가 − 재매입원가  _($/kg, 기준: {_rb_lbl})_")
-            if rpt_buyer:
-                _, _, _, _spkg = bp_price(NI, CO, rpt_buyer["ni_content"], rpt_buyer["co_content"],
-                                          rpt_buyer["ni_payable"], rpt_buyer["co_payable"])
-                _md = {"스크랩 유형": [s["name"] for s in active_scraps]}
-                _best_m = -999; _best_s = ""; _best_p = ""
-                for _proc in active_procs:
-                    _mv = []
-                    for _sc in active_scraps:
-                        _c = _proc.get("conditions",{}).get(_sc["id"],{})
-                        _pf = _c.get("processing_fee"); _cv2 = _c.get("conversion_rate")
-                        _bmc = round(_pf/(_cv2/100),4) if (_pf is not None and _cv2 and _cv2>0) else None
-                        if _bmc is not None:
-                            _m = round(_spkg - _bmc, 4); _mv.append(_m)
-                            if _m > _best_m: _best_m=_m; _best_s=_sc["name"]; _best_p=_proc["name"]
-                        else: _mv.append(None)
-                    _md[_proc["name"]] = _mv
-                _df_m = pd.DataFrame(_md).set_index("스크랩 유형")
-                def _cm(v):
-                    try:
-                        if pd.isna(v): return "color:#aaa"
-                    except: pass
-                    try: return ("background-color:#d5f5e3;color:#1e8449;font-weight:600"
-                                 if float(v)>=0 else "background-color:#fadbd8;color:#922b21;font-weight:600")
-                    except: return "color:#aaa"
-                st.dataframe(_df_m.style.map(_cm)
-                    .format(lambda v: f"${float(v):+.4f}" if (v is not None and not (isinstance(v,float) and pd.isna(v))) else "—", na_rep="—"),
-                    use_container_width=True)
-                if _best_m > -999:
-                    st.success(f"★ 최고 마진: **{_best_s} × {_best_p}**  →  "
-                               f"**${_best_m:+.4f}/kg** (₩{_best_m*XR:+,.0f}/kg)")
-            else:
-                st.info("마진 계산을 위해 매입사를 선택하세요.")
-    else:
-        st.info("임가공사 및 스크랩 유형 설정 후 매트릭스가 표시됩니다.")
-
-    st.divider()
 
     # ── FIFO 원가·보관비 사전 계산 (report 탭 전용) ──────────────────────────
     _rpt_fifo_rmc  = {}  # (sc_id, ship_id) → $/kg
@@ -3937,7 +3965,7 @@ with t_report:
         return round(tot3 * (inp_r3 / inp_tot3), 4) if inp_tot3 > 0 else 0.0
 
     # ── Section 3: 손익 요약 ─────────────────────────────────────────────────
-    st.markdown("#### ③ 손익 요약")
+    st.markdown("#### ① 손익 요약")
     st.caption("**매출이익** = BP 매각 − 임가공비 − 수출비  |  **실질 손익** = 매출이익 − 원료 취득원가 − 보관비  (원료: FIFO 우선 → 이동평균)")
 
     _pnl_by_month = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"inp":0.0,"cnt":0})
@@ -4099,7 +4127,7 @@ with t_report:
     st.divider()
 
     # ── Section 4: 선적 정산 현황 ────────────────────────────────────────────
-    st.markdown("#### ④ 선적 정산 현황")
+    st.markdown("#### ② 선적 정산 현황")
     if not _rpt_ships:
         st.info("등록된 선적건이 없습니다.")
     else:
@@ -4201,7 +4229,7 @@ with t_report:
     st.divider()
 
     # ── Section 5: 원료 재고 현황 ────────────────────────────────────────────
-    st.markdown("#### ⑤ 원료 재고 현황")
+    st.markdown("#### ③ 원료 재고 현황")
     _inv_cfg = cfg.get("raw_material_inventory", {})
     _inv_sc_list = [s for s in cfg.get("scrap_types",[]) if _inv_cfg.get(s["id"],{}).get("opening")]
     if not _inv_sc_list:
@@ -4265,7 +4293,7 @@ with t_report:
     st.divider()
 
     # ── Section 6: 출고 파이프라인 ───────────────────────────────────────────
-    st.markdown("#### ⑥ 출고 파이프라인")
+    st.markdown("#### ④ 출고 파이프라인")
     st.caption("임가공 출고 누적 vs B/L 처리 투입 누적 — 차이가 현재 임가공사 보유 중인 스크랩 추정량입니다.")
     _dr_all = cfg.get("dispatch_records", [])
     if not _dr_all:
@@ -4310,7 +4338,7 @@ with t_report:
     st.divider()
 
     # ── Section 7: 보관비 현황 ───────────────────────────────────────────────
-    st.markdown("#### ⑦ 보관비 현황")
+    st.markdown("#### ⑤ 보관비 현황")
     st.caption("수동 입력(storage_days) 및 FIFO 자동 계산 보관비를 스크랩 유형별로 집계합니다.")
     if not _rpt_ph_all:
         st.info("처리이력을 등록하면 보관비 현황이 표시됩니다.")
