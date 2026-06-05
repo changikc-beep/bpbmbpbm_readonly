@@ -3246,6 +3246,116 @@ with t_outflow:
                 "⚠️ 음수이면 출고 기록보다 B/L 투입량이 많음 → 출고 기록 누락 확인 필요"
             )
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # 원배출자(SK) 지급 계산
+    # ══════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.markdown("### 💴 원배출자(SK) 지급 계산")
+    st.caption("월별 입고량 × SK 납품단가 = 월별 지급액. 단가는 매월 직접 입력하세요.")
+
+    if "sk_prices" not in cfg:
+        cfg["sk_prices"] = {}
+
+    _sk_sc_list = [s for s in cfg.get("scrap_types", []) if s.get("active", True)]
+    _sk_tabs    = st.tabs([s["name"] for s in _sk_sc_list]) if _sk_sc_list else []
+
+    for _sk_tab, _sk_sc in zip(_sk_tabs, _sk_sc_list):
+        with _sk_tab:
+            _sk_scid = _sk_sc["id"]
+            _sk_inv  = cfg.get("raw_material_inventory", {}).get(_sk_scid, {})
+            _sk_purs = _sk_inv.get("purchases", [])
+
+            # 월별 입고량 집계
+            _sk_by_mo = {}
+            for _sp in _sk_purs:
+                _sp_mo  = (_sp.get("date") or "")[:7]
+                _sp_qty = float(_sp.get("quantity_kg") or 0)
+                if _sp_mo:
+                    _sk_by_mo[_sp_mo] = _sk_by_mo.get(_sp_mo, 0.0) + _sp_qty
+
+            if not _sk_by_mo:
+                st.info("입고 이력이 없습니다.")
+                continue
+
+            # 저장된 단가 로드
+            _sk_saved = cfg.get("sk_prices", {}).get(_sk_scid, {})
+
+            # 편집용 DataFrame 구성
+            _sk_rows = []
+            for _mo in sorted(_sk_by_mo.keys()):
+                _qty   = _sk_by_mo[_mo]
+                _price = float(_sk_saved.get(_mo, 0.0) or 0.0)
+                _sk_rows.append({
+                    "월":             _mo,
+                    "입고량 (kg)":    round(_qty, 0),
+                    "SK 단가 ($/kg)": _price,
+                })
+
+            _sk_df = pd.DataFrame(_sk_rows)
+
+            # 편집 테이블
+            _sk_edited = st.data_editor(
+                _sk_df,
+                column_config={
+                    "월":             st.column_config.TextColumn("월", disabled=True),
+                    "입고량 (kg)":    st.column_config.NumberColumn("입고량 (kg)", disabled=True, format="%,.0f"),
+                    "SK 단가 ($/kg)": st.column_config.NumberColumn("SK 단가 ($/kg)", format="%.5f",
+                                                                     min_value=0.0, step=0.0001),
+                },
+                use_container_width=True,
+                hide_index=True,
+                key=f"sk_editor_{_sk_scid}",
+            )
+
+            # 지급액 계산 및 표시
+            _sk_edited["지급액 (USD)"] = (_sk_edited["입고량 (kg)"] * _sk_edited["SK 단가 ($/kg)"]).round(2)
+            _sk_total_qty = _sk_edited["입고량 (kg)"].sum()
+            _sk_total_pay = _sk_edited["지급액 (USD)"].sum()
+            _sk_avg_price = _sk_total_pay / _sk_total_qty if _sk_total_qty > 0 else 0.0
+
+            # 지급액 표시
+            _sk_result_rows = []
+            for _, _sr in _sk_edited.iterrows():
+                _sk_result_rows.append({
+                    "월":          _sr["월"],
+                    "입고량 (kg)": _sr["입고량 (kg)"],
+                    "SK 단가":     _sr["SK 단가 ($/kg)"],
+                    "지급액 (USD)":_sr["지급액 (USD)"],
+                })
+            _sk_result_rows.append({
+                "월":          "합계",
+                "입고량 (kg)": _sk_total_qty,
+                "SK 단가":     _sk_avg_price,
+                "지급액 (USD)":_sk_total_pay,
+            })
+            st.dataframe(
+                pd.DataFrame(_sk_result_rows).style.apply(
+                    lambda row: ["font-weight:700"] * len(row) if row["월"] == "합계" else [""] * len(row),
+                    axis=1
+                ).format(na_rep="—", formatter={
+                    "입고량 (kg)": "{:,.0f}",
+                    "SK 단가":     lambda v: f"${v:.5f}" if v else "—",
+                    "지급액 (USD)":lambda v: f"${v:,.2f}" if v else "—",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+
+            _sk_m1, _sk_m2, _sk_m3 = st.columns(3)
+            _sk_m1.metric("총 입고량",   f"{_sk_total_qty:,.0f} kg")
+            _sk_m2.metric("총 지급액",   f"${_sk_total_pay:,.2f}")
+            _sk_m3.metric("평균 단가",   f"${_sk_avg_price:.5f}/kg")
+
+            # 저장
+            if st.button("💾 단가 저장", key=f"sk_save_{_sk_scid}", type="primary"):
+                if "sk_prices" not in cfg:
+                    cfg["sk_prices"] = {}
+                if _sk_scid not in cfg["sk_prices"]:
+                    cfg["sk_prices"][_sk_scid] = {}
+                for _, _sr in _sk_edited.iterrows():
+                    cfg["sk_prices"][_sk_scid][_sr["월"]] = float(_sr["SK 단가 ($/kg)"])
+                save_cfg(cfg)
+                st.toast("✅ SK 단가 저장 완료")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3956,6 +4066,153 @@ with t_report:
     _ya5.metric("BP 매각액",    f"${_yr_bp:,.0f}")
     _ya6.metric("거래 마진",     f"${_yr_net:+,.0f}",
                 delta_color="normal" if _yr_net >= 0 else "inverse")
+
+    st.divider()
+
+    # ── 재고 회전 계획 ────────────────────────────────────────────────────────
+    st.markdown("#### 📋 재고 회전 계획")
+    st.caption("보유일수 목표를 설정해 즉시·단기 배출 필요량을 파악합니다. FIFO Lot 기준으로 계산됩니다.")
+
+    _inv_col1, _inv_col2 = st.columns([1, 3])
+    with _inv_col1:
+        _target_days = st.number_input(
+            "목표 보유일수", min_value=1, max_value=365, value=30, step=1,
+            help="입고 후 이 기간 내에 배출하는 것을 목표로 합니다."
+        )
+        _urgent_days = st.number_input(
+            "긴급 기준 (잔여일)", min_value=1, max_value=30, value=7, step=1,
+            help="목표 기한까지 이 일수 이하면 긴급으로 표시합니다."
+        )
+
+    _inv_active_sc = [s for s in cfg.get("scrap_types", []) if s.get("active", True)]
+    _today_inv = date.today()
+
+    # 스크랩별 FIFO 잔량 분석
+    _plan_summary = []   # 전체 요약용
+    _plan_detail  = {}   # 스크랩별 상세
+
+    for _sc_p in _inv_active_sc:
+        _scid_p = _sc_p["id"]
+        try:
+            _, _, _rem_p = _fifo_lot_trace(cfg, _scid_p)
+        except Exception:
+            continue
+
+        _lots_active = [l for l in _rem_p if l.get("remain", 0) > 0.1]
+        if not _lots_active:
+            continue
+
+        _rows_p = []
+        _overdue_qty = _urgent_qty = _ok_qty = 0.0
+
+        for _lot in _lots_active:
+            _lot_date_str = (_lot.get("date") or "")[:10]
+            _lot_qty      = float(_lot.get("remain", 0))
+            try:
+                _lot_dt   = datetime.strptime(_lot_date_str, "%Y-%m-%d").date()
+                _elapsed  = (_today_inv - _lot_dt).days
+                _deadline = _lot_dt + __import__("datetime").timedelta(days=int(_target_days))
+                _remain_d = (_deadline - _today_inv).days
+            except Exception:
+                _elapsed = _remain_d = None
+                _deadline = None
+
+            if _remain_d is not None and _remain_d < 0:
+                _status = "🔴 초과"
+                _overdue_qty += _lot_qty
+            elif _remain_d is not None and _remain_d <= _urgent_days:
+                _status = "🟡 긴급"
+                _urgent_qty += _lot_qty
+            else:
+                _status = "🟢 정상"
+                _ok_qty += _lot_qty
+
+            _rows_p.append({
+                "Lot":          _lot.get("label", _lot_date_str),
+                "입고일":       _lot_date_str,
+                "잔량(kg)":     round(_lot_qty, 0),
+                "경과일":       _elapsed,
+                "목표기한":     _deadline.isoformat() if _deadline else "—",
+                "잔여일":       _remain_d,
+                "상태":         _status,
+                "원료단가($/kg)": _lot.get("unit_cost"),
+            })
+
+        _plan_detail[_sc_p["name"]] = _rows_p
+        _plan_summary.append({
+            "스크랩":         _sc_p["name"],
+            "🔴 즉시배출(kg)": round(_overdue_qty, 0),
+            "🟡 긴급배출(kg)": round(_urgent_qty, 0),
+            "🟢 정상(kg)":    round(_ok_qty, 0),
+            "총 잔량(kg)":    round(_overdue_qty + _urgent_qty + _ok_qty, 0),
+        })
+
+    if _plan_summary:
+        # 요약 테이블
+        _df_plan_sum = pd.DataFrame(_plan_summary)
+        _total_overdue = _df_plan_sum["🔴 즉시배출(kg)"].sum()
+        _total_urgent  = _df_plan_sum["🟡 긴급배출(kg)"].sum()
+        _total_ok      = _df_plan_sum["🟢 정상(kg)"].sum()
+
+        _sp1, _sp2, _sp3, _sp4 = st.columns(4)
+        _sp1.metric("🔴 즉시 배출 필요", f"{_total_overdue:,.0f} kg",
+                    help=f"목표 {_target_days}일 이미 초과한 Lot")
+        _sp2.metric(f"🟡 {_urgent_days}일 내 배출", f"{_total_urgent:,.0f} kg",
+                    help=f"목표 기한까지 {_urgent_days}일 이하")
+        _sp3.metric("🟢 정상", f"{_total_ok:,.0f} kg",
+                    help=f"목표 {_target_days}일 내 여유 있음")
+        _sp4.metric("총 잔량", f"{_total_overdue+_total_urgent+_total_ok:,.0f} kg")
+
+        def _style_plan_sum(row):
+            styles = [""] * len(row)
+            cols = list(row.index)
+            if "🔴 즉시배출(kg)" in cols and row["🔴 즉시배출(kg)"] > 0:
+                styles[cols.index("🔴 즉시배출(kg)")] = "background-color:#fadbd8;font-weight:600"
+            if "🟡 긴급배출(kg)" in cols and row["🟡 긴급배출(kg)"] > 0:
+                styles[cols.index("🟡 긴급배출(kg)")] = "background-color:#fef9e7;font-weight:600"
+            return styles
+
+        st.dataframe(
+            _df_plan_sum.style.apply(_style_plan_sum, axis=1).format({
+                "🔴 즉시배출(kg)": "{:,.0f}",
+                "🟡 긴급배출(kg)": "{:,.0f}",
+                "🟢 정상(kg)":    "{:,.0f}",
+                "총 잔량(kg)":    "{:,.0f}",
+            }),
+            use_container_width=True, hide_index=True,
+        )
+
+        # 스크랩별 Lot 상세
+        for _sc_nm_p, _rows_p2 in _plan_detail.items():
+            with st.expander(f"🔍 {_sc_nm_p} — Lot별 상세", expanded=False):
+                _df_p2 = pd.DataFrame(_rows_p2)
+
+                def _style_lot_row(row):
+                    st_val = row.get("상태","")
+                    if "🔴" in st_val:
+                        return ["background-color:#fadbd8"] * len(row)
+                    if "🟡" in st_val:
+                        return ["background-color:#fef9e7"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(
+                    _df_p2.style.apply(_style_lot_row, axis=1).format(na_rep="—", formatter={
+                        "잔량(kg)":        "{:,.0f}",
+                        "경과일":          lambda v: f"{v}일" if v is not None else "—",
+                        "잔여일":          lambda v: f"{v:+d}일" if v is not None else "—",
+                        "원료단가($/kg)":  lambda v: f"${v:.5f}" if v else "—",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+                _overdue_r = sum(r["잔량(kg)"] for r in _rows_p2 if "🔴" in r["상태"])
+                _urgent_r  = sum(r["잔량(kg)"] for r in _rows_p2 if "🟡" in r["상태"])
+                if _overdue_r > 0 or _urgent_r > 0:
+                    st.warning(
+                        f"즉시 배출 필요: **{_overdue_r:,.0f} kg** (목표 초과)"
+                        + (f"  |  {_urgent_days}일 내 배출: **{_urgent_r:,.0f} kg**" if _urgent_r > 0 else "")
+                    )
+    else:
+        st.info("FIFO Lot 정보가 없습니다. 입출고 기록 탭에서 기초재고와 입고 이력을 입력하세요.")
 
     st.divider()
 
