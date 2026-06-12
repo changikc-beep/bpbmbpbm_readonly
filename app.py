@@ -670,7 +670,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 
     flt_ids={v for k,v in buyer_opts.items() if k in flt_buy}
     show_ships=[s for s in shipments if s.get("status","provisional") in flt_stat
-                and s.get("buyer_id") in flt_ids]
+                and (not s.get("buyer_id") or s.get("buyer_id") in flt_ids)]
 
     if not show_ships and shipments:
         st.info("필터 조건에 맞는 선적건이 없습니다.")
@@ -3409,6 +3409,12 @@ def _match_buyer_id(cell_val, buyers):
             return b["id"]
     return None
 
+def _to_float(s):
+    """시트 셀 문자열 → float. 천 단위 쉼표 허용. 빈 문자열/None → 0.0."""
+    if not s:
+        return 0.0
+    return float(str(s).replace(",", "").strip())
+
 def _sync_from_gsheets(cfg_ref):
     """Google Sheets 3개 탭 → config 동기화 (덮어쓰기).
     반환: (성공 여부, 메시지 문자열)
@@ -3437,7 +3443,8 @@ def _sync_from_gsheets(cfg_ref):
                 # 열 수 보정
                 row = [c.strip().replace("\r","") for c in row] + [""] * 10
                 hbl, inv_no, ld, buyer_str, wkg, iusd, pm, fm, status, etd = row[:10]
-                if not hbl:
+                # HBL 공란(발급 전) 행도 처리 — 선적일+매입사+중량 복합키로 매핑
+                if not ld:   # 선적일도 없으면 의미없는 빈 행
                     continue
                 buyer_id = _match_buyer_id(buyer_str, buyers)
                 entry = {
@@ -3446,27 +3453,43 @@ def _sync_from_gsheets(cfg_ref):
                     "loading_date": ld,
                     "etd":         etd,
                     "buyer_id":    buyer_id or "",
-                    "weight_kg":   float(wkg) if wkg else 0.0,
-                    "invoice_usd": float(iusd) if iusd else 0.0,
+                    "weight_kg":   _to_float(wkg),
+                    "invoice_usd": _to_float(iusd),
                     "prov_month":  pm or "—",
                     "final_month": fm or "—",
                     "status":      status or "provisional",
                 }
-                if hbl in hbl_idx:
-                    # 기존 항목 업데이트 (고정 필드만, 정산 상세는 보존)
+                if hbl and hbl in hbl_idx:
+                    # HBL 있고 기존 항목 존재 → 업데이트
                     cfg_ref["shipments"][hbl_idx[hbl]].update(entry)
                     updated += 1
                 else:
-                    entry.update({
-                        "id": str(uuid.uuid4())[:8],
-                        "eta": "", "notes": "",
-                        "moisture_pct": None, "buyer_ni_content": None,
-                        "buyer_co_content": None,
-                        "other_adj_usd": None, "other_adj_desc": "",
-                    })
-                    cfg_ref.setdefault("shipments", []).append(entry)
-                    hbl_idx[hbl] = len(cfg_ref["shipments"]) - 1
-                    added += 1
+                    # HBL 공란이면 선적일+buyer_id+중량 복합키로 기존 항목 탐색
+                    _match_idx = None
+                    if not hbl:
+                        _wkg_f = _to_float(wkg)
+                        for _ci, _cs in enumerate(cfg_ref.get("shipments", [])):
+                            if (not _cs.get("hbl","").strip()
+                                    and _cs.get("loading_date","") == ld
+                                    and _cs.get("buyer_id","") == (buyer_id or "")
+                                    and abs(float(_cs.get("weight_kg",0)) - _wkg_f) < 1):
+                                _match_idx = _ci
+                                break
+                    if _match_idx is not None:
+                        cfg_ref["shipments"][_match_idx].update(entry)
+                        updated += 1
+                    else:
+                        entry.update({
+                            "id": str(uuid.uuid4())[:8],
+                            "eta": "", "notes": "",
+                            "moisture_pct": None, "buyer_ni_content": None,
+                            "buyer_co_content": None,
+                            "other_adj_usd": None, "other_adj_desc": "",
+                        })
+                        cfg_ref.setdefault("shipments", []).append(entry)
+                        if hbl:
+                            hbl_idx[hbl] = len(cfg_ref["shipments"]) - 1
+                        added += 1
             log.append(f"선적: 추가 {added}건 / 업데이트 {updated}건")
     except Exception as e:
         log.append(f"선적 탭 오류: {e}")
@@ -3488,9 +3511,9 @@ def _sync_from_gsheets(cfg_ref):
                     continue
                 new_purchases.setdefault(scid, []).append({
                     "date":        dt,
-                    "quantity_kg": float(qty),
-                    "ton_bags":    int(float(tb)) if tb else 0,
-                    "unit_cost":   float(price) if price else 0.0,
+                    "quantity_kg": _to_float(qty),
+                    "ton_bags":    int(_to_float(tb)),
+                    "unit_cost":   _to_float(price),
                     "notes":       notes,
                 })
             cnt = 0
@@ -3525,8 +3548,8 @@ def _sync_from_gsheets(cfg_ref):
                     if sc_nm:
                         _out_skip_sc.add(sc_nm)
                     continue
-                qty_f = float(qty) if qty else 0.0
-                tb_i  = int(float(tb)) if tb else 0
+                qty_f = _to_float(qty)
+                tb_i  = int(_to_float(tb))
                 if otype == "임가공출고":
                     pid = proc_map.get(proc_nm.lower())
                     if not pid:
