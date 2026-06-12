@@ -3386,11 +3386,12 @@ _GSHEET_SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+@st.cache_resource(ttl=3600, show_spinner=False)
 def _gsheet_connect():
-    """gspread 클라이언트 반환. 실패 시 예외 발생."""
+    """gspread 클라이언트 반환 (세션 간 공유, 1시간 캐시). 실패 시 예외 발생."""
     import gspread
     creds = _get_gcp_creds(_GSHEET_SCOPES)
-    return gspread.authorize(creds)
+    return gspread.Client(auth=creds)
 
 def _match_buyer_id(cell_val, buyers):
     """'ECOPRO (BP)' 형식 문자열 → buyer_id. 대소문자 무관."""
@@ -3475,6 +3476,7 @@ def _sync_from_gsheets(cfg_ref):
         rows = sh.worksheet("입고").get_all_values()
         if len(rows) > 1:
             new_purchases = {}  # scrap_id → [purchase list]
+            _pur_skip = set()
             for row in rows[1:]:
                 row = [c.strip() for c in row] + [""] * 6
                 sc_nm, dt, qty, tb, price, notes = row[:6]
@@ -3482,6 +3484,7 @@ def _sync_from_gsheets(cfg_ref):
                     continue
                 scid = scrap_map.get(sc_nm)
                 if not scid:
+                    _pur_skip.add(sc_nm)
                     continue
                 new_purchases.setdefault(scid, []).append({
                     "date":        dt,
@@ -3498,7 +3501,10 @@ def _sync_from_gsheets(cfg_ref):
                     }
                 cfg_ref["raw_material_inventory"][scid]["purchases"] = plist
                 cnt += len(plist)
-            log.append(f"입고: {cnt}건 동기화")
+            _pur_msg = f"입고: {cnt}건 동기화"
+            if _pur_skip:
+                _pur_msg += f" ⚠️ 스크랩명 미매핑 스킵: {', '.join(sorted(_pur_skip))}"
+            log.append(_pur_msg)
     except Exception as e:
         log.append(f"입고 탭 오류: {e}")
 
@@ -3508,6 +3514,7 @@ def _sync_from_gsheets(cfg_ref):
         if len(rows) > 1:
             new_dr, new_ds = [], []
             seen_dr_sc, seen_ds_sc = set(), set()
+            _out_skip_sc, _out_skip_proc = set(), set()
             for row in rows[1:]:
                 row = [c.strip() for c in row] + [""] * 8
                 otype, dt, sc_nm, proc_nm, qty, tb, notes = row[:7]
@@ -3515,12 +3522,16 @@ def _sync_from_gsheets(cfg_ref):
                     continue
                 scid  = scrap_map.get(sc_nm)
                 if not scid:
+                    if sc_nm:
+                        _out_skip_sc.add(sc_nm)
                     continue
                 qty_f = float(qty) if qty else 0.0
                 tb_i  = int(float(tb)) if tb else 0
                 if otype == "임가공출고":
                     pid = proc_map.get(proc_nm.lower())
                     if not pid:
+                        if proc_nm:
+                            _out_skip_proc.add(proc_nm)
                         continue
                     seen_dr_sc.add(scid)
                     new_dr.append({
@@ -3546,7 +3557,12 @@ def _sync_from_gsheets(cfg_ref):
                 r for r in cfg_ref.get("direct_sales", [])
                 if r.get("scrap_type_id") not in seen_ds_sc
             ] + new_ds
-            log.append(f"출고: 임가공 {len(new_dr)}건 / 직접판매 {len(new_ds)}건 동기화")
+            _out_msg = f"출고: 임가공 {len(new_dr)}건 / 직접판매 {len(new_ds)}건 동기화"
+            if _out_skip_sc:
+                _out_msg += f" ⚠️ 스크랩명 미매핑: {', '.join(sorted(_out_skip_sc))}"
+            if _out_skip_proc:
+                _out_msg += f" ⚠️ 임가공사명 미매핑: {', '.join(sorted(_out_skip_proc))}"
+            log.append(_out_msg)
     except Exception as e:
         log.append(f"출고 탭 오류: {e}")
 
@@ -3571,14 +3587,21 @@ with t_idx:
             if _ok:
                 save_cfg(cfg)
                 from datetime import datetime as _dt
-                st.session_state["last_sync_time"] = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+                _now_str = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state["last_sync_time"] = _now_str
+                st.session_state["last_sync_log"] = _msg
                 st.toast("✅ 동기화 완료")
                 st.rerun()
             else:
-                st.error(_msg)
+                st.error(f"동기화 실패: {_msg}")
         _last_sync = st.session_state.get("last_sync_time")
         if _last_sync:
             st.caption(f"마지막 동기화: {_last_sync}")
+        _last_log = st.session_state.get("last_sync_log")
+        if _last_log:
+            with st.expander("동기화 결과 상세", expanded=False):
+                for _ll in _last_log.split("\n"):
+                    st.caption(_ll)
     with _gs_c2:
         st.info(
             "**동기화 범위**  \n"
