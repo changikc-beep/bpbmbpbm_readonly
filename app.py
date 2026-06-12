@@ -2285,8 +2285,9 @@ with t_proc:
     # HBL 연결 옵션 목록
     ship_opts_ph = {"(미연결)": ""}
     for _soi, _sos in enumerate(ship_list_ph):
-        _sob = buyer_map_ph.get(_sos.get("buyer_id",""), {})
-        ship_opts_ph[f"#{_soi+1}  {_sos.get('hbl','—')}  ({_sos.get('loading_date','?')} · {_sob.get('name','?')})"] = _sos["id"]
+        _sob    = buyer_map_ph.get(_sos.get("buyer_id",""), {})
+        _sohbl  = _sos.get("hbl","").strip() or f"HBL미정 {_sos.get('weight_kg',0):,.0f}kg"
+        ship_opts_ph[f"#{_soi+1}  {_sohbl}  ({_sos.get('loading_date','?')} · {_sob.get('name','?')})"] = _sos["id"]
 
     # ── 서브탭 ──────────────────────────────────────────────────────────────
     proc_tab1, proc_tab2 = st.tabs(["📋 전체 내역", "📦 세부 내역 (HBL)"])
@@ -2419,10 +2420,10 @@ with t_proc:
         _pp_opts_t2 = {p["name"]: p["id"] for p in cfg.get("processors",[])}
         _ps_opts_t2 = {s["name"]: s["id"] for s in scrap_list}
         # 선적건 HBL 선택용 (미연결 배치에서 연결할 때 사용)
-        _ship_opts_t2 = {"(미연결)": ""} | {
-            f"{s.get('hbl','—')} [{s.get('loading_date','?')[:7]}]": s["id"]
-            for s in sorted(ship_list_ph, key=lambda x: x.get("loading_date",""), reverse=True)
-        }
+        _ship_opts_t2 = {"(미연결)": ""}
+        for _so in sorted(ship_list_ph, key=lambda x: x.get("loading_date",""), reverse=True):
+            _so_hbl = _so.get("hbl","").strip() or f"HBL미정 {_so.get('weight_kg',0):,.0f}kg"
+            _ship_opts_t2[f"{_so_hbl} [{_so.get('loading_date','?')[:7]}]"] = _so["id"]
 
         # ── 새 선적건 인라인 등록 ────────────────────────────────────────────
         with st.expander("➕ 새 선적건 등록", expanded=not ship_list_ph):
@@ -2481,8 +2482,9 @@ with t_proc:
             _icon2  = {"provisional":"🟡","final":"🟢","paid":"🔵"}.get(_s2.get("status",""),"⚪")
             _bcnt2  = _t2_batch_cnt.get(_s2["id"], 0)
             _bcnt_lbl = f"  [{_bcnt2}건]" if _bcnt2 else "  [배치없음]"
+            _hbl_lbl = _s2.get("hbl","").strip() or f"HBL미정 {_s2.get('weight_kg',0):,.0f}kg"
             _t2_hbl_d[
-                f"{_icon2}  {_s2.get('hbl','—')}  |  "
+                f"{_icon2}  {_hbl_lbl}  |  "
                 f"{_s2.get('loading_date','?')[:7]}  "
                 f"{_b2.get('name','?')} ({_b2.get('product','?')})"
                 f"{_bcnt_lbl}"
