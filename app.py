@@ -4206,14 +4206,51 @@ with t_report:
     _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
     _yr_inv   = sum(float(s.get("invoice_usd",0) or 0) for s in _yr_ships)
     _yr_net   = _yr_bp - _yr_pf - _yr_eu
-    _ya1,_ya2,_ya3,_ya4,_ya5,_ya6 = st.columns(6)
+    _ya1,_ya2,_ya3,_ya4,_ya5 = st.columns(5)
     _ya1.metric("선적 건수",    f"{len(_yr_ships)}건")
     _ya2.metric("선적 중량",    f"{sum(float(s.get('weight_kg',0)) for s in _yr_ships):,.0f} kg")
     _ya3.metric("BP 생산",      f"{_yr_out:,.0f} kg")
     _ya4.metric("Invoice 합계", f"${_yr_inv:,.0f}")
-    _ya5.metric("BP 매각액",    f"${_yr_bp:,.0f}")
-    _ya6.metric("거래 마진",     f"${_yr_net:+,.0f}",
+    _ya5.metric("거래 마진",     f"${_yr_net:+,.0f}",
                 delta_color="normal" if _yr_net >= 0 else "inverse")
+
+    # ── 월별 거래 마진 추이 ──────────────────────────────────────────────────
+    _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0})
+    for r in _yr_ph:
+        _mo_key = (_rpt_ship_m0.get(r.get("shipment_id",""), {}).get("loading_date","") or "")[:7]
+        if not _mo_key:
+            continue
+        _mo_agg[_mo_key]["bp"] += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
+        _mo_agg[_mo_key]["pf"] += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
+        _mo_agg[_mo_key]["eu"] += _ph_export_usd(r, cfg)
+    if _mo_agg:
+        _mo_rows = []
+        for _mk in sorted(_mo_agg.keys()):
+            _mv = _mo_agg[_mk]
+            _mo_net = _mv["bp"] - _mv["pf"] - _mv["eu"]
+            _mo_rows.append({"월": _mk, "거래 마진": round(_mo_net, 2),
+                              "구분": "흑자" if _mo_net >= 0 else "적자"})
+        try:
+            import plotly.express as px
+            _df_mo = pd.DataFrame(_mo_rows)
+            _fig_mo = px.bar(
+                _df_mo, x="월", y="거래 마진", color="구분", text="거래 마진",
+                color_discrete_map={"흑자": "#2ECC71", "적자": "#E74C3C"},
+            )
+            _fig_mo.update_traces(texttemplate="$%{y:,.0f}", textposition="outside")
+            _fig_mo.add_hline(y=0, line_color="rgba(255,255,255,0.3)", line_width=1)
+            _fig_mo.update_layout(
+                height=320, showlegend=False,
+                margin=dict(l=10, r=10, t=30, b=10),
+                plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
+                font=dict(color="#D0D0E8"),
+                xaxis_title="", yaxis_title="",
+            )
+            _fig_mo.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
+            st.markdown(f"#### 📈 {_cur_year}년 월별 거래 마진 추이")
+            st.plotly_chart(_fig_mo, use_container_width=True)
+        except ImportError:
+            pass
 
     st.divider()
 
