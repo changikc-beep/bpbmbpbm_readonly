@@ -3460,7 +3460,6 @@ def _sync_from_gsheets(cfg_ref):
     """Google Sheets 3개 탭 → config 동기화 (덮어쓰기).
     반환: (성공 여부, 메시지 문자열)
     """
-    import gspread
     try:
         gc = _gsheet_connect()
         sh = gc.open(_GSHEET_NAME)
