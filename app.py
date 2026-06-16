@@ -3466,19 +3466,21 @@ def _sync_from_gsheets(cfg_ref):
                     cfg_ref["shipments"][hbl_idx[hbl]].update(entry)
                     updated += 1
                 else:
-                    # HBL 공란이면 선적일+buyer_id+중량 복합키로 기존 항목 탐색
+                    # HBL 공란이거나, HBL이 새로 채워졌는데 기존엔 공란이었던 경우
+                    # → 선적일+buyer_id+중량 복합키로 기존 항목(공란 HBL) 탐색
                     _match_idx = None
-                    if not hbl:
-                        _wkg_f = _to_float(wkg)
-                        for _ci, _cs in enumerate(cfg_ref.get("shipments", [])):
-                            if (not _cs.get("hbl","").strip()
-                                    and _cs.get("loading_date","") == ld
-                                    and _cs.get("buyer_id","") == (buyer_id or "")
-                                    and abs(float(_cs.get("weight_kg",0)) - _wkg_f) < 1):
-                                _match_idx = _ci
-                                break
+                    _wkg_f = _to_float(wkg)
+                    for _ci, _cs in enumerate(cfg_ref.get("shipments", [])):
+                        if (not _cs.get("hbl","").strip()
+                                and _cs.get("loading_date","") == ld
+                                and _cs.get("buyer_id","") == (buyer_id or "")
+                                and abs(float(_cs.get("weight_kg",0)) - _wkg_f) < 1):
+                            _match_idx = _ci
+                            break
                     if _match_idx is not None:
                         cfg_ref["shipments"][_match_idx].update(entry)
+                        if hbl:
+                            hbl_idx[hbl] = _match_idx
                         updated += 1
                     else:
                         entry.update({
