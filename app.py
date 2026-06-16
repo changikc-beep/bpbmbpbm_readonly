@@ -778,8 +778,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         st.divider()
 
         # ── 개별 선적건 expander ────────────────────────────────────────────────
+        _ship_id_idx = {sh.get("id"): _ri for _ri, sh in enumerate(shipments)}
         for i,s in enumerate(show_ships):
-            real_i=shipments.index(s)
+            real_i=_ship_id_idx[s["id"]]
             b=buyer_map.get(s.get("buyer_id"),{})
             buyer_lbl=f"{b.get('name','?')} ({b.get('product','?')})"
             # 상태 텍스트 (expander는 HTML 미지원 → 이모지 사용)
@@ -2885,13 +2886,14 @@ with t_outflow:
                     for p in _purs_i]
                 _deld1, _deld2 = st.columns([4,1])
                 with _deld1:
-                    _del_sel_i = st.selectbox("삭제할 입고 건", _del_lbls_i, key=f"inv_del_sel_{_isid}")
+                    # 인덱스를 값으로 사용 — 라벨 중복(동일 날짜·수량·단가) 시 오삭제 방지
+                    _di_i = st.selectbox("삭제할 입고 건", range(len(_purs_i)),
+                                         format_func=lambda i: _del_lbls_i[i], key=f"inv_del_sel_{_isid}")
                 with _deld2:
                     st.markdown("&nbsp;", unsafe_allow_html=True)
                     with st.popover("🗑️", use_container_width=True):
-                        st.warning(f"입고 건 삭제:\n{_del_sel_i}")
+                        st.warning(f"입고 건 삭제:\n{_del_lbls_i[_di_i]}")
                         if st.button("삭제 확인", key=f"inv_del_cfm_{_isid}", type="primary", use_container_width=True):
-                            _di_i = _del_lbls_i.index(_del_sel_i)
                             _pur_copy_i = list(_purs_i); _pur_copy_i.pop(_di_i)
                             cfg["raw_material_inventory"][_isid]["purchases"] = _pur_copy_i
                             save_cfg(cfg); st.rerun()
@@ -2953,13 +2955,14 @@ with t_outflow:
         ]
         _drd1, _drd2 = st.columns([4, 1])
         with _drd1:
-            _dr_del_sel = st.selectbox("삭제할 출고 건", _dr_del_opts, key="dr_del_sel")
+            # 인덱스를 값으로 사용 — 라벨 중복 시 오삭제 방지
+            _dri = st.selectbox("삭제할 출고 건", range(len(_dr_list)),
+                                 format_func=lambda i: _dr_del_opts[i], key="dr_del_sel")
         with _drd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
             with st.popover("🗑️", use_container_width=True):
-                st.warning(f"임가공 출고 삭제:\n{_dr_del_sel}")
+                st.warning(f"임가공 출고 삭제:\n{_dr_del_opts[_dri]}")
                 if st.button("삭제 확인", key="dr_del_cfm", type="primary", use_container_width=True):
-                    _dri = _dr_del_opts.index(_dr_del_sel)
                     cfg["dispatch_records"].pop(_dri)
                     save_cfg(cfg); st.rerun()
     else:
@@ -3031,13 +3034,14 @@ with t_outflow:
         ]
         _dsd1, _dsd2 = st.columns([4, 1])
         with _dsd1:
-            _ds_del_sel = st.selectbox("삭제할 판매 건", _ds_del_opts, key="ds_del_sel")
+            # 인덱스를 값으로 사용 — 라벨 중복 시 오삭제 방지
+            _dsi = st.selectbox("삭제할 판매 건", range(len(_ds_list)),
+                                 format_func=lambda i: _ds_del_opts[i], key="ds_del_sel")
         with _dsd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
             with st.popover("🗑️", use_container_width=True):
-                st.warning(f"직접 판매 삭제:\n{_ds_del_sel}")
+                st.warning(f"직접 판매 삭제:\n{_ds_del_opts[_dsi]}")
                 if st.button("삭제 확인", key="ds_del_cfm", type="primary", use_container_width=True):
-                    _dsi = _ds_del_opts.index(_ds_del_sel)
                     cfg["direct_sales"].pop(_dsi)
                     save_cfg(cfg); st.rerun()
     else:
@@ -3444,10 +3448,14 @@ def _match_buyer_id(cell_val, buyers):
         for b in buyers:
             if b["name"].upper() == name_part and b["product"].upper() == prod_part:
                 return b["id"]
-    # 이름만으로 fallback
+    # 이름만으로 fallback — 정확히 일치하는 것을 우선, 그래도 없으면 가장 긴(구체적인) 이름 매칭
+    vu = v.upper()
     for b in buyers:
-        if b["name"].upper() in v.upper():
+        if b["name"].upper() == vu:
             return b["id"]
+    _sub_matches = [b for b in buyers if b["name"].upper() in vu]
+    if _sub_matches:
+        return max(_sub_matches, key=lambda b: len(b["name"]))["id"]
     return None
 
 def _to_float(s):
@@ -4150,7 +4158,7 @@ with t_report:
     st.markdown(f"#### 📅 {_cur_year}년 누계")
     _yr_ph    = [r for r in _rpt_ph_all
                  if (_rpt_ship_m0.get(r.get("shipment_id",""),{}).get("loading_date","") or "")[:4] == str(_cur_year)]
-    _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year) and s.get("hbl")]
+    _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year)]
     _yr_bp    = sum(float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0) for r in _yr_ph)
     _yr_pf    = sum(float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _yr_ph)
     _yr_eu    = sum(_ph_export_usd(r, cfg) for r in _yr_ph)
