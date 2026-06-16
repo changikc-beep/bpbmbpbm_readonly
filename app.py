@@ -671,6 +671,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
     flt_ids={v for k,v in buyer_opts.items() if k in flt_buy}
     show_ships=[s for s in shipments if s.get("status","provisional") in flt_stat
                 and (not s.get("buyer_id") or s.get("buyer_id") in flt_ids)]
+    show_ships=sorted(show_ships, key=lambda x: x.get("loading_date","9999"))
 
     if not show_ships and shipments:
         st.info("필터 조건에 맞는 선적건이 없습니다.")
@@ -680,8 +681,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         # ── 📅 항차 일정 타임라인 ──────────────────────────────────────────────
         st.markdown("#### 📅 항차 일정")
         _tl = []
-        for _si, _s in enumerate(
-                sorted(show_ships, key=lambda x: x.get("loading_date","9999")), 1):
+        for _si, _s in enumerate(show_ships, 1):
             _b2  = buyer_map.get(_s.get("buyer_id",""), {})
             _ld2 = _s.get("loading_date","") or "미정"
             _eta2= _s.get("eta","") or "TBD"
@@ -2475,6 +2475,10 @@ with t_proc:
             if _sid_c:
                 _t2_batch_cnt[_sid_c] = _t2_batch_cnt.get(_sid_c, 0) + 1
         _unlinked_cnt = sum(1 for _ph_c in ph_list if not _ph_c.get("shipment_id",""))
+        # 고아 배치: shipment_id가 있지만 해당 선적건이 삭제되어 존재하지 않는 배치
+        _valid_sids   = {s["id"] for s in ship_list_ph}
+        _orphan_cnt   = sum(1 for _ph_c in ph_list
+                             if _ph_c.get("shipment_id","") and _ph_c.get("shipment_id","") not in _valid_sids)
 
         _t2_hbl_d = {"─ HBL 선택 ─": None}
         for _s2 in sorted(ship_list_ph, key=lambda x: x.get("loading_date",""), reverse=True):
@@ -2491,6 +2495,8 @@ with t_proc:
             ] = _s2["id"]
         _unlinked_lbl = f"🔖 미연결 배치" + (f"  [{_unlinked_cnt}건]" if _unlinked_cnt else "  [없음]")
         _t2_hbl_d[_unlinked_lbl] = "__unlinked__"
+        if _orphan_cnt:
+            _t2_hbl_d[f"🔗💥 깨진 연결 (선적건 삭제됨)  [{_orphan_cnt}건]"] = "__orphan__"
 
         _t2_sel = st.selectbox("HBL 선택", list(_t2_hbl_d.keys()), key="t2_hbl_sel",
                                label_visibility="collapsed")
@@ -2585,6 +2591,39 @@ with t_proc:
                 st.warning(f"⚠️ 미연결 배치 {len(_unlinked)}건 — 배치를 열어 HBL을 연결하세요.")
                 for _uri, _up in _unlinked:
                     _slim_batch_expander(ph_list, _uri, _up, None, {})
+
+        elif _t2_sid == "__orphan__":
+            _orphans = [(i,p) for i,p in enumerate(ph_list)
+                        if p.get("shipment_id","") and p.get("shipment_id","") not in _valid_sids]
+            if not _orphans:
+                st.success("깨진 연결 없음 ✅")
+            else:
+                st.error(f"💥 연결된 선적건이 삭제되어 고아가 된 배치 {len(_orphans)}건 — "
+                         f"손익 분석 탭에 'HBL —' 카드로 표시됩니다. 삭제하거나 다른 HBL에 재연결하세요.")
+                for _ori, _op in _orphans:
+                    _sc_o = scrap_map_ph.get(_op.get("scrap_type_id",""), {}).get("name","?")
+                    _proc_o = proc_map_ph.get(_op.get("processor_id",""), {}).get("name","?")
+                    with st.expander(
+                        f"💥 {_proc_o} · {_sc_o} · output {_op.get('output_kg',0):,.0f}kg "
+                        f"(존재하지 않는 shipment_id: {_op.get('shipment_id','')})",
+                        expanded=False,
+                    ):
+                        st.caption(f"배치 ID: {_op.get('id','')}")
+                        _oc1, _oc2 = st.columns(2)
+                        with _oc1:
+                            _o_relink_sel = st.selectbox(
+                                "다른 HBL로 재연결", list(_ship_opts_t2.keys()),
+                                key=f"orphan_relink_{_op.get('id','')}",
+                            )
+                            if st.button("재연결", key=f"orphan_relink_btn_{_op.get('id','')}"):
+                                ph_list[_ori]["shipment_id"] = _ship_opts_t2[_o_relink_sel]
+                                save_cfg(cfg); st.toast("✅ 재연결 완료"); st.rerun()
+                        with _oc2:
+                            with st.popover("🗑️ 배치 삭제", use_container_width=True):
+                                st.warning("이 고아 배치를 삭제합니다. 되돌릴 수 없습니다.")
+                                if st.button("삭제 확인", key=f"orphan_del_cfm_{_op.get('id','')}",
+                                             type="primary", use_container_width=True):
+                                    ph_list.pop(_ori); save_cfg(cfg); st.rerun()
 
         else:
             _t2_ship  = ship_map_ph.get(_t2_sid, {})
