@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-st.set_page_config(page_title="BP/BM 단가 계산기", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
     section[data-testid="stSidebar"]{min-width:270px}
@@ -544,7 +544,7 @@ with st.sidebar:
     st.divider()
     ST = st.selectbox("정산 구분", ["Provisional  (M-1)","Final  (M+0)"])
 
-st.title("BP / BM 단가 계산기")
+st.title("BP / BM 재고·손익 관리")
 
 (t_report,t_bp,t_sens,
  t_ship,t_freight,t_pnl,
