@@ -3681,10 +3681,17 @@ def _sync_from_gsheets(cfg_ref):
 with t_idx:
     # ── Google Sheets 동기화 ─────────────────────────────────────────────────
     st.subheader("🔄 Google Sheets 동기화")
-    st.caption(
-        f"시트: **{_GSHEET_NAME}**  |  탭: 선적 / 입고 / 출고  |  "
-        f"서비스 계정: `bp-calc-sync@bp-calculator-498206.iam.gserviceaccount.com`"
-    )
+    if READ_ONLY:
+        st.caption(f"시트: **{_GSHEET_NAME}**  |  탭: 선적 / 입고 / 출고")
+    else:
+        try:
+            _svc_email = _get_gcp_creds(_GSHEET_SCOPES).service_account_email
+        except Exception:
+            _svc_email = "—"
+        st.caption(
+            f"시트: **{_GSHEET_NAME}**  |  탭: 선적 / 입고 / 출고  |  "
+            f"서비스 계정: `{_svc_email}`"
+        )
 
     _gs_c1, _gs_c2 = st.columns([2, 3])
     with _gs_c1:
