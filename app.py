@@ -1793,7 +1793,7 @@ with t_pnl:
                             ):
                                 _lot_qty  = _lv["qty"]
                                 _lot_pct  = _lot_qty / _lot_total_qty * 100 if _lot_total_qty else 0
-                                _lot_date = (_lv.get("lot_date") or "")[:7] or "기초재고"
+                                _lot_date = (_lv.get("lot_date") or "")[:7] or ("기초재고" if "기초재고" in _lot_lbl else "—")
                                 _lot_uc   = _lv.get("unit_cost")
                                 _lot_rows.append({
                                     "입고월":     _lot_date,
