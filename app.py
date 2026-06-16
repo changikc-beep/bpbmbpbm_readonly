@@ -29,6 +29,36 @@ _GSHEET_CREDS = os.path.join(os.path.dirname(__file__), "bp-calculator-498206-43
 _HAS_LOCAL_CREDS = os.path.exists(_GSHEET_CREDS)
 _IS_CLOUD        = not _HAS_LOCAL_CREDS   # 로컬 인증 파일 없으면 클라우드 모드
 
+# ── 읽기 전용 배포 모드 ──────────────────────────────────────────────────────
+# secrets.toml(또는 Streamlit Cloud Secrets)에 `read_only = true` 를 설정한
+# 별도 배포본에서만 켜짐. 원본 앱의 secrets에는 이 키가 없으므로 항상 False.
+try:
+    READ_ONLY = bool(st.secrets.get("read_only", False))
+except Exception:
+    READ_ONLY = False
+
+if READ_ONLY:
+    st.warning(
+        "🔒 **읽기 전용 모드** — 모든 저장·삭제·동기화 버튼이 비활성화되어 있습니다. "
+        "데이터는 변경되지 않습니다.",
+        icon="🔒",
+    )
+    _ro_orig_button       = st.button
+    _ro_orig_form_submit  = st.form_submit_button
+
+    def _ro_button(*args, **kwargs):
+        kwargs["disabled"] = True
+        _ro_orig_button(*args, **kwargs)
+        return False
+
+    def _ro_form_submit(*args, **kwargs):
+        kwargs["disabled"] = True
+        _ro_orig_form_submit(*args, **kwargs)
+        return False
+
+    st.button = _ro_button
+    st.form_submit_button = _ro_form_submit
+
 def _get_gcp_creds(scopes):
     """로컬: 인증 JSON 파일 / 클라우드: Streamlit Secrets."""
     from google.oauth2.service_account import Credentials
@@ -77,6 +107,9 @@ def load_cfg():
 
 def save_cfg(c):
     """항상 Google Drive에 저장 (로컬·클라우드 공통 원본)."""
+    if READ_ONLY:
+        st.error("🔒 읽기 전용 모드 — 저장이 차단되었습니다.")
+        st.stop()
     _save_cfg_drive(c)
     # 로컬 개발 편의용: Drive와 별도로 로컬 백업 유지
     if _HAS_LOCAL_CREDS and os.path.exists(CONFIG_FILE):
@@ -3359,6 +3392,7 @@ with t_outflow:
                 use_container_width=True,
                 hide_index=True,
                 key=f"sk_editor_{_sk_scid}",
+                disabled=READ_ONLY,
             )
 
             # 지급액 계산
