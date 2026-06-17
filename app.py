@@ -5108,17 +5108,19 @@ def _avg_conv_rate(cfg, scrap_id):
              if r.get("scrap_type_id") == scrap_id and r.get("conversion_rate_pct")]
     return round(sum(rates) / len(rates), 1) if rates else 80.0
 
-def _at_processor_raw_kg(cfg, scrap_id):
-    """임가공사에 있는 미처리 원료 추정량(kg) = 출하 누계 − 처리 이력 투입 누계."""
+def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
+    """임가공사에 있는 미처리 원료 추정량(kg) = 출하 누계 − 처리 이력 투입 누계.
+    processor_id 지정 시 해당 임가공사 한정."""
+    def _pr_ok(pid): return processor_id is None or pid == processor_id
     dispatched = sum(
         float(dr.get("quantity_kg") or 0)
         for dr in cfg.get("dispatch_records", [])
-        if dr.get("scrap_type_id") == scrap_id
+        if dr.get("scrap_type_id") == scrap_id and _pr_ok(dr.get("processor_id"))
     )
     processed = sum(
         _ph_input_kg(r)
         for r in cfg.get("processing_history", [])
-        if r.get("scrap_type_id") == scrap_id
+        if r.get("scrap_type_id") == scrap_id and _pr_ok(r.get("processor_id"))
     )
     return max(0.0, dispatched - processed)
 
@@ -5157,8 +5159,9 @@ def _contract_metrics(cfg, contract):
     warehouse_raw_kg  = sum(lot.get("remain", 0) for lot in _lot_rem)
     warehouse_bp_mt   = warehouse_raw_kg * conv / 100 / 1000
 
-    # 임가공사 미처리 → BP 예상
-    at_proc_raw_kg = _at_processor_raw_kg(cfg, scrap_id)
+    # 임가공사 미처리 → BP 예상 (계약에 임가공사 지정 시 해당 임가공사만)
+    _ct_proc_id    = contract.get("processor_id") or None
+    at_proc_raw_kg = _at_processor_raw_kg(cfg, scrap_id, _ct_proc_id)
     at_proc_bp_mt  = at_proc_raw_kg * conv / 100 / 1000
 
     total_avail_mt = warehouse_bp_mt + at_proc_bp_mt
@@ -5193,36 +5196,41 @@ with t_contract:
     _ct_list    = cfg.setdefault("contracts", [])
     _ct_buyers  = {b["id"]: b for b in cfg.get("buyers", [])}
     _ct_scraps  = {s["id"]: s for s in cfg.get("scrap_types", [])}
+    _ct_procs   = {p["id"]: p for p in cfg.get("processors", [])}
     _ct_sc_opts = {s["name"]: s["id"] for s in cfg.get("scrap_types", []) if s.get("active", True)}
     _ct_by_opts = {b["name"]: b["id"] for b in cfg.get("buyers", []) if b.get("active", True)}
+    _ct_pr_opts = {"전체 (구분 없음)": ""} | {p["name"]: p["id"] for p in cfg.get("processors", []) if p.get("active", True)}
 
     # ── 계약 등록 ────────────────────────────────────────────────────────────
     with st.expander("➕ 계약 등록", expanded=not _ct_list):
         _cf1, _cf2 = st.columns(2)
-        _ct_buyer_sel  = _cf1.selectbox("매입사",  list(_ct_by_opts), key="ct_buyer")
-        _ct_sc_sel     = _cf2.selectbox("원료 유형", list(_ct_sc_opts), key="ct_sc")
+        _ct_buyer_sel = _cf1.selectbox("매입사",   list(_ct_by_opts), key="ct_buyer")
+        _ct_sc_sel    = _cf2.selectbox("원료 유형", list(_ct_sc_opts), key="ct_sc")
         _cf3, _cf4, _cf5 = st.columns(3)
-        _ct_qty   = _cf3.number_input("계약량 (MT)", min_value=0.0, step=1.0, format="%.1f", key="ct_qty")
-        _ct_tol   = _cf4.number_input("허용 오차 (%)", min_value=0.0, max_value=20.0, value=5.0, step=1.0, format="%.0f", key="ct_tol")
-        _ct_prod  = _cf5.selectbox("제품", ["BP", "BM"], key="ct_prod")
-        _cf6, _cf7 = st.columns(2)
-        _ct_start = _cf6.text_input("계약 시작일 (YYYY-MM-DD)", key="ct_start")
-        _ct_end   = _cf7.text_input("계약 종료일 (YYYY-MM-DD)", key="ct_end")
+        _ct_qty  = _cf3.number_input("계약량 (MT)", min_value=0.0, step=1.0, format="%.1f", key="ct_qty")
+        _ct_tol  = _cf4.number_input("허용 오차 (%)", min_value=0.0, max_value=20.0, value=5.0, step=1.0, format="%.0f", key="ct_tol")
+        _ct_prod = _cf5.selectbox("제품", ["BP", "BM"], key="ct_prod")
+        _cf6, _cf7, _cf8 = st.columns(3)
+        _ct_start  = _cf6.text_input("계약 시작일 (YYYY-MM-DD)", key="ct_start")
+        _ct_end    = _cf7.text_input("계약 종료일 (YYYY-MM-DD)", key="ct_end")
+        _ct_pr_sel = _cf8.selectbox("임가공사 (선택)", list(_ct_pr_opts), key="ct_proc",
+                                     help="지정 시 해당 임가공사 재고만 충당에 반영")
         _ct_notes = st.text_input("메모", key="ct_notes")
         if st.button("💾 계약 등록", key="ct_add_btn"):
             if not _ct_buyer_sel or not _ct_sc_sel or _ct_qty <= 0:
                 st.error("매입사, 원료 유형, 계약량을 입력하세요.")
             else:
                 _ct_list.append({
-                    "id":               str(uuid.uuid4())[:8],
-                    "buyer_id":         _ct_by_opts[_ct_buyer_sel],
-                    "product":          _ct_prod,
-                    "scrap_type_id":    _ct_sc_opts[_ct_sc_sel],
-                    "contract_qty_mt":  _ct_qty,
-                    "tolerance_pct":    _ct_tol,
-                    "start_date":       _ct_start.strip(),
-                    "end_date":         _ct_end.strip(),
-                    "notes":            _ct_notes.strip(),
+                    "id":              str(uuid.uuid4())[:8],
+                    "buyer_id":        _ct_by_opts[_ct_buyer_sel],
+                    "product":         _ct_prod,
+                    "scrap_type_id":   _ct_sc_opts[_ct_sc_sel],
+                    "processor_id":    _ct_pr_opts[_ct_pr_sel],
+                    "contract_qty_mt": _ct_qty,
+                    "tolerance_pct":   _ct_tol,
+                    "start_date":      _ct_start.strip(),
+                    "end_date":        _ct_end.strip(),
+                    "notes":           _ct_notes.strip(),
                 })
                 cfg["contracts"] = _ct_list
                 save_cfg(cfg)
@@ -5232,22 +5240,31 @@ with t_contract:
     if not _ct_list:
         st.info("등록된 계약이 없습니다.")
     else:
-        # ── 재고 현황 요약 (공유 풀) ───────────────────────────────────────────
-        st.markdown("#### 📦 가용 재고 현황 (공유)")
+        # ── 재고 현황 요약 (임가공사별) ───────────────────────────────────────
+        st.markdown("#### 📦 가용 재고 현황")
         _inv_cols = st.columns(len(active_scraps)) if active_scraps else []
         for _ci, _sc in enumerate(active_scraps):
-            _cv   = _avg_conv_rate(cfg, _sc["id"])
+            _cv = _avg_conv_rate(cfg, _sc["id"])
             _, _, _lr = _fifo_lot_trace(cfg, _sc["id"])
-            _wh   = sum(lot.get("remain", 0) for lot in _lr)
-            _ap   = _at_processor_raw_kg(cfg, _sc["id"])
+            _wh = sum(lot.get("remain", 0) for lot in _lr)
             with _inv_cols[_ci]:
                 st.markdown(f"**{_sc['name']}**  `전환율 {_cv:.0f}%`")
                 _ic1, _ic2 = st.columns(2)
-                _ic1.metric("창고 원료", f"{_wh/1000:,.2f} MT",
-                             help="FIFO 잔량")
-                _ic2.metric("임가공사 미처리 (원료)", f"{_ap/1000:,.2f} MT",
+                _ic1.metric("창고 원료", f"{_wh/1000:,.2f} MT", help="FIFO 잔량")
+                # 임가공사별 분류
+                _ap_total = 0.0
+                _ap_rows  = []
+                for _pr in active_procs:
+                    _ap_pr = _at_processor_raw_kg(cfg, _sc["id"], _pr["id"])
+                    if _ap_pr > 0:
+                        _ap_total += _ap_pr
+                        _ap_rows.append((_pr["name"], _ap_pr))
+                _ic2.metric("임가공사 (원료 합계)", f"{_ap_total/1000:,.2f} MT",
                              help="출하 누계 − 처리 이력 투입 누계")
-                st.caption(f"BP 환산 합계: **{(_wh+_ap)*_cv/100/1000:,.2f} MT**")
+                if _ap_rows:
+                    for _prname, _apkg in _ap_rows:
+                        st.caption(f"  └ {_prname}: {_apkg/1000:,.2f} MT → BP {_apkg*_cv/100/1000:,.2f} MT")
+                st.caption(f"BP 환산 합계: **{(_wh+_ap_total)*_cv/100/1000:,.2f} MT**")
 
         st.divider()
 
@@ -5257,16 +5274,18 @@ with t_contract:
             _ct_id   = _ct.get("id","")
             _bname   = _ct_buyers.get(_ct.get("buyer_id",""), {}).get("name", "—")
             _scname  = _ct_scraps.get(_ct.get("scrap_type_id",""), {}).get("name", "—")
+            _prname  = _ct_procs.get(_ct.get("processor_id",""), {}).get("name", "") if _ct.get("processor_id") else ""
             _m       = _contract_metrics(cfg, _ct)
 
             _stat_color = {"complete": "🟢", "ok": "🟡", "short": "🔴"}.get(_m["status"], "⚪")
             _stat_label = {"complete": "이행 완료", "ok": "재고 충분", "short": "재고 부족"}.get(_m["status"], "—")
 
             with st.expander(
-                f"{_stat_color} **{_bname}**  {_ct.get('product','BP')} / {_scname}  "
-                f"|  계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%  "
-                f"|  선적 {_m['shipped_mt']:,.2f} MT ({_m['fulfill_pct']:.1f}%)  "
-                f"|  {_stat_label}",
+                f"{_stat_color} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
+                + (f" / {_prname}" if _prname else "")
+                + f"  |  계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%"
+                + f"  |  선적 {_m['shipped_mt']:,.2f} MT ({_m['fulfill_pct']:.1f}%)"
+                + f"  |  {_stat_label}",
                 expanded=_m["status"] == "short",
             ):
                 # 이행률 프로그레스
@@ -5286,8 +5305,9 @@ with t_contract:
                              delta=f"{_m['total_avail_mt']-_m['remaining_mt']:+.2f} MT",
                              delta_color="normal" if _m["total_avail_mt"] >= _m["remaining_mt"] else "inverse")
 
+                _pr_scope = f"임가공사: {_prname}" if _prname else "임가공사: 전체"
                 st.caption(
-                    f"전환율 {_m['conv_pct']:.0f}% 적용  ·  "
+                    f"전환율 {_m['conv_pct']:.0f}% 적용  ·  {_pr_scope}  ·  "
                     f"창고 원료 {_m['warehouse_raw_kg']/1000:,.2f} MT → BP {_m['warehouse_bp_mt']:,.2f} MT  ·  "
                     f"임가공사 미처리 {_m['at_proc_raw_kg']/1000:,.2f} MT → BP {_m['at_proc_bp_mt']:,.2f} MT"
                 )
