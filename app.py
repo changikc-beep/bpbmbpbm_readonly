@@ -4253,7 +4253,7 @@ with t_report:
     # ── 헤더 바 ──────────────────────────────────────────────────────────────
     ro1, ro2 = st.columns([2, 1])
     with ro1:
-        rpt_month = ref if ref != "직접 입력" else f"{date.today().year}-{date.today().month:02d}"
+        rpt_month = hist_opts[0] if hist_opts else f"{date.today().year}-{date.today().month:02d}"
         st.markdown(f"**기준월**: `{rpt_month}`  |  **작성일**: `{date.today()}`")
         st.markdown(f"**Ni**: `${NI:,.2f}/t`  **Co**: `${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
     with ro2:
