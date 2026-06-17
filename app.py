@@ -5124,30 +5124,43 @@ def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
     )
     return max(0.0, dispatched - processed)
 
+def _ship_in_period(ship, start, end):
+    ld = ship.get("loading_date", "")
+    return (not start or ld >= start) and ld <= end
+
 def _contract_metrics(cfg, contract):
     """계약 한 건의 이행 현황 지표 dict 반환."""
+    contract_id = contract.get("id", "")
     buyer_id  = contract.get("buyer_id", "")
     scrap_id  = contract.get("scrap_type_id", "")
     qty_mt    = float(contract.get("contract_qty_mt") or 0)
     tol       = float(contract.get("tolerance_pct") or 0)
-    # 월까지만 입력된 경우(YYYY-MM) 일자 보정: 시작 → 01일, 종료 → 말일
     def _norm_date(d, is_end=False):
         if not d: return d
         d = d.strip()
-        if len(d) == 7:  # YYYY-MM
+        if len(d) == 7:
             return d + ("-31" if is_end else "-01")
         return d
     start = _norm_date(contract.get("start_date", ""))
     end   = _norm_date(contract.get("end_date", "") or "9999-12-31", is_end=True) or "9999-12-31"
 
-    # 선적 완료량 (계약 기간 내)
-    shipped_kg = sum(
-        float(s.get("weight_kg") or 0)
-        for s in cfg.get("shipments", [])
-        if s.get("buyer_id") == buyer_id
-        and (not start or s.get("loading_date", "") >= start)
-        and s.get("loading_date", "9999") <= end
-    )
+    # 선적 완료량 — 배분 기록 우선, 없으면 매입사 전체 합산
+    ship_map    = {s["id"]: s for s in cfg.get("shipments", []) if s.get("id")}
+    ct_allocs   = [a for a in cfg.get("contract_allocations", [])
+                   if a.get("contract_id") == contract_id]
+    if ct_allocs:
+        shipped_kg = sum(
+            float(a.get("allocated_kg") or 0)
+            for a in ct_allocs
+            if _ship_in_period(ship_map.get(a.get("shipment_id",""), {}), start, end)
+        )
+    else:
+        shipped_kg = sum(
+            float(s.get("weight_kg") or 0)
+            for s in cfg.get("shipments", [])
+            if s.get("buyer_id") == buyer_id
+            and _ship_in_period(s, start, end)
+        )
     shipped_mt = shipped_kg / 1000
 
     # 허용 범위
@@ -5325,15 +5338,78 @@ with t_contract:
                 # 기간 표시
                 if _ct.get("start_date") or _ct.get("end_date"):
                     st.caption(f"📅 계약 기간: {_ct.get('start_date','—')} ~ {_ct.get('end_date','—')}")
-                # 선적 매칭 건수 (디버그)
-                _matched_ships = [s for s in cfg.get("shipments",[])
-                                  if s.get("buyer_id") == _ct.get("buyer_id","")]
-                st.caption(f"🔍 매입사 ID `{_ct.get('buyer_id','')}` — 전체 기간 선적 {len(_matched_ships)}건 / 기간 내 {_m['shipped_mt']:,.2f} MT")
+
+                # ── 선적 배분 관리 ──────────────────────────────────────────
+                st.divider()
+                st.markdown("**📦 선적 배분 (계약별 부분 배정)**")
+
+                _allocs = cfg.setdefault("contract_allocations", [])
+                _ct_allocs_cur = [a for a in _allocs if a.get("contract_id") == _ct_id]
+
+                if _ct_allocs_cur:
+                    _ship_map_disp = {s["id"]: s for s in cfg.get("shipments", [])}
+                    _alloc_rows = []
+                    for _a in _ct_allocs_cur:
+                        _s = _ship_map_disp.get(_a.get("shipment_id", ""), {})
+                        _alloc_rows.append({
+                            "HBL": _s.get("hbl_number", "—"),
+                            "선적일": _s.get("loading_date", "—"),
+                            "배분량 (MT)": round(float(_a.get("allocated_kg") or 0) / 1000, 3),
+                            "_alloc_id": _a.get("id", ""),
+                        })
+                    for _ar in _alloc_rows:
+                        _ac1, _ac2, _ac3, _ac4 = st.columns([3, 2, 2, 1])
+                        _ac1.write(_ar["HBL"])
+                        _ac2.write(_ar["선적일"])
+                        _ac3.write(f"{_ar['배분량 (MT)']:,.3f} MT")
+                        if _ac4.button("삭제", key=f"alloc_del_{_ar['_alloc_id']}"):
+                            cfg["contract_allocations"] = [
+                                x for x in _allocs if x.get("id") != _ar["_alloc_id"]
+                            ]
+                            save_cfg(cfg)
+                            st.rerun()
+                else:
+                    st.caption("배분 기록 없음 — 아래에서 추가하세요.")
+
+                # 배분 추가 폼
+                _buyer_ships = [
+                    s for s in cfg.get("shipments", [])
+                    if s.get("buyer_id") == _ct.get("buyer_id", "")
+                ]
+                if _buyer_ships:
+                    _ship_opts = {
+                        f"{s.get('hbl_number','—')}  ({s.get('loading_date','—')}, {float(s.get('weight_kg') or 0)/1000:,.2f} MT)": s["id"]
+                        for s in _buyer_ships if s.get("id")
+                    }
+                    with st.form(key=f"alloc_form_{_ct_id}"):
+                        _fa1, _fa2, _fa3 = st.columns([4, 2, 1])
+                        _sel_ship_label = _fa1.selectbox("선적건 선택", list(_ship_opts), key=f"alloc_ship_{_ct_id}")
+                        _alloc_kg_input = _fa2.number_input("배분량 (MT)", min_value=0.0, step=0.001, format="%.3f", key=f"alloc_kg_{_ct_id}")
+                        _fa3.markdown("&nbsp;", unsafe_allow_html=True)
+                        _add_alloc = st.form_submit_button("➕ 배분 추가")
+                    if _add_alloc:
+                        if _alloc_kg_input <= 0:
+                            st.error("배분량은 0보다 커야 합니다.")
+                        else:
+                            _allocs.append({
+                                "id":           str(uuid.uuid4())[:8],
+                                "contract_id":  _ct_id,
+                                "shipment_id":  _ship_opts[_sel_ship_label],
+                                "allocated_kg": round(_alloc_kg_input * 1000, 3),
+                            })
+                            cfg["contract_allocations"] = _allocs
+                            save_cfg(cfg)
+                            st.rerun()
+                else:
+                    st.caption("이 매입사의 선적 기록이 없습니다.")
 
                 # 삭제
                 with st.popover("🗑️ 계약 삭제"):
                     st.warning(f"**{_bname}** {_ct.get('product','')} {_m['qty_mt']:,.0f} MT 계약을 삭제합니다.")
                     if st.button("확인 삭제", key=f"ct_del_{_ct_id}"):
                         cfg["contracts"] = [c for c in _ct_list if c.get("id") != _ct_id]
+                        cfg["contract_allocations"] = [
+                            a for a in cfg.get("contract_allocations", []) if a.get("contract_id") != _ct_id
+                        ]
                         save_cfg(cfg)
                         st.rerun()
