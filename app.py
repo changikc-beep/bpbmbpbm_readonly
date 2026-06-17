@@ -5130,8 +5130,15 @@ def _contract_metrics(cfg, contract):
     scrap_id  = contract.get("scrap_type_id", "")
     qty_mt    = float(contract.get("contract_qty_mt") or 0)
     tol       = float(contract.get("tolerance_pct") or 0)
-    start     = contract.get("start_date", "")
-    end       = contract.get("end_date", "9999-12-31") or "9999-12-31"
+    # 월까지만 입력된 경우(YYYY-MM) 일자 보정: 시작 → 01일, 종료 → 말일
+    def _norm_date(d, is_end=False):
+        if not d: return d
+        d = d.strip()
+        if len(d) == 7:  # YYYY-MM
+            return d + ("-31" if is_end else "-01")
+        return d
+    start = _norm_date(contract.get("start_date", ""))
+    end   = _norm_date(contract.get("end_date", "") or "9999-12-31", is_end=True) or "9999-12-31"
 
     # 선적 완료량 (계약 기간 내)
     shipped_kg = sum(
@@ -5198,7 +5205,7 @@ with t_contract:
     _ct_scraps  = {s["id"]: s for s in cfg.get("scrap_types", [])}
     _ct_procs   = {p["id"]: p for p in cfg.get("processors", [])}
     _ct_sc_opts = {s["name"]: s["id"] for s in cfg.get("scrap_types", []) if s.get("active", True)}
-    _ct_by_opts = {b["name"]: b["id"] for b in cfg.get("buyers", []) if b.get("active", True)}
+    _ct_by_opts = {f"{b['name']} ({b['product']})": b["id"] for b in cfg.get("buyers", []) if b.get("active", True)}
     _ct_pr_opts = {"전체 (구분 없음)": ""} | {p["name"]: p["id"] for p in cfg.get("processors", []) if p.get("active", True)}
 
     # ── 계약 등록 ────────────────────────────────────────────────────────────
@@ -5272,7 +5279,8 @@ with t_contract:
         st.markdown("#### 계약별 이행 현황")
         for _ct in _ct_list:
             _ct_id   = _ct.get("id","")
-            _bname   = _ct_buyers.get(_ct.get("buyer_id",""), {}).get("name", "—")
+            _ct_buyer_obj = _ct_buyers.get(_ct.get("buyer_id",""), {})
+            _bname   = f"{_ct_buyer_obj.get('name','—')} ({_ct_buyer_obj.get('product','')})" if _ct_buyer_obj else "—"
             _scname  = _ct_scraps.get(_ct.get("scrap_type_id",""), {}).get("name", "—")
             _prname  = _ct_procs.get(_ct.get("processor_id",""), {}).get("name", "") if _ct.get("processor_id") else ""
             _m       = _contract_metrics(cfg, _ct)
@@ -5315,10 +5323,12 @@ with t_contract:
                     st.caption(f"📝 {_ct['notes']}")
 
                 # 기간 표시
-                _period = ""
                 if _ct.get("start_date") or _ct.get("end_date"):
-                    _period = f"{_ct.get('start_date','—')} ~ {_ct.get('end_date','—')}"
-                    st.caption(f"📅 계약 기간: {_period}")
+                    st.caption(f"📅 계약 기간: {_ct.get('start_date','—')} ~ {_ct.get('end_date','—')}")
+                # 선적 매칭 건수 (디버그)
+                _matched_ships = [s for s in cfg.get("shipments",[])
+                                  if s.get("buyer_id") == _ct.get("buyer_id","")]
+                st.caption(f"🔍 매입사 ID `{_ct.get('buyer_id','')}` — 전체 기간 선적 {len(_matched_ships)}건 / 기간 내 {_m['shipped_mt']:,.2f} MT")
 
                 # 삭제
                 with st.popover("🗑️ 계약 삭제"):
