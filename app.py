@@ -556,21 +556,61 @@ def status_badge(s):
 cfg = load_cfg()
 hist_opts = [h["month"] for h in sorted(cfg.get("index_history",[]),key=lambda x:x["month"],reverse=True)]
 
+# NI/CO: 가장 최근 INDEX 이력 자동 적용 (사이드바 입력 제거)
+_latest_idx = sorted(cfg.get("index_history", []), key=lambda x: x["month"], reverse=True)
+NI = _latest_idx[0]["ni_index"] if _latest_idx else 17093.18
+CO = _latest_idx[0]["co_index"] if _latest_idx else 56598.72
+
 with st.sidebar:
-    st.title("⚙️ 공통 입력값")
-    st.subheader("Metal Index ($/ton)")
-    ref = st.selectbox("이력 불러오기", ["직접 입력"]+hist_opts)
-    d_ni,d_co=17093.18,56598.72
-    if ref!="직접 입력":
-        hm={h["month"]:h for h in cfg.get("index_history",[])}
-        if ref in hm: d_ni,d_co=hm[ref]["ni_index"],hm[ref]["co_index"]
-    NI = st.number_input("Ni INDEX  (LME)",       value=d_ni, step=10.0, format="%.2f")
-    CO = st.number_input("Co INDEX  (MB Rotterdam)",value=d_co, step=10.0, format="%.2f")
-    if ref!="직접 입력": st.caption(f"📅 {ref} — Ni ${NI:,.2f} / Co ${CO:,.2f}")
+    st.title("📊 현황")
+
+    # ── 환율 ────────────────────────────────────────────────────────────────
+    XR = st.number_input("💱 USD / KRW", value=1380.0, step=1.0, format="%.0f")
     st.divider()
-    XR = st.number_input("USD / KRW", value=1380.0, step=1.0, format="%.0f")
+
+    # ── 선적 현황 ────────────────────────────────────────────────────────────
+    _sb_ships = cfg.get("shipments", [])
+    _sb_today = date.today().isoformat()
+    _sb_prov   = [s for s in _sb_ships if s.get("status","") in ("provisional","")]
+    _sb_nosett = [s for s in _sb_ships if not s.get("status","") or s.get("status") == "provisional"]
+    _sb_eta_soon = [
+        s for s in _sb_ships
+        if s.get("eta","") and s.get("eta","") >= _sb_today
+        and s.get("eta","") <= (date.today() + timedelta(days=14)).isoformat()
+        and s.get("status","") != "final"
+    ]
+    st.markdown("**🚢 선적 현황**")
+    _sbc1, _sbc2 = st.columns(2)
+    _sbc1.metric("전체", f"{len(_sb_ships)}건")
+    _sbc2.metric("미확정", f"{len(_sb_nosett)}건")
+    if _sb_eta_soon:
+        st.warning(f"ETA 14일 이내  {len(_sb_eta_soon)}건")
+        for _se in sorted(_sb_eta_soon, key=lambda x: x.get("eta","")):
+            st.caption(f"· {_se.get('hbl','HBL미정')}  {_se.get('eta','')}")
     st.divider()
-    ST = st.selectbox("정산 구분", ["Provisional  (M-1)","Final  (M+0)"])
+
+    # ── 재고 현황 ────────────────────────────────────────────────────────────
+    st.markdown("**📦 재고 현황**")
+    _sb_scraps = [s for s in cfg.get("scrap_types", []) if s.get("active", True)]
+    if _sb_scraps:
+        for _sc in _sb_scraps:
+            _sb_rem_bl, _, _ = _fifo_lot_trace(cfg, _sc["id"])
+            _sb_rem_kg = sum(v for v in _sb_rem_bl.values())
+            st.metric(_sc["name"], f"{_sb_rem_kg:,.0f} kg")
+    else:
+        st.caption("스크랩 유형 없음")
+    st.divider()
+
+    # ── 경고 ────────────────────────────────────────────────────────────────
+    _sb_ph_list    = cfg.get("processing_history", [])
+    _sb_valid_sids = {s["id"] for s in _sb_ships}
+    _sb_orphans    = sum(1 for p in _sb_ph_list
+                         if p.get("shipment_id","") and p.get("shipment_id","") not in _sb_valid_sids)
+    if _sb_orphans:
+        st.error(f"⚠️ 고아 배치 {_sb_orphans}건\n임가공사 관리 > 세부 내역에서 확인")
+
+    if _latest_idx:
+        st.caption(f"INDEX 기준: {_latest_idx[0]['month']}  Ni ${NI:,.0f} / Co ${CO:,.0f}")
 
 st.title("BP / BM 재고·손익 관리")
 
@@ -594,6 +634,17 @@ active_scraps = [s for s in cfg.get("scrap_types",[]) if s.get("active",True)]
 # ══════════════════════════════════════════════════════════════════════════════
 with t_bp:
     st.subheader("BP/BM 매각 단가 계산")
+    with st.expander("⚙️ Metal INDEX ($/ton)", expanded=False):
+        _bp_ref = st.selectbox("이력 불러오기", ["최신값 자동"] + hist_opts, key="bp_idx_ref")
+        if _bp_ref == "최신값 자동":
+            _bp_ni, _bp_co = NI, CO
+        else:
+            _hm2 = {h["month"]: h for h in cfg.get("index_history", [])}
+            _bp_ni = _hm2[_bp_ref]["ni_index"] if _bp_ref in _hm2 else NI
+            _bp_co = _hm2[_bp_ref]["co_index"] if _bp_ref in _hm2 else CO
+        _bic1, _bic2 = st.columns(2)
+        _bp_ni = _bic1.number_input("Ni INDEX (LME)", value=_bp_ni, step=10.0, format="%.2f", key="bp_ni")
+        _bp_co = _bic2.number_input("Co INDEX (MB Rotterdam)", value=_bp_co, step=10.0, format="%.2f", key="bp_co")
     if not active_buyers: st.warning("매입사가 없습니다.")
     else:
         f1,f2=st.columns(2)
@@ -605,7 +656,7 @@ with t_bp:
         if show:
             rows=[]
             for b in show:
-                nv,cv,tot,pkg=bp_price(NI,CO,b["ni_content"],b["co_content"],b["ni_payable"],b["co_payable"])
+                nv,cv,tot,pkg=bp_price(_bp_ni,_bp_co,b["ni_content"],b["co_content"],b["ni_payable"],b["co_payable"])
                 rows.append({"매입사":b["name"],"품목":b["product"],
                     "Ni 함유량":b["ni_content"],"Co 함유량":b["co_content"],
                     "Ni 지불율":b["ni_payable"],"Co 지불율":b["co_payable"],
@@ -650,7 +701,7 @@ with t_sens:
         with sb1: sens_b=st.selectbox("매입사",[f"{b['name']} ({b['product']})" for b in active_buyers],key="sens_b")
         with sb2: sens_t=st.selectbox("변동 대상",["Ni INDEX","Co INDEX","Ni + Co 동시"],key="sens_t")
         sel=active_buyers[[f"{b['name']} ({b['product']})" for b in active_buyers].index(sens_b)]
-        st.caption(f"기준 — Ni: ${NI:,.2f} / Co: ${CO:,.2f}")
+        st.caption(f"기준 — Ni: ${NI:,.2f} / Co: ${CO:,.2f}  (변경: BP/BM 매각 단가 탭 INDEX 설정)")
         rng=st.slider("변동 범위 (%)",min_value=-30,max_value=30,value=(-20,20),step=5)
         steps=list(range(rng[0],rng[1]+1,5))
         srows=[]
@@ -2004,17 +2055,17 @@ with t_pnl:
     st.markdown("#### 📊 이론 마진")
 
     # INDEX 월 선택
-    _th_idx_opts = ["현재 입력값"] + [h["month"] for h in sorted(
+    _th_idx_opts = [h["month"] for h in sorted(
         cfg.get("index_history", []), key=lambda x: x["month"], reverse=True)]
     _th_c1, _th_c2, _th_c3 = st.columns([2, 2, 4])
     with _th_c1:
-        _th_ref = st.selectbox("INDEX 기준월", _th_idx_opts, key="pnl_th_ref")
-    if _th_ref == "현재 입력값":
-        _th_NI, _th_CO = NI, CO
-    else:
-        _hm = {h["month"]: h for h in cfg.get("index_history", [])}
+        _th_ref = st.selectbox("INDEX 기준월", _th_idx_opts if _th_idx_opts else ["—"], key="pnl_th_ref")
+    _hm = {h["month"]: h for h in cfg.get("index_history", [])}
+    if _th_ref in _hm:
         _th_NI = _hm[_th_ref]["ni_index"]
         _th_CO = _hm[_th_ref]["co_index"]
+    else:
+        _th_NI, _th_CO = NI, CO
     with _th_c2:
         st.metric("Ni INDEX", f"${_th_NI:,.2f}")
     with _th_c3:
