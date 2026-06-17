@@ -594,8 +594,8 @@ with st.sidebar:
     _sb_scraps = [s for s in cfg.get("scrap_types", []) if s.get("active", True)]
     if _sb_scraps:
         for _sc in _sb_scraps:
-            _sb_rem_bl, _, _ = _fifo_lot_trace(cfg, _sc["id"])
-            _sb_rem_kg = sum(v for v in _sb_rem_bl.values())
+            _, _, _sb_lot_rem = _fifo_lot_trace(cfg, _sc["id"])
+            _sb_rem_kg = sum(lot.get("remain", 0) for lot in _sb_lot_rem)
             st.metric(_sc["name"], f"{_sb_rem_kg:,.0f} kg")
     else:
         st.caption("스크랩 유형 없음")
