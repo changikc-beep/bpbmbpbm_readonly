@@ -74,48 +74,6 @@ def _get_drive_service():
     creds = _get_gcp_creds(["https://www.googleapis.com/auth/drive"])
     return build("drive", "v3", credentials=creds)
 
-@st.cache_data(ttl=600, show_spinner=False)
-def _get_docs_folder_id():
-    """Drive에서 'BP_Documents' 폴더를 찾거나 생성해 ID 반환 (10분 캐시)."""
-    svc = _get_drive_service()
-    q = "mimeType='application/vnd.google-apps.folder' and name='BP_Documents' and trashed=false"
-    res = svc.files().list(q=q, fields="files(id)").execute()
-    files = res.get("files", [])
-    if files:
-        return files[0]["id"]
-    folder = svc.files().create(
-        body={"name": "BP_Documents", "mimeType": "application/vnd.google-apps.folder"},
-        fields="id",
-    ).execute()
-    return folder["id"]
-
-def _drive_upload_file(filename: str, content_bytes: bytes, mime_type: str) -> str:
-    """파일을 BP_Documents 폴더에 업로드하고 Drive 파일 ID 반환."""
-    from googleapiclient.http import MediaIoBaseUpload
-    svc = _get_drive_service()
-    folder_id = _get_docs_folder_id()
-    media = MediaIoBaseUpload(BytesIO(content_bytes), mimetype=mime_type, resumable=False)
-    f = svc.files().create(
-        body={"name": filename, "parents": [folder_id]},
-        media_body=media,
-        fields="id",
-    ).execute()
-    return f["id"]
-
-def _drive_download_file(drive_file_id: str) -> bytes:
-    """Drive에서 파일 바이트 반환."""
-    from googleapiclient.http import MediaIoBaseDownload
-    svc = _get_drive_service()
-    buf = BytesIO()
-    dl = MediaIoBaseDownload(buf, svc.files().get_media(fileId=drive_file_id))
-    done = False
-    while not done:
-        _, done = dl.next_chunk()
-    return buf.getvalue()
-
-def _drive_delete_file(drive_file_id: str):
-    """Drive에서 파일 삭제."""
-    _get_drive_service().files().delete(fileId=drive_file_id).execute()
 
 @st.cache_data(ttl=30, show_spinner=False)
 def _load_cfg_drive():
@@ -4951,51 +4909,56 @@ with t_report:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 문서 보관함
+# 파일 내용을 base64로 인코딩해 config.json에 저장 (Drive 파일 생성 권한 불필요)
 # ══════════════════════════════════════════════════════════════════════════════
 with t_docs:
-    st.markdown("### 📎 문서 보관함")
-    st.caption("계약서·CoA 등 관련 파일을 Google Drive에 보관합니다. 파일 원본은 Drive에, 메타데이터는 설정에 저장됩니다.")
+    import base64 as _b64
 
-    _DOC_CATS = ["계약서", "CoA", "인보이스", "포워더 서류", "기타"]
+    st.markdown("### 📎 문서 보관함")
+    st.caption("계약서·CoA 등 관련 파일을 설정 데이터에 보관합니다. 파일당 최대 5 MB.")
+
+    _DOC_CATS  = ["계약서", "CoA", "인보이스", "포워더 서류", "기타"]
+    _DOC_LIMIT = 5 * 1024 * 1024  # 5 MB
     _docs_list = cfg.setdefault("documents", [])
 
     # ── 업로드 ────────────────────────────────────────────────────────────────
-    with st.expander("➕ 파일 업로드", expanded=not _docs_list):
-        _dup_file   = st.file_uploader("파일 선택", key="docs_uploader",
-                                        help="PDF, Excel, 이미지 등 모든 파일 형식 지원")
-        _dup_cat    = st.selectbox("카테고리", _DOC_CATS, key="docs_cat")
-        _dup_tag    = st.text_input("태그 (선택)", placeholder="예: TGLHUS26060003, ECOPRO", key="docs_tag")
-        _dup_notes  = st.text_input("메모 (선택)", placeholder="간단한 설명", key="docs_notes")
+    with st.expander("➕ 파일 저장", expanded=not _docs_list):
+        _dup_file  = st.file_uploader("파일 선택 (최대 5 MB)",  key="docs_uploader",
+                                       help="PDF, Excel, 이미지 등 모든 파일 형식 지원")
+        _dup_cat   = st.selectbox("카테고리", _DOC_CATS, key="docs_cat")
+        _dup_tag   = st.text_input("태그 (선택)", placeholder="예: TGLHUS26060003, ECOPRO", key="docs_tag")
+        _dup_notes = st.text_input("메모 (선택)", placeholder="간단한 설명", key="docs_notes")
 
-        if st.button("☁️ Drive에 업로드", key="docs_upload_btn", disabled=_dup_file is None):
+        if st.button("💾 저장", key="docs_upload_btn", disabled=_dup_file is None):
             if _dup_file:
-                with st.spinner("업로드 중..."):
-                    try:
-                        _file_bytes = _dup_file.read()
-                        _mime = _dup_file.type or "application/octet-stream"
-                        _drv_id = _drive_upload_file(_dup_file.name, _file_bytes, _mime)
-                        _docs_list.append({
-                            "id":            str(uuid.uuid4())[:8],
-                            "filename":      _dup_file.name,
-                            "drive_file_id": _drv_id,
-                            "category":      _dup_cat,
-                            "tag":           _dup_tag.strip(),
-                            "uploaded_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "notes":         _dup_notes.strip(),
-                            "size_bytes":    len(_file_bytes),
-                        })
-                        cfg["documents"] = _docs_list
-                        save_cfg(cfg)
-                        st.success(f"✅ **{_dup_file.name}** 업로드 완료")
-                        st.rerun()
-                    except Exception as _e:
-                        st.error(f"업로드 실패: {_e}")
+                _file_bytes = _dup_file.read()
+                if len(_file_bytes) > _DOC_LIMIT:
+                    st.error(f"파일 크기 {len(_file_bytes)/1024/1024:.1f} MB — 5 MB 이하만 저장 가능합니다.")
+                else:
+                    _docs_list.append({
+                        "id":          str(uuid.uuid4())[:8],
+                        "filename":    _dup_file.name,
+                        "mime":        _dup_file.type or "application/octet-stream",
+                        "category":    _dup_cat,
+                        "tag":         _dup_tag.strip(),
+                        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "notes":       _dup_notes.strip(),
+                        "size_bytes":  len(_file_bytes),
+                        "content_b64": _b64.b64encode(_file_bytes).decode(),
+                    })
+                    cfg["documents"] = _docs_list
+                    save_cfg(cfg)
+                    st.success(f"✅ **{_dup_file.name}** 저장 완료")
+                    st.rerun()
 
     # ── 문서 목록 ─────────────────────────────────────────────────────────────
     if not _docs_list:
-        st.info("업로드된 문서가 없습니다.")
+        st.info("저장된 문서가 없습니다.")
     else:
-        # 필터
+        _total_sz = sum(d.get("size_bytes", 0) for d in _docs_list)
+        _sz_total_str = f"{_total_sz/1024:.0f} KB" if _total_sz < 1024*1024 else f"{_total_sz/1024/1024:.1f} MB"
+        st.caption(f"총 {len(_docs_list)}건 · {_sz_total_str} 저장됨")
+
         _df_cat_opts = ["전체"] + sorted({d.get("category","기타") for d in _docs_list})
         _df_cat_f = st.selectbox("카테고리 필터", _df_cat_opts, key="docs_cat_filter")
         _df_tag_f = st.text_input("태그 검색", placeholder="HBL번호, 회사명 등", key="docs_tag_filter").strip().lower()
@@ -5009,57 +4972,39 @@ with t_docs:
         st.markdown(f"**{len(_filtered_docs)}건**")
 
         for _doc in _filtered_docs:
-            _doc_id  = _doc.get("id","")
-            _fname   = _doc.get("filename","(파일명 없음)")
-            _dcat    = _doc.get("category","기타")
-            _dtag    = _doc.get("tag","")
-            _dnotes  = _doc.get("notes","")
-            _dup_at  = _doc.get("uploaded_at","")
-            _dsz     = _doc.get("size_bytes",0)
-            _sz_str  = f"{_dsz/1024:.1f} KB" if _dsz < 1024*1024 else f"{_dsz/1024/1024:.1f} MB"
-            _drv_fid = _doc.get("drive_file_id","")
+            _doc_id = _doc.get("id","")
+            _fname  = _doc.get("filename","(파일명 없음)")
+            _dcat   = _doc.get("category","기타")
+            _dtag   = _doc.get("tag","")
+            _dnotes = _doc.get("notes","")
+            _dup_at = _doc.get("uploaded_at","")
+            _dsz    = _doc.get("size_bytes", 0)
+            _sz_str = f"{_dsz/1024:.1f} KB" if _dsz < 1024*1024 else f"{_dsz/1024/1024:.1f} MB"
 
             with st.container(border=True):
-                _dc1, _dc2, _dc3 = st.columns([6,2,2])
+                _dc1, _dc2, _dc3 = st.columns([6, 2, 2])
                 with _dc1:
                     st.markdown(f"**{_fname}**")
                     _meta_parts = [f"`{_dcat}`"]
                     if _dtag:   _meta_parts.append(f"🏷️ {_dtag}")
                     if _dnotes: _meta_parts.append(f"📝 {_dnotes}")
                     _meta_parts.append(f"🕐 {_dup_at}")
-                    if _dsz: _meta_parts.append(f"({_sz_str})")
+                    if _dsz:    _meta_parts.append(f"({_sz_str})")
                     st.caption("  ·  ".join(_meta_parts))
                 with _dc2:
-                    _dl_data_key = f"_docs_bytes_{_doc_id}"
-                    _dl_req_key  = f"_docs_req_{_doc_id}"
-                    if st.session_state.get(_dl_req_key) and _dl_data_key not in st.session_state:
-                        with st.spinner("다운로드 중..."):
-                            try:
-                                st.session_state[_dl_data_key] = _drive_download_file(_drv_fid)
-                            except Exception as _e:
-                                st.error(f"다운로드 실패: {_e}")
-                                st.session_state.pop(_dl_req_key, None)
-                    if _dl_data_key in st.session_state:
+                    _b64_data = _doc.get("content_b64","")
+                    if _b64_data:
                         st.download_button(
-                            label=f"💾 저장",
-                            data=st.session_state[_dl_data_key],
+                            label="⬇️ 다운로드",
+                            data=_b64.b64decode(_b64_data),
                             file_name=_fname,
                             mime=_doc.get("mime","application/octet-stream"),
-                            key=f"docs_save_{_doc_id}",
+                            key=f"docs_dl_{_doc_id}",
                         )
-                    else:
-                        if st.button("⬇️ 다운로드", key=f"docs_dl_{_doc_id}"):
-                            st.session_state[_dl_req_key] = True
-                            st.rerun()
                 with _dc3:
                     with st.popover("🗑️ 삭제"):
-                        st.warning(f"**{_fname}** 을(를) Drive에서도 삭제합니다.")
+                        st.warning(f"**{_fname}** 을(를) 삭제합니다.")
                         if st.button("확인 삭제", key=f"docs_del_ok_{_doc_id}"):
-                            try:
-                                if _drv_fid:
-                                    _drive_delete_file(_drv_fid)
-                            except Exception:
-                                pass
                             cfg["documents"] = [d for d in _docs_list if d.get("id") != _doc_id]
                             save_cfg(cfg)
                             st.rerun()
