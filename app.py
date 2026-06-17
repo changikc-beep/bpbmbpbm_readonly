@@ -5352,7 +5352,7 @@ with t_contract:
                     for _a in _ct_allocs_cur:
                         _s = _ship_map_disp.get(_a.get("shipment_id", ""), {})
                         _alloc_rows.append({
-                            "HBL": _s.get("hbl_number", "—"),
+                            "HBL": _s.get("hbl") or _s.get("hbl_number") or "—",
                             "선적일": _s.get("loading_date", "—"),
                             "배분량 (MT)": round(float(_a.get("allocated_kg") or 0) / 1000, 3),
                             "_alloc_id": _a.get("id", ""),
@@ -5378,7 +5378,7 @@ with t_contract:
                 ]
                 if _buyer_ships:
                     _ship_opts = {
-                        f"{s.get('hbl_number','—')}  ({s.get('loading_date','—')}, {float(s.get('weight_kg') or 0)/1000:,.2f} MT)": s["id"]
+                        f"{s.get('hbl') or s.get('hbl_number') or '—'}  ({s.get('loading_date','—')}, {float(s.get('weight_kg') or 0)/1000:,.2f} MT)": s["id"]
                         for s in _buyer_ships if s.get("id")
                     }
                     with st.form(key=f"alloc_form_{_ct_id}"):
