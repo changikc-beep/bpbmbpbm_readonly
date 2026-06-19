@@ -5172,7 +5172,6 @@ def _contract_metrics(cfg, contract):
             float(s.get("weight_kg") or 0)
             for s in _shipments
             if s.get("buyer_id") == buyer_id
-            and s.get("scrap_type_id") == scrap_id
             and _ship_in_period(s, start, end)
         )
     shipped_mt = shipped_kg / 1000
