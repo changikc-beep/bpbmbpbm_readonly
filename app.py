@@ -1498,6 +1498,10 @@ with t_pnl:
             import plotly.graph_objects as go
             _net_color  = "#1E8449" if _tot_net >= 0 else "#922b21"
             _real_color = "#1E8449" if _tot_real_fifo >= 0 else "#922b21"
+            _wf_colors  = [
+                "#2E75B6", "#2E75B6", "#E74C3C", "#E74C3C", _net_color,
+                "#E74C3C", "#E74C3C", _real_color,
+            ]
             _wf = go.Figure(go.Waterfall(
                 orientation="v",
                 measure=["absolute", "relative", "relative", "relative", "total",
@@ -1510,11 +1514,7 @@ with t_pnl:
                       f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}",
                       f"-${_raw_fifo_s1:,.0f}", f"-${_stor_s1:,.0f}", f"${_tot_real_fifo:+,.0f}"],
                 textposition="outside",
-                increasing=dict(marker=dict(color="#2E75B6")),
-                decreasing=dict(marker=dict(color="#E74C3C")),
-                totals=dict(marker=dict(
-                    color=[_net_color if i == 4 else _real_color for i in range(8)]
-                )),
+                marker=dict(color=_wf_colors, line=dict(width=0)),
                 connector=dict(line=dict(color="#555577", width=1, dash="dot")),
                 hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
             ))
