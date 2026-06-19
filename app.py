@@ -1122,6 +1122,88 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 "other_adj_usd":None,"other_adj_desc":""})
             save_cfg(cfg); st.toast("✅ 추가 완료!"); st.rerun()
 
+    # ── 🔍 HBL 수명주기 조회 ────────────────────────────────────────────────────
+    if shipments:
+        st.divider()
+        st.markdown("#### 🔍 HBL 수명주기 조회")
+        _lc_proc_m  = {p["id"]: p for p in cfg.get("processors", [])}
+        _lc_scrap_m = {s["id"]: s for s in cfg.get("scrap_types", [])}
+        _lc_hbl_opts = {
+            f"{s.get('hbl','—')}  ·  {buyer_map.get(s.get('buyer_id',''),{}).get('name','?')}  ·  {s.get('loading_date','미정')}": s["id"]
+            for s in sorted(shipments, key=lambda x: x.get("loading_date",""), reverse=True)
+            if s.get("id")
+        }
+        _lc_sel = st.selectbox("HBL 선택", list(_lc_hbl_opts), key="lc_hbl_sel")
+        _lc_sid  = _lc_hbl_opts[_lc_sel]
+        _lc_ship = next((s for s in shipments if s.get("id") == _lc_sid), {})
+        _lc_buyer = buyer_map.get(_lc_ship.get("buyer_id",""), {})
+        _lc_batches = [r for r in cfg.get("processing_history", []) if r.get("shipment_id") == _lc_sid]
+
+        # 이벤트 목록 구성
+        _lc_events = []
+
+        # 처리 배치
+        for _lb in _lc_batches:
+            _bd   = _rec_ref_date(_lb, cfg) or "—"
+            _pname = _lc_proc_m.get(_lb.get("processor_id",""), {}).get("name", "?")
+            _sname = _lc_scrap_m.get(_lb.get("scrap_type_id",""), {}).get("name", "?")
+            _inp   = _ph_input_kg(_lb)
+            _out   = float(_lb.get("output_kg", 0) or 0)
+            _lc_events.append({
+                "sort": _bd, "icon": "🏭", "title": f"임가공 처리  —  {_pname}",
+                "detail": f"{_sname}  |  투입 {_inp/1000:.3f} MT  →  BP {_out/1000:.3f} MT  (전환율 {_out/_inp*100:.1f}%)" if _inp > 0 else f"{_sname}",
+            })
+
+        # 선적
+        _ld = _lc_ship.get("loading_date", "")
+        if _ld:
+            _lc_events.append({
+                "sort": _ld, "icon": "🚢", "title": "선적 출항",
+                "detail": f"HBL: {_lc_ship.get('hbl','—')}  |  {float(_lc_ship.get('weight_kg',0))/1000:.3f} MT  |  매입사: {_lc_buyer.get('name','?')} ({_lc_buyer.get('product','')})",
+            })
+
+        # ETA
+        _eta = _lc_ship.get("eta", "")
+        if _eta:
+            _arrived = _eta <= date.today().isoformat()
+            _lc_events.append({
+                "sort": _eta, "icon": "⚓" if _arrived else "🕐",
+                "title": f"{'입항 (도착)' if _arrived else 'ETA (예정)'}",
+                "detail": f"{_eta}",
+            })
+
+        # Provisional 정산
+        _pm = _lc_ship.get("prov_month", "")
+        if _pm and _pm != "—":
+            _lc_events.append({
+                "sort": _pm + "-15", "icon": "🟡", "title": "Provisional 정산",
+                "detail": f"기준월: {_pm}  |  Invoice: ${float(_lc_ship.get('invoice_usd',0)):,.2f}",
+            })
+
+        # 최종/입금
+        _fm = _lc_ship.get("final_month", "")
+        _st = _lc_ship.get("status", "provisional")
+        if _st in ("final", "paid") and _fm and _fm != "—":
+            _lc_events.append({
+                "sort": _fm + "-28", "icon": "🟢" if _st == "final" else "🔵",
+                "title": "최종 정산" if _st == "final" else "입금 완료",
+                "detail": f"기준월: {_fm}",
+            })
+
+        _lc_events.sort(key=lambda e: e["sort"] if e["sort"] and e["sort"] != "—" else "9999")
+
+        if _lc_events:
+            for _ei, _ev in enumerate(_lc_events):
+                _ca, _cb = st.columns([1, 15])
+                _ca.markdown(f"## {_ev['icon']}")
+                _cb.markdown(f"**{_ev['title']}**")
+                _cb.caption(_ev["detail"])
+                if _ei < len(_lc_events) - 1:
+                    st.markdown("<div style='margin-left:28px;color:#555;font-size:18px;line-height:0.8'>│<br>│</div>",
+                                unsafe_allow_html=True)
+        else:
+            st.info("연결된 처리 배치가 없습니다. 임가공사 관리 탭에서 HBL을 연결하세요.")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — 포워더 운임 관리
@@ -1631,7 +1713,7 @@ with t_pnl:
             _mon_agg2[_mld]["cnt"]  += 1
             _mon_agg2[_mld]["out"]  += _mo
         if _mon_agg2:
-            with st.expander("📅 월별 손익 집계", expanded=False):
+            with st.expander("📅 월별 손익 추이", expanded=True):
                 _mon_rows2 = []
                 for _mkey in sorted(_mon_agg2.keys()):
                     _mv2  = _mon_agg2[_mkey]
@@ -1658,6 +1740,42 @@ with t_pnl:
                     if "거래 마진"  in _cols2: styles[_cols2.index("거래 마진")]  = c_net
                     if "실질 손익" in _cols2: styles[_cols2.index("실질 손익")] = c_real
                     return styles
+                # ── 트렌드 차트 ──────────────────────────────────────────────
+                try:
+                    import plotly.graph_objects as _go_mon
+                    _mx   = [r["월"] for r in _mon_rows2]
+                    _mgm  = [r["거래 마진"] for r in _mon_rows2]
+                    _mrl  = [r["실질 손익"] for r in _mon_rows2]
+                    _fig_mon = _go_mon.Figure()
+                    _fig_mon.add_trace(_go_mon.Bar(
+                        x=_mx, y=_mgm, name="거래 마진",
+                        marker_color=["#2E75B6" if v >= 0 else "#E74C3C" for v in _mgm],
+                        text=[f"${v:+,.0f}" for v in _mgm],
+                        textposition="outside", textfont=dict(size=9),
+                    ))
+                    _fig_mon.add_trace(_go_mon.Scatter(
+                        x=_mx, y=_mrl, name="실질 손익",
+                        mode="lines+markers+text",
+                        line=dict(color="#F39C12", width=2),
+                        marker=dict(size=7, color=["#1E8449" if v >= 0 else "#E74C3C" for v in _mrl]),
+                        text=[f"${v:+,.0f}" for v in _mrl],
+                        textposition="top center", textfont=dict(size=9, color="#F39C12"),
+                    ))
+                    _fig_mon.add_hline(y=0, line_dash="dot",
+                                       line_color="rgba(255,255,255,0.25)", line_width=1)
+                    _fig_mon.update_layout(
+                        height=300, margin=dict(l=10, r=10, t=30, b=10),
+                        yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.08)"),
+                        plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
+                        font=dict(color="#D0D0E8"),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                    xanchor="right", x=1, bgcolor="rgba(0,0,0,0)"),
+                        barmode="overlay",
+                    )
+                    st.plotly_chart(_fig_mon, use_container_width=True)
+                except (ImportError, Exception):
+                    pass
+
                 st.dataframe(_df_mon2.style.apply(_hl_mon2, axis=1).format({
                     "생산(kg)":  "{:,.0f}",
                     "BP 매각":   "${:,.2f}",
