@@ -5339,7 +5339,7 @@ with t_contract:
                 expanded=_m["status"] == "short",
             ):
                 # 이행률 프로그레스
-                _prog_val = min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0
+                _prog_val = 1.0 if _m["status"] == "complete" else (min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0)
                 st.progress(_prog_val)
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
