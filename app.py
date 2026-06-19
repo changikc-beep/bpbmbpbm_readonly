@@ -1483,28 +1483,45 @@ with t_pnl:
         _kd4.metric("수출비",           f"${_tot_eu:,.2f}",
                     delta=f"${_epk_all:.4f}/kg BP" if _tot_out>0 else None)
 
-        # P&L Waterfall 차트 (전체 흐름 표시)
+        # 원료비·보관비 사전 계산 (waterfall + 단가 분해 공용)
+        _default_rmc_s1 = float(st.session_state.get("pnl_rmc_default", 0.0))
+        if _tot_out > 0:
+            _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
+            _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
+            _stor_s1     = sum((_ph_storage_cost(r, cfg) or _auto_storage_for_batch(r)) for r in _ph_all)
+        else:
+            _raw_fifo_s1 = _raw_mavg_s1 = _stor_s1 = 0.0
+        _tot_real_fifo = _tot_net - _raw_fifo_s1 - _stor_s1
+
+        # P&L Waterfall 차트 (거래 마진 → 실질 손익까지 확장)
         try:
             import plotly.graph_objects as go
-            _net_color = "#1E8449" if _tot_net >= 0 else "#922b21"
+            _net_color  = "#1E8449" if _tot_net >= 0 else "#922b21"
+            _real_color = "#1E8449" if _tot_real_fifo >= 0 else "#922b21"
             _wf = go.Figure(go.Waterfall(
                 orientation="v",
-                measure=["absolute", "relative", "relative", "relative", "total"],
-                x=["BP 매각수익", "스크랩 매각수익", "BP 재매입원가", "수출비", "거래 마진"],
-                y=[_tot_bp, _tot_sc_rev, -_tot_repr, -_tot_eu, 0],
+                measure=["absolute", "relative", "relative", "relative", "total",
+                         "relative", "relative", "total"],
+                x=["BP 매각수익", "스크랩 매각수익", "BP 재매입원가", "수출비", "거래 마진",
+                   "원료비", "보관비", "실질 손익"],
+                y=[_tot_bp, _tot_sc_rev, -_tot_repr, -_tot_eu, 0,
+                   -_raw_fifo_s1, -_stor_s1, 0],
                 text=[f"${_tot_bp:,.0f}", f"+${_tot_sc_rev:,.0f}", f"-${_tot_repr:,.0f}",
-                      f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}"],
+                      f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}",
+                      f"-${_raw_fifo_s1:,.0f}", f"-${_stor_s1:,.0f}", f"${_tot_real_fifo:+,.0f}"],
                 textposition="outside",
                 increasing=dict(marker=dict(color="#2E75B6")),
                 decreasing=dict(marker=dict(color="#E74C3C")),
-                totals=dict(marker=dict(color=_net_color)),
+                totals=dict(marker=dict(
+                    color=[_net_color if i == 4 else _real_color for i in range(8)]
+                )),
                 connector=dict(line=dict(color="#555577", width=1, dash="dot")),
                 hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
             ))
             _wf.update_layout(
-                title=dict(text=f"매출 ${_tot_bp:,.0f}  →  거래 마진 ${_tot_net:+,.0f}",
+                title=dict(text=f"매출 ${_tot_bp:,.0f}  →  거래 마진 ${_tot_net:+,.0f}  →  실질 손익 ${_tot_real_fifo:+,.0f}  (원료비 FIFO 기준)",
                            font=dict(size=13)),
-                height=340, margin=dict(l=10, r=10, t=50, b=10),
+                height=380, margin=dict(l=10, r=10, t=55, b=10),
                 yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.08)"),
                 plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
                 font=dict(color="#D0D0E8"),
@@ -1518,11 +1535,7 @@ with t_pnl:
         st.markdown("---")
         st.markdown("**📐 BP 1kg당 단가 분해**")
         st.caption("전체 처리 이력 합산 기준. 원료 취득원가는 FIFO·이동평균 두 가지 기준 비교.")
-        _default_rmc_s1 = float(st.session_state.get("pnl_rmc_default", 0.0))
         if _tot_out > 0:
-            _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
-            _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
-            _stor_s1     = sum((_ph_storage_cost(r, cfg) or _auto_storage_for_batch(r)) for r in _ph_all)
 
             _bp_pk   = _tot_bp  / _tot_out
             _pf_pk   = _tot_pf  / _tot_out
