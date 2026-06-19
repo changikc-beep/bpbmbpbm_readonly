@@ -571,7 +571,6 @@ with st.sidebar:
     # ── 선적 현황 ────────────────────────────────────────────────────────────
     _sb_ships = cfg.get("shipments", [])
     _sb_today = date.today().isoformat()
-    _sb_prov   = [s for s in _sb_ships if s.get("status","") in ("provisional","")]
     _sb_nosett = [s for s in _sb_ships if not s.get("status","") or s.get("status") == "provisional"]
     _sb_eta_soon = [
         s for s in _sb_ships
@@ -701,7 +700,7 @@ with t_sens:
         with sb1: sens_b=st.selectbox("매입사",[f"{b['name']} ({b['product']})" for b in active_buyers],key="sens_b")
         with sb2: sens_t=st.selectbox("변동 대상",["Ni INDEX","Co INDEX","Ni + Co 동시"],key="sens_t")
         sel=active_buyers[[f"{b['name']} ({b['product']})" for b in active_buyers].index(sens_b)]
-        st.caption(f"기준 — Ni: ${NI:,.2f} / Co: ${CO:,.2f}  (변경: BP/BM 매각 단가 탭 INDEX 설정)")
+        st.caption(f"기준 — Ni: ${NI:,.2f} / Co: ${CO:,.2f}  (최신 INDEX 자동 적용)")
         rng=st.slider("변동 범위 (%)",min_value=-30,max_value=30,value=(-20,20),step=5)
         steps=list(range(rng[0],rng[1]+1,5))
         srows=[]
@@ -4253,9 +4252,9 @@ with t_report:
     # ── 헤더 바 ──────────────────────────────────────────────────────────────
     ro1, ro2 = st.columns([2, 1])
     with ro1:
-        rpt_month = hist_opts[0] if hist_opts else f"{date.today().year}-{date.today().month:02d}"
-        st.markdown(f"**기준월**: `{rpt_month}`  |  **작성일**: `{date.today()}`")
-        st.markdown(f"**Ni**: `${NI:,.2f}/t`  **Co**: `${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
+        _rpt_month_opts = hist_opts if hist_opts else [f"{date.today().year}-{date.today().month:02d}"]
+        rpt_month = st.selectbox("기준월", _rpt_month_opts, key="rpt_month_sel")
+        st.markdown(f"**작성일**: `{date.today()}`  |  **Ni**: `${NI:,.2f}/t`  **Co**: `${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
     with ro2:
         if active_buyers:
             xl_bytes = generate_excel_report(cfg, NI, CO, XR, rpt_month,
@@ -5126,6 +5125,8 @@ def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
 
 def _ship_in_period(ship, start, end):
     ld = ship.get("loading_date", "")
+    if not ld:
+        return False
     return (not start or ld >= start) and ld <= end
 
 def _contract_metrics(cfg, contract):
@@ -5144,21 +5145,34 @@ def _contract_metrics(cfg, contract):
     start = _norm_date(contract.get("start_date", ""))
     end   = _norm_date(contract.get("end_date", "") or "9999-12-31", is_end=True) or "9999-12-31"
 
-    # 선적 완료량 — 배분 기록 우선, 없으면 매입사 전체 합산
-    ship_map    = {s["id"]: s for s in cfg.get("shipments", []) if s.get("id")}
+    # 선적 완료량 — 배분 기록 우선
+    # 같은 매입사의 어느 계약이라도 배분 기록이 있으면 전체 배분 모드 강제
+    # (없으면 buyer_id + scrap_type_id 기간 합산 fallback)
+    _shipments  = cfg.get("shipments", [])
+    ship_map    = {s["id"]: s for s in _shipments if s.get("id")}
     ct_allocs   = [a for a in cfg.get("contract_allocations", [])
                    if a.get("contract_id") == contract_id]
+    _buyer_contract_ids = {c["id"] for c in cfg.get("contracts", [])
+                           if c.get("buyer_id") == buyer_id}
+    _buyer_has_any_alloc = any(
+        a for a in cfg.get("contract_allocations", [])
+        if a.get("contract_id") in _buyer_contract_ids
+    )
     if ct_allocs:
         shipped_kg = sum(
             float(a.get("allocated_kg") or 0)
             for a in ct_allocs
             if _ship_in_period(ship_map.get(a.get("shipment_id",""), {}), start, end)
         )
+    elif _buyer_has_any_alloc:
+        # 다른 계약에 배분이 있으면 이 계약은 배분 미입력 = 0
+        shipped_kg = 0.0
     else:
         shipped_kg = sum(
             float(s.get("weight_kg") or 0)
-            for s in cfg.get("shipments", [])
+            for s in _shipments
             if s.get("buyer_id") == buyer_id
+            and s.get("scrap_type_id") == scrap_id
             and _ship_in_period(s, start, end)
         )
     shipped_mt = shipped_kg / 1000
@@ -5218,7 +5232,16 @@ with t_contract:
     _ct_scraps  = {s["id"]: s for s in cfg.get("scrap_types", [])}
     _ct_procs   = {p["id"]: p for p in cfg.get("processors", [])}
     _ct_sc_opts = {s["name"]: s["id"] for s in cfg.get("scrap_types", []) if s.get("active", True)}
-    _ct_by_opts = {f"{b['name']} ({b['product']})": b["id"] for b in cfg.get("buyers", []) if b.get("active", True)}
+    _ct_by_opts = {}
+    for _b in cfg.get("buyers", []):
+        if not _b.get("active", True):
+            continue
+        _lbl = f"{_b['name']} ({_b['product']})"
+        if _lbl in _ct_by_opts:
+            _old_id = _ct_by_opts.pop(_lbl)
+            _ct_by_opts[f"{_lbl} [{_old_id[:4]}]"] = _old_id
+            _lbl = f"{_lbl} [{_b['id'][:4]}]"
+        _ct_by_opts[_lbl] = _b["id"]
     _ct_pr_opts = {"전체 (구분 없음)": ""} | {p["name"]: p["id"] for p in cfg.get("processors", []) if p.get("active", True)}
 
     # ── 계약 등록 ────────────────────────────────────────────────────────────
@@ -5237,8 +5260,14 @@ with t_contract:
                                      help="지정 시 해당 임가공사 재고만 충당에 반영")
         _ct_notes = st.text_input("메모", key="ct_notes")
         if st.button("💾 계약 등록", key="ct_add_btn"):
+            def _is_valid_date(s):
+                if not s.strip(): return True
+                try: date.fromisoformat(s.strip()); return True
+                except ValueError: return False
             if not _ct_buyer_sel or not _ct_sc_sel or _ct_qty <= 0:
                 st.error("매입사, 원료 유형, 계약량을 입력하세요.")
+            elif not _is_valid_date(_ct_start) or not _is_valid_date(_ct_end):
+                st.error("날짜 형식 오류 — YYYY-MM-DD 형식으로 입력하세요. (예: 2026-05-01)")
             else:
                 _ct_list.append({
                     "id":              str(uuid.uuid4())[:8],
@@ -5290,6 +5319,7 @@ with t_contract:
 
         # ── 계약별 이행 현황 ──────────────────────────────────────────────────
         st.markdown("#### 계약별 이행 현황")
+        _ship_map_disp = {s["id"]: s for s in cfg.get("shipments", [])}
         for _ct in _ct_list:
             _ct_id   = _ct.get("id","")
             _ct_buyer_obj = _ct_buyers.get(_ct.get("buyer_id",""), {})
@@ -5347,7 +5377,6 @@ with t_contract:
                 _ct_allocs_cur = [a for a in _allocs if a.get("contract_id") == _ct_id]
 
                 if _ct_allocs_cur:
-                    _ship_map_disp = {s["id"]: s for s in cfg.get("shipments", [])}
                     _alloc_rows = []
                     for _a in _ct_allocs_cur:
                         _s = _ship_map_disp.get(_a.get("shipment_id", ""), {})
@@ -5382,19 +5411,30 @@ with t_contract:
                         for s in _buyer_ships if s.get("id")
                     }
                     with st.form(key=f"alloc_form_{_ct_id}"):
-                        _fa1, _fa2, _fa3 = st.columns([4, 2, 1])
+                        _fa1, _fa2 = st.columns([4, 2])
                         _sel_ship_label = _fa1.selectbox("선적건 선택", list(_ship_opts), key=f"alloc_ship_{_ct_id}")
                         _alloc_kg_input = _fa2.number_input("배분량 (MT)", min_value=0.0, step=0.001, format="%.3f", key=f"alloc_kg_{_ct_id}")
-                        _fa3.markdown("&nbsp;", unsafe_allow_html=True)
+                        # 선택한 선적건의 기배분/잔여 표시
+                        _preview_sid = _ship_opts.get(_sel_ship_label, "")
+                        _preview_total = float(next((s.get("weight_kg",0) for s in _buyer_ships if s.get("id")==_preview_sid), 0) or 0)
+                        _preview_used  = sum(float(a.get("allocated_kg",0)) for a in _allocs if a.get("shipment_id")==_preview_sid)
+                        _preview_rem   = _preview_total - _preview_used
+                        st.caption(f"선적 합계 {_preview_total/1000:,.3f} MT  ·  기배분 {_preview_used/1000:,.3f} MT  ·  잔여 **{_preview_rem/1000:,.3f} MT**")
                         _add_alloc = st.form_submit_button("➕ 배분 추가")
                     if _add_alloc:
+                        _sel_sid = _ship_opts[_sel_ship_label]
+                        _ship_total_kg = float(next((s.get("weight_kg",0) for s in _buyer_ships if s.get("id")==_sel_sid), 0) or 0)
+                        _already_kg    = sum(float(a.get("allocated_kg",0)) for a in _allocs if a.get("shipment_id")==_sel_sid)
+                        _remain_kg     = _ship_total_kg - _already_kg
                         if _alloc_kg_input <= 0:
                             st.error("배분량은 0보다 커야 합니다.")
+                        elif _alloc_kg_input * 1000 > _remain_kg + 0.1:
+                            st.error(f"배분량이 잔여량을 초과합니다. 잔여: {_remain_kg/1000:,.3f} MT")
                         else:
                             _allocs.append({
                                 "id":           str(uuid.uuid4())[:8],
                                 "contract_id":  _ct_id,
-                                "shipment_id":  _ship_opts[_sel_ship_label],
+                                "shipment_id":  _sel_sid,
                                 "allocated_kg": round(_alloc_kg_input * 1000, 3),
                             })
                             cfg["contract_allocations"] = _allocs
