@@ -1496,12 +1496,7 @@ with t_pnl:
         # P&L Waterfall 차트 (거래 마진 → 실질 손익까지 확장)
         try:
             import plotly.graph_objects as go
-            _net_color  = "#1E8449" if _tot_net >= 0 else "#922b21"
-            _real_color = "#1E8449" if _tot_real_fifo >= 0 else "#922b21"
-            _wf_colors  = [
-                "#2E75B6", "#2E75B6", "#E74C3C", "#E74C3C", _net_color,
-                "#E74C3C", "#E74C3C", _real_color,
-            ]
+            _real_sign  = "▲" if _tot_real_fifo >= 0 else "▼"
             _wf = go.Figure(go.Waterfall(
                 orientation="v",
                 measure=["absolute", "relative", "relative", "relative", "total",
@@ -1514,13 +1509,16 @@ with t_pnl:
                       f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}",
                       f"-${_raw_fifo_s1:,.0f}", f"-${_stor_s1:,.0f}", f"${_tot_real_fifo:+,.0f}"],
                 textposition="outside",
-                marker=dict(color=_wf_colors, line=dict(width=0)),
+                increasing=dict(marker=dict(color="#2E75B6")),
+                decreasing=dict(marker=dict(color="#E74C3C")),
+                totals=dict(marker=dict(color="#7B68EE")),
                 connector=dict(line=dict(color="#555577", width=1, dash="dot")),
                 hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
             ))
             _wf.update_layout(
-                title=dict(text=f"매출 ${_tot_bp:,.0f}  →  거래 마진 ${_tot_net:+,.0f}  →  실질 손익 ${_tot_real_fifo:+,.0f}  (원료비 FIFO 기준)",
-                           font=dict(size=13)),
+                title=dict(
+                    text=f"거래 마진 ${_tot_net:+,.0f}  →  실질 손익 {_real_sign} ${_tot_real_fifo:+,.0f}  (원료비 FIFO 기준)",
+                    font=dict(size=13)),
                 height=380, margin=dict(l=10, r=10, t=55, b=10),
                 yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.08)"),
                 plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
