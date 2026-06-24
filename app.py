@@ -578,7 +578,12 @@ def _resolve_idx_month(basis, loading_date, prov_month, final_month):
         return ld or prov_month
     if basis == "final":
         return final_month
-    return prov_month  # default "prov"
+    if basis == "prov":
+        return prov_month
+    # YYYY-MM 고정월 지정인 경우 그대로 반환
+    if basis and len(basis) == 7 and basis[4] == "-":
+        return basis
+    return prov_month  # fallback
 
 
 def status_badge(s):
@@ -5629,20 +5634,33 @@ with t_contract:
                                           step=5.0, format="%.0f", key="ct_prov_pct",
                                           help="예: 80 → Invoice 총액의 80%를 가정산으로 지급")
         _cp4, _cp5 = st.columns(2)
-        _prov_idx_map = {"가정산월 INDEX": "prov", "선적월 INDEX": "loading"}
-        _final_idx_map = {"확정정산월 INDEX": "final", "선적월 INDEX": "loading", "가정산월 INDEX": "prov"}
-        _ct_prov_idx = _cp4.selectbox("Provisional INDEX 기준", list(_prov_idx_map), key="ct_prov_idx")
-        _ct_final_idx = _cp5.selectbox("Final INDEX 기준", list(_final_idx_map), key="ct_final_idx")
+        _prov_idx_map  = {"가정산월 INDEX": "prov", "선적월 INDEX": "loading", "특정월 지정": "custom"}
+        _final_idx_map = {"확정정산월 INDEX": "final", "선적월 INDEX": "loading", "가정산월 INDEX": "prov", "특정월 지정": "custom"}
+        _ct_prov_idx  = _cp4.selectbox("Provisional INDEX 기준", list(_prov_idx_map),  key="ct_prov_idx")
+        _ct_final_idx = _cp5.selectbox("Final INDEX 기준",       list(_final_idx_map), key="ct_final_idx")
+        # 특정월 지정 시 월 입력
+        _ct_prov_month_fixed = ""
+        _ct_final_month_fixed = ""
+        if _prov_idx_map[_ct_prov_idx] == "custom":
+            _ct_prov_month_fixed = _cp4.text_input("Provisional 기준월 (YYYY-MM)", placeholder="예: 2025-03", key="ct_prov_fixed_m")
+        if _final_idx_map[_ct_final_idx] == "custom":
+            _ct_final_month_fixed = _cp5.text_input("Final 기준월 (YYYY-MM)", placeholder="예: 2025-06", key="ct_final_fixed_m")
         _ct_notes = st.text_input("메모", key="ct_notes")
         if st.button("💾 계약 등록", key="ct_add_btn"):
             def _is_valid_date(s):
                 if not s.strip(): return True
                 try: date.fromisoformat(s.strip()); return True
                 except ValueError: return False
+            _prov_basis_val  = _ct_prov_month_fixed.strip()  if _prov_idx_map[_ct_prov_idx]  == "custom" else _prov_idx_map[_ct_prov_idx]
+            _final_basis_val = _ct_final_month_fixed.strip() if _final_idx_map[_ct_final_idx] == "custom" else _final_idx_map[_ct_final_idx]
             if not _ct_buyer_sel or not _ct_sc_sel or _ct_qty <= 0:
                 st.error("매입사, 원료 유형, 계약량을 입력하세요.")
             elif not _is_valid_date(_ct_start) or not _is_valid_date(_ct_end):
                 st.error("날짜 형식 오류 — YYYY-MM-DD 형식으로 입력하세요. (예: 2026-05-01)")
+            elif _prov_idx_map[_ct_prov_idx] == "custom" and (not _prov_basis_val or len(_prov_basis_val) != 7):
+                st.error("Provisional 기준월을 YYYY-MM 형식으로 입력하세요. (예: 2025-03)")
+            elif _final_idx_map[_ct_final_idx] == "custom" and (not _final_basis_val or len(_final_basis_val) != 7):
+                st.error("Final 기준월을 YYYY-MM 형식으로 입력하세요. (예: 2025-06)")
             else:
                 _ct_list.append({
                     "id":                str(uuid.uuid4())[:8],
@@ -5659,8 +5677,8 @@ with t_contract:
                     "ni_payable_pct":    _ct_ni_pay   if _ct_ni_pay   > 0 else None,
                     "co_payable_pct":    _ct_co_pay   if _ct_co_pay   > 0 else None,
                     "prov_pct":          _ct_prov_pct if _ct_prov_pct < 100 else None,
-                    "prov_index_basis":  _prov_idx_map[_ct_prov_idx],
-                    "final_index_basis": _final_idx_map[_ct_final_idx],
+                    "prov_index_basis":  _prov_basis_val,
+                    "final_index_basis": _final_basis_val,
                 })
                 cfg["contracts"] = _ct_list
                 save_cfg(cfg)
@@ -5807,41 +5825,66 @@ with t_contract:
                                                        min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
                                                        key=f"ed_pp_{_ct_id}")
                     _edp1, _edp2 = st.columns(2)
+                    # 기존 저장값이 YYYY-MM 고정월이면 "특정월 지정"으로 표시
+                    _cur_prov_basis  = _ct.get("prov_index_basis",  "prov")
+                    _cur_final_basis = _ct.get("final_index_basis", "final")
+                    _prov_is_custom  = _cur_prov_basis  not in _prov_idx_map.values()
+                    _final_is_custom = _cur_final_basis not in _final_idx_map.values()
                     _ed_prov_idx = _edp1.selectbox(
                         "Provisional INDEX 기준",
                         list(_prov_idx_map),
-                        index=list(_prov_idx_map.values()).index(_ct.get("prov_index_basis","prov"))
-                              if _ct.get("prov_index_basis","prov") in _prov_idx_map.values() else 0,
+                        index=list(_prov_idx_map.keys()).index("특정월 지정") if _prov_is_custom
+                              else (list(_prov_idx_map.values()).index(_cur_prov_basis)
+                                    if _cur_prov_basis in _prov_idx_map.values() else 0),
                         key=f"ed_pidx_{_ct_id}",
                     )
                     _ed_final_idx = _edp2.selectbox(
                         "Final INDEX 기준",
                         list(_final_idx_map),
-                        index=list(_final_idx_map.values()).index(_ct.get("final_index_basis","final"))
-                              if _ct.get("final_index_basis","final") in _final_idx_map.values() else 0,
+                        index=list(_final_idx_map.keys()).index("특정월 지정") if _final_is_custom
+                              else (list(_final_idx_map.values()).index(_cur_final_basis)
+                                    if _cur_final_basis in _final_idx_map.values() else 0),
                         key=f"ed_fidx_{_ct_id}",
                     )
+                    # 특정월 지정 선택 시 월 입력
+                    _ed_prov_month_fixed  = ""
+                    _ed_final_month_fixed = ""
+                    if _prov_idx_map[_ed_prov_idx] == "custom":
+                        _ed_prov_month_fixed  = _edp1.text_input("Provisional 기준월 (YYYY-MM)",
+                            value=_cur_prov_basis if _prov_is_custom else "",
+                            placeholder="예: 2025-03", key=f"ed_prov_fm_{_ct_id}")
+                    if _final_idx_map[_ed_final_idx] == "custom":
+                        _ed_final_month_fixed = _edp2.text_input("Final 기준월 (YYYY-MM)",
+                            value=_cur_final_basis if _final_is_custom else "",
+                            placeholder="예: 2025-06", key=f"ed_final_fm_{_ct_id}")
                     _ed_notes = st.text_input("메모", value=_ct.get("notes",""), key=f"ed_notes_{_ct_id}")
                     if st.button("💾 수정 저장", key=f"ed_save_{_ct_id}"):
-                        for _c2 in cfg["contracts"]:
-                            if _c2.get("id") == _ct_id:
-                                _c2.update({
-                                    "contract_qty_mt":   _ed_qty,
-                                    "tolerance_pct":     _ed_tol,
-                                    "contract_status":   _ed_cst,
-                                    "start_date":        _ed_start.strip(),
-                                    "end_date":          _ed_end.strip(),
-                                    "ni_payable_pct":    _ed_ni_pay   if _ed_ni_pay   > 0 else None,
-                                    "co_payable_pct":    _ed_co_pay   if _ed_co_pay   > 0 else None,
-                                    "prov_pct":          _ed_prov_pct if _ed_prov_pct < 100 else None,
-                                    "prov_index_basis":  _prov_idx_map[_ed_prov_idx],
-                                    "final_index_basis": _final_idx_map[_ed_final_idx],
-                                    "notes":             _ed_notes.strip(),
-                                })
-                                break
-                        save_cfg(cfg)
-                        st.toast("✅ 계약 수정 완료")
-                        st.rerun()
+                        _ed_prov_basis_val  = _ed_prov_month_fixed.strip()  if _prov_idx_map[_ed_prov_idx]  == "custom" else _prov_idx_map[_ed_prov_idx]
+                        _ed_final_basis_val = _ed_final_month_fixed.strip() if _final_idx_map[_ed_final_idx] == "custom" else _final_idx_map[_ed_final_idx]
+                        if _prov_idx_map[_ed_prov_idx] == "custom" and (not _ed_prov_basis_val or len(_ed_prov_basis_val) != 7):
+                            st.error("Provisional 기준월을 YYYY-MM 형식으로 입력하세요.")
+                        elif _final_idx_map[_ed_final_idx] == "custom" and (not _ed_final_basis_val or len(_ed_final_basis_val) != 7):
+                            st.error("Final 기준월을 YYYY-MM 형식으로 입력하세요.")
+                        else:
+                            for _c2 in cfg["contracts"]:
+                                if _c2.get("id") == _ct_id:
+                                    _c2.update({
+                                        "contract_qty_mt":   _ed_qty,
+                                        "tolerance_pct":     _ed_tol,
+                                        "contract_status":   _ed_cst,
+                                        "start_date":        _ed_start.strip(),
+                                        "end_date":          _ed_end.strip(),
+                                        "ni_payable_pct":    _ed_ni_pay   if _ed_ni_pay   > 0 else None,
+                                        "co_payable_pct":    _ed_co_pay   if _ed_co_pay   > 0 else None,
+                                        "prov_pct":          _ed_prov_pct if _ed_prov_pct < 100 else None,
+                                        "prov_index_basis":  _ed_prov_basis_val,
+                                        "final_index_basis": _ed_final_basis_val,
+                                        "notes":             _ed_notes.strip(),
+                                    })
+                                    break
+                            save_cfg(cfg)
+                            st.toast("✅ 계약 수정 완료")
+                            st.rerun()
 
                 # ── 선적 배분 관리 ──────────────────────────────────────────
                 st.divider()
