@@ -549,9 +549,16 @@ def _fifo_lot_trace(cfg, scrap_id):
 
 def _get_contract_for_shipment(cfg, ship_id):
     """선적건 ID로 연결된 계약 반환.
-    1순위: contract_allocations 명시적 배분
-    2순위: buyer + 선적일 범위로 활성 계약 자동 매칭 (단, 후보가 1건일 때만)
+    1순위: 선적건에 직접 저장된 linked_contract_id
+    2순위: contract_allocations 명시적 배분
+    3순위: buyer + 선적일 범위로 활성 계약 자동 매칭 (단, 후보가 1건일 때만)
     """
+    ship = next((s for s in cfg.get("shipments", []) if s.get("id") == ship_id), None)
+    if ship and ship.get("linked_contract_id"):
+        ct = next((c for c in cfg.get("contracts", [])
+                   if c.get("id") == ship["linked_contract_id"]), None)
+        if ct:
+            return ct
     alloc = next((a for a in cfg.get("contract_allocations", [])
                   if a.get("shipment_id") == ship_id), None)
     if alloc:
@@ -999,6 +1006,43 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     new_eta=st.text_input("ETA",s.get("eta",""),key=f"sh_eta_{real_i}")
                     new_note=st.text_input("비고",s.get("notes",""),key=f"sh_note_{real_i}")
 
+                # ── 계약 연결 ──────────────────────────────────────────────────
+                _cur_bid = buyer_opts.get(new_b, s.get("buyer_id",""))
+                _buyer_cts = [c for c in cfg.get("contracts", [])
+                              if c.get("buyer_id") == _cur_bid
+                              and c.get("contract_status","active") == "active"]
+                if _buyer_cts:
+                    _ct_label_map = {"자동 매칭": ""}
+                    for _bc in _buyer_cts:
+                        _bc_st = _bc.get("start_date","")[:7]
+                        _bc_en = _bc.get("end_date","")[:7]
+                        _bc_qty = _bc.get("contract_qty_mt",0)
+                        _bc_lbl = f"{_bc_st}~{_bc_en}  {_bc_qty:,.0f}MT  (ID:{_bc.get('id','')})"
+                        _ct_label_map[_bc_lbl] = _bc.get("id","")
+                    _cur_linked = s.get("linked_contract_id","")
+                    _cur_ct_lbl = next((k for k,v in _ct_label_map.items() if v == _cur_linked), "자동 매칭")
+                    _ct_sel_col, _ct_info_col = st.columns([3,2])
+                    _new_ct_lbl = _ct_sel_col.selectbox(
+                        "계약 연결", list(_ct_label_map.keys()),
+                        index=list(_ct_label_map.keys()).index(_cur_ct_lbl),
+                        key=f"sh_ct_{real_i}",
+                        help="'자동 매칭'은 활성 계약이 1건일 때 자동 적용. 복수 계약이면 직접 선택하세요.")
+                    new_linked_ct_id = _ct_label_map[_new_ct_lbl]
+                    # 선택된(또는 자동 매칭) 계약 조건 미리보기
+                    _preview_ct = next((c for c in _buyer_cts if c.get("id") == new_linked_ct_id), None)
+                    if not _preview_ct and len(_buyer_cts) == 1:
+                        _preview_ct = _buyer_cts[0]
+                    if _preview_ct:
+                        _pst = _settle_terms(_preview_ct, b)
+                        _ct_info_col.caption(
+                            f"가정산 {_pst['prov_pct']:.0f}%  ·  "
+                            f"Ni {_pst['ni_payable']:.1f}%  ·  Co {_pst['co_payable']:.1f}%  ·  "
+                            f"Prov-INDEX: {_preview_ct.get('prov_index_basis','prov')}  ·  "
+                            f"Final-INDEX: {_preview_ct.get('final_index_basis','final')}"
+                        )
+                else:
+                    new_linked_ct_id = s.get("linked_contract_id","")
+
                 # ── 확정산 세부 정보 ──
                 st.markdown("---")
                 st.markdown("**📊 확정산 상세 (수분·분석값·기타 조정)**")
@@ -1219,6 +1263,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
                                 "ni_content_src":_ni_src,
                                 "co_content_src":_co_src,
+                                "linked_contract_id": new_linked_ct_id if new_linked_ct_id else None,
                                 "other_adj_usd":new_other_adj if new_other_adj else None,
                                 "other_adj_desc":new_other_desc,
                                 "final_amount_usd": _snap_final})
