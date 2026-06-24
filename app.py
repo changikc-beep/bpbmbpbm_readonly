@@ -547,6 +547,40 @@ def _fifo_lot_trace(cfg, scrap_id):
     return bl_result, all_events, lot_q   # lot_q: 미소진 잔량
 
 
+def _get_contract_for_shipment(cfg, ship_id):
+    """선적건 ID로 연결된 계약 반환 (배분 기록 우선, 없으면 None)."""
+    alloc = next((a for a in cfg.get("contract_allocations", [])
+                  if a.get("shipment_id") == ship_id), None)
+    if alloc:
+        return next((c for c in cfg.get("contracts", [])
+                     if c.get("id") == alloc.get("contract_id")), None)
+    return None
+
+def _settle_terms(contract, buyer):
+    """계약·매입사 마스터에서 유효 정산 조건 반환.
+    계약에 값이 있으면 계약 우선, 없으면 매입사 기본값 사용.
+    반환: {ni_payable, co_payable, prov_pct, prov_idx, final_idx}
+    """
+    ct  = contract or {}
+    b   = buyer or {}
+    return {
+        "ni_payable": float(ct.get("ni_payable_pct") or b.get("ni_payable", 0) or 0),
+        "co_payable": float(ct.get("co_payable_pct") or b.get("co_payable", 0) or 0),
+        "prov_pct":   float(ct.get("prov_pct")   or 100.0),
+        "prov_idx":   ct.get("prov_index_basis",  "prov"),   # "prov" | "loading"
+        "final_idx":  ct.get("final_index_basis", "final"),  # "final" | "prov" | "loading"
+    }
+
+def _resolve_idx_month(basis, loading_date, prov_month, final_month):
+    """INDEX 기준월 결정. basis: 'prov'|'final'|'loading'."""
+    if basis == "loading":
+        ld = (loading_date or "")[:7]
+        return ld or prov_month
+    if basis == "final":
+        return final_month
+    return prov_month  # default "prov"
+
+
 def status_badge(s):
     m={"provisional":("Provisional 정산","b-wn"),"final":("최종정산","b-ok"),"paid":("입금완료","b-bp")}
     lbl,cls=m.get(s,("—","b-ng"))
@@ -5444,39 +5478,6 @@ def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
         if r.get("scrap_type_id") == scrap_id and _pr_ok(r.get("processor_id"))
     )
     return max(0.0, dispatched - processed)
-
-def _get_contract_for_shipment(cfg, ship_id):
-    """선적건 ID로 연결된 계약 반환 (배분 기록 우선, 없으면 None)."""
-    alloc = next((a for a in cfg.get("contract_allocations", [])
-                  if a.get("shipment_id") == ship_id), None)
-    if alloc:
-        return next((c for c in cfg.get("contracts", [])
-                     if c.get("id") == alloc.get("contract_id")), None)
-    return None
-
-def _settle_terms(contract, buyer):
-    """계약·매입사 마스터에서 유효 정산 조건 반환.
-    계약에 값이 있으면 계약 우선, 없으면 매입사 기본값 사용.
-    반환: {ni_payable, co_payable, prov_pct, prov_idx, final_idx}
-    """
-    ct  = contract or {}
-    b   = buyer or {}
-    return {
-        "ni_payable": float(ct.get("ni_payable_pct") or b.get("ni_payable", 0) or 0),
-        "co_payable": float(ct.get("co_payable_pct") or b.get("co_payable", 0) or 0),
-        "prov_pct":   float(ct.get("prov_pct")   or 100.0),
-        "prov_idx":   ct.get("prov_index_basis",  "prov"),   # "prov" | "loading"
-        "final_idx":  ct.get("final_index_basis", "final"),  # "final" | "prov" | "loading"
-    }
-
-def _resolve_idx_month(basis, loading_date, prov_month, final_month):
-    """INDEX 기준월 결정. basis: 'prov'|'final'|'loading'."""
-    if basis == "loading":
-        ld = (loading_date or "")[:7]
-        return ld or prov_month
-    if basis == "final":
-        return final_month
-    return prov_month  # default "prov"
 
 def _ship_in_period(ship, start, end):
     ld = ship.get("loading_date", "")
