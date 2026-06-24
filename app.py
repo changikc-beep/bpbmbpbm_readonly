@@ -1154,59 +1154,80 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _display_final = _snapped_final if _snapped_final else final_amt
                         net_settle=_display_final - prov_paid + new_other_adj
 
+                        # ── 정산 흐름 요약 (4 metrics) ──────────────────────
                         st.markdown("**📋 정산 요약**")
                         rs1,rs2,rs3,rs4=st.columns(4)
+                        _inv_per_kg   = new_iusd / new_wkg if new_wkg else 0
+                        _final_per_kg = _display_final / final_w if final_w else 0
+                        _inv_vs_final = _display_final - new_iusd
                         with rs1:
-                            st.metric("Invoice 총액",f"${new_iusd:,.2f}")
-                            _prov_label = f"가정산 지급액 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
-                            st.metric(_prov_label, f"${prov_paid:,.2f}",
-                                      help=f"Provisional 단가 ${prov_pkg:.5f}/kg  |  INDEX {_prov_idx_month}: Ni ${pm_data['ni_index']:,.2f} / Co ${pm_data['co_index']:,.2f}")
+                            st.metric("① Invoice 총액", f"${new_iusd:,.2f}",
+                                      help=f"단가 ${_inv_per_kg:.3f}/kg  ·  {new_wkg:,.0f} kg")
+                            st.metric(f"② 가정산 수령 ({_prov_pct_val:.0f}%)", f"${prov_paid:,.2f}",
+                                      help=f"Prov INDEX {_prov_idx_month}  ·  단가 ${prov_pkg:.3f}/kg")
                         with rs2:
-                            st.metric("Final 단가",f"${final_pkg:.5f}/kg",
-                                      delta=f"{index_diff:+.5f}",
-                                      help=f"INDEX {_final_idx_month}: Ni ${fm_data['ni_index']:,.2f} / Co ${fm_data['co_index']:,.2f}")
-                            st.metric("정산 중량",f"{final_w:,.1f} kg",
-                                      delta=f"{final_w-new_wkg:+,.1f} kg (수분 {new_moisture:.1f}%)")
+                            _final_lbl = "③ 최종정산액 (확정)" if _snapped_final else "③ 최종정산액 (계산)"
+                            st.metric(_final_lbl, f"${_display_final:,.2f}",
+                                      help=f"Final INDEX {_final_idx_month}  ·  단가 ${final_pkg:.3f}/kg  ·  {final_w:,.1f} kg")
+                            if new_other_adj:
+                                st.metric("기타 조정", f"${new_other_adj:+,.2f}",
+                                          help=new_other_desc or "기타 조정")
                         with rs3:
-                            if _snapped_final:
-                                st.metric("최종정산액 (확정)",f"${_display_final:,.2f}",
-                                          help="Final 전환 시 저장된 스냅샷")
-                            else:
-                                st.metric("최종정산액 (계산)",f"${final_amt:,.2f}")
-                            if new_other_adj!=0:
-                                st.metric("기타 조정",f"${new_other_adj:+,.2f}",
-                                          help=new_other_desc if new_other_desc else "기타")
+                            _net_lbl = "④ 확정산 청구액" if net_settle >= 0 else "④ 확정산 반환액"
+                            net_color = "normal" if net_settle >= 0 else "inverse"
+                            st.metric(_net_lbl, f"${abs(net_settle):,.2f}",
+                                      delta="수령 예정" if net_settle >= 0 else "반환 예정",
+                                      delta_color=net_color,
+                                      help="③ 최종정산액 − ② 가정산 수령 + 기타조정")
+                            st.metric("KRW", f"₩{net_settle*XR:+,.0f}")
                         with rs4:
-                            net_color="normal" if net_settle>=0 else "inverse"
-                            st.metric("🔁 추가정산 (Final − Prov + 기타)",
-                                      f"${net_settle:+,.2f}",
-                                      delta="추가 수령" if net_settle>=0 else "추가 지급",
-                                      delta_color=net_color)
-                            st.metric("KRW",f"₩{net_settle*XR:+,.0f}")
+                            _diff_color = "normal" if _inv_vs_final >= 0 else "inverse"
+                            st.metric("Invoice ↔ 최종 차이", f"${_inv_vs_final:+,.2f}",
+                                      delta="최종이 더 큼" if _inv_vs_final >= 0 else "최종이 더 작음",
+                                      delta_color=_diff_color,
+                                      help="최종정산액 − Invoice 총액")
+                            st.metric("최종 단가", f"${_final_per_kg:.3f}/kg",
+                                      delta=f"{_final_per_kg-_inv_per_kg:+.3f}",
+                                      help=f"Invoice 단가 ${_inv_per_kg:.3f}/kg 대비")
 
-                        # 상세 항목 표
-                        st.markdown(f"""| 항목 | Provisional | Final | 비고 |
-|------|------------|-------|------|
-|INDEX 기준월|{_prov_idx_month}|{_final_idx_month}||
-|Ni INDEX|${pm_data['ni_index']:,.2f}|${fm_data['ni_index']:,.2f}|${fm_data['ni_index']-pm_data['ni_index']:+,.2f}|
-|Co INDEX|${pm_data['co_index']:,.2f}|${fm_data['co_index']:,.2f}|${fm_data['co_index']-pm_data['co_index']:+,.2f}|
-|Ni 함유량 (당사)|{b.get('ni_content',0):.4f}%|{new_buyer_ni:.4f}% (매입사)||
-|Co 함유량 (당사)|{b.get('co_content',0):.4f}%|{new_buyer_co:.4f}% (매입사)||
-|Ni 적용값 ({_ni_src})|—|**{_eff_ni:.4f}%**||
-|Co 적용값 ({_co_src})|—|**{_eff_co:.4f}%**||
-|중량|{new_wkg:,.0f} kg|{final_w:,.1f} kg|수분 {new_moisture:.1f}% 공제|
-|단가 ($/kg)|${prov_pkg:.5f}|${final_pkg:.5f}|${index_diff:+.5f}|
-|Invoice 총액|${new_iusd:,.2f}|—||
-|가정산 지급|${prov_paid:,.2f} ({_prov_pct_val:.0f}%)|{f"${_display_final:,.2f} (확정)" if _snapped_final else f"${final_amt:,.2f} (계산)"}||
-|기타 조정|—|${new_other_adj:+,.2f}|{new_other_desc}|
-|**추가정산**|—|**${net_settle:+,.2f}**|{"🟢 수령" if net_settle>=0 else "🔴 지급"}|""")
+                        # ── 정산 흐름표 ───────────────────────────────────────
+                        st.markdown(f"""
+| 단계 | 항목 | 금액 | 비고 |
+|:----:|------|-----:|------|
+| ① | Invoice 발행 | **${new_iusd:,.2f}** | 단가 ${_inv_per_kg:.3f}/kg · {new_wkg:,.0f} kg |
+| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −${prov_paid:,.2f} | INDEX {_prov_idx_month} · ${prov_pkg:.3f}/kg |
+| | **가정산 후 미수잔액** | **${new_iusd - prov_paid:,.2f}** | |
+| ③ | 최종정산액{"(확정)" if _snapped_final else "(계산)"} | ${_display_final:,.2f} | INDEX {_final_idx_month} · ${final_pkg:.3f}/kg · {_ni_src}/{_co_src} |
+{"| | 기타 조정 | " + f"${new_other_adj:+,.2f}" + " | " + (new_other_desc or "—") + " |" if new_other_adj else ""}
+| **④** | **{"확정산 청구액" if net_settle>=0 else "확정산 반환액"}** | **${net_settle:+,.2f}** | {"🟢 수령 예정" if net_settle>=0 else "🔴 반환 예정"} |
+""")
+
+                        # ── Invoice vs 최종 비교표 ────────────────────────────
+                        _ni_diff  = _eff_ni  - b.get("ni_content", 0)
+                        _co_diff  = _eff_co  - b.get("co_content", 0)
+                        _idx_ni_d = fm_data["ni_index"] - pm_data["ni_index"]
+                        _idx_co_d = fm_data["co_index"] - pm_data["co_index"]
+                        _wt_diff  = final_w - new_wkg
+                        with st.expander("🔍 Invoice ↔ 최종정산 변동 분석", expanded=False):
+                            st.markdown(f"""
+| 구분 | Invoice 기준 | 최종정산 기준 | 변동 | 비고 |
+|------|:------------:|:------------:|:----:|------|
+| INDEX 기준월 | {_prov_idx_month} | {_final_idx_month} | — | |
+| Ni INDEX | ${pm_data['ni_index']:,.2f} | ${fm_data['ni_index']:,.2f} | ${_idx_ni_d:+,.2f} | /MT |
+| Co INDEX | ${pm_data['co_index']:,.2f} | ${fm_data['co_index']:,.2f} | ${_idx_co_d:+,.2f} | /MT |
+| Ni 함유량 | {b.get('ni_content',0):.3f}% (당사) | {new_buyer_ni:.3f}% (매입사) · **{_eff_ni:.3f}%** 적용 | {_ni_diff:+.3f}%p | 기준: {_ni_src} |
+| Co 함유량 | {b.get('co_content',0):.3f}% (당사) | {new_buyer_co:.3f}% (매입사) · **{_eff_co:.3f}%** 적용 | {_co_diff:+.3f}%p | 기준: {_co_src} |
+| 정산 중량 | {new_wkg:,.0f} kg | {final_w:,.1f} kg | {_wt_diff:+,.1f} kg | 수분 {new_moisture:.1f}% 공제 |
+| 단가 ($/kg) | **${prov_pkg:.3f}** | **${final_pkg:.3f}** | **${index_diff:+.3f}** | |
+| 정산 합계 | ${new_iusd:,.2f} | ${_display_final:,.2f} | **${_inv_vs_final:+,.2f}** | |
+""")
                     else:
                         # Provisional만 있는 경우
-                        _prov_label2 = f"가정산 지급액 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
+                        _prov_label2 = f"가정산 수령 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
                         st.info(
-                            f"Provisional ({_prov_idx_month}): **${prov_pkg:.5f}/kg**  |  "
+                            f"Prov INDEX {_prov_idx_month}: **${prov_pkg:.3f}/kg**  |  "
                             f"Invoice 총액: **${new_iusd:,.2f}**  |  {_prov_label2}: **${prov_paid:,.2f}**  "
-                            f"— Final 월을 선택하면 추가정산 계산이 가능합니다."
+                            f"— Final 월을 선택하면 확정산 청구액을 계산합니다."
                         )
 
                 ca,cb=st.columns(2)
