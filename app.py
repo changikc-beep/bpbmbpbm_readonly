@@ -935,19 +935,14 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             buyer_lbl=f"{b.get('name','?')} ({b.get('product','?')})"
             # 상태 텍스트 (expander는 HTML 미지원 → 이모지 사용)
             stat_txt={"provisional":"🟡 Provisional 정산","final":"🟢 최종정산","paid":"🔵 입금완료"}.get(s.get("status","provisional"),"—")
-            # 정산 미리보기 (헤더에 표시)
+            # 정산 미리보기: 최종정산 확정(final_amount_usd 스냅샷)된 경우에만 표시
             settle_preview=""
-            if (b and s.get("prov_month","—")!="—" and s.get("final_month","—")!="—"
-                    and s.get("prov_month") in hm_all and s.get("final_month") in hm_all):
-                pm_h=hm_all[s["prov_month"]]; fm_h=hm_all[s["final_month"]]
-                _,_,_,ppk=bp_price(pm_h["ni_index"],pm_h["co_index"],b.get("ni_content",0),b.get("co_content",0),b.get("ni_payable",0),b.get("co_payable",0))
-                bni=s.get("buyer_ni_content") or b.get("ni_content",0)
-                bco=s.get("buyer_co_content") or b.get("co_content",0)
-                moist=s.get("moisture_pct") or 0
-                fw=s.get("weight_kg",0)*(1-moist/100)
-                _,_,_,fpk=bp_price(fm_h["ni_index"],fm_h["co_index"],bni,bco,b.get("ni_payable",0),b.get("co_payable",0))
-                net_s=(fpk*fw)-s.get("invoice_usd",0)+(s.get("other_adj_usd") or 0)
-                settle_preview=f"  |  추가정산: ${net_s:+,.2f}"
+            _snapped = s.get("final_amount_usd")
+            if _snapped:
+                _hdr_st = _settle_terms(_get_contract_for_shipment(cfg, s.get("id","")), b)
+                _hdr_prov_paid = float(s.get("invoice_usd") or 0) * (_hdr_st["prov_pct"] / 100.0)
+                _hdr_net = float(_snapped) - _hdr_prov_paid + float(s.get("other_adj_usd") or 0)
+                settle_preview = f"  |  추가정산: ${_hdr_net:+,.2f}"
             ld_disp  = s.get("loading_date","").strip() or "선적일 미정"
             eta_disp = s.get("eta","").strip() or "TBD"
             hdr=f"#{i+1}  {stat_txt}  {s.get('hbl','—')}  |  {buyer_lbl}  |  {ld_disp}  →  ETA {eta_disp}  |  {s.get('weight_kg',0):,.0f} kg{settle_preview}"
