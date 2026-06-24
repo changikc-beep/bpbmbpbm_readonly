@@ -590,16 +590,21 @@ def _get_contract_for_shipment(cfg, ship_id):
 def _settle_terms(contract, buyer):
     """계약·매입사 마스터에서 유효 정산 조건 반환.
     계약에 값이 있으면 계약 우선, 없으면 매입사 기본값 사용.
-    반환: {ni_payable, co_payable, prov_pct, prov_idx, final_idx}
+    반환: {ni_payable, co_payable(소수 형태), prov_pct, prov_idx, final_idx}
+
+    주의: buyer.ni_payable 은 소수(0.725)로 저장,
+          contract.ni_payable_pct 는 퍼센트(72.5)로 저장 → /100 정규화
     """
     ct  = contract or {}
     b   = buyer or {}
+    _ni_pct = ct.get("ni_payable_pct")
+    _co_pct = ct.get("co_payable_pct")
     return {
-        "ni_payable": float(ct.get("ni_payable_pct") or b.get("ni_payable", 0) or 0),
-        "co_payable": float(ct.get("co_payable_pct") or b.get("co_payable", 0) or 0),
+        "ni_payable": float(_ni_pct) / 100.0 if _ni_pct else float(b.get("ni_payable", 0) or 0),
+        "co_payable": float(_co_pct) / 100.0 if _co_pct else float(b.get("co_payable", 0) or 0),
         "prov_pct":   float(ct.get("prov_pct")   or 100.0),
-        "prov_idx":   ct.get("prov_index_basis",  "prov"),   # "prov" | "loading"
-        "final_idx":  ct.get("final_index_basis", "final"),  # "final" | "prov" | "loading"
+        "prov_idx":   ct.get("prov_index_basis",  "prov"),
+        "final_idx":  ct.get("final_index_basis", "final"),
     }
 
 def _resolve_idx_month(basis, loading_date, prov_month, final_month):
@@ -1036,7 +1041,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _pst = _settle_terms(_preview_ct, b)
                         _ct_info_col.caption(
                             f"가정산 {_pst['prov_pct']:.0f}%  ·  "
-                            f"Ni {_pst['ni_payable']:.1f}%  ·  Co {_pst['co_payable']:.1f}%  ·  "
+                            f"Ni {_pst['ni_payable']*100:.1f}%  ·  Co {_pst['co_payable']*100:.1f}%  ·  "
                             f"Prov-INDEX: {_preview_ct.get('prov_index_basis','prov')}  ·  "
                             f"Final-INDEX: {_preview_ct.get('final_index_basis','final')}"
                         )
@@ -1126,8 +1131,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     if _settle_ct:
                         _ct_hint = []
                         if _settle_ct.get("prov_pct"): _ct_hint.append(f"가정산 {_prov_pct_val:.0f}%")
-                        if _settle_ct.get("ni_payable_pct"): _ct_hint.append(f"Ni {_ni_pay:.1f}%")
-                        if _settle_ct.get("co_payable_pct"): _ct_hint.append(f"Co {_co_pay:.1f}%")
+                        if _settle_ct.get("ni_payable_pct"): _ct_hint.append(f"Ni {_ni_pay*100:.1f}%")
+                        if _settle_ct.get("co_payable_pct"): _ct_hint.append(f"Co {_co_pay*100:.1f}%")
                         if _prov_idx_b != "prov": _ct_hint.append(f"INDEX 기준: {_prov_idx_month}")
                         if _ct_hint:
                             st.caption(f"📋 계약 조건 적용: {', '.join(_ct_hint)}")
