@@ -1120,9 +1120,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     if _prov_idx_month not in hm_all:
                         _prov_idx_month = new_pm
                     pm_data=hm_all[_prov_idx_month]
-                    _,_,_,prov_pkg=bp_price(pm_data["ni_index"],pm_data["co_index"],
+                    _,_,_,_prov_pkg_raw=bp_price(pm_data["ni_index"],pm_data["co_index"],
                         b.get("ni_content",0),b.get("co_content",0),
                         _ni_pay, _co_pay)
+                    prov_pkg = round(_prov_pkg_raw, 3)
                     # Invoice 총액 → Provisional 지급액
                     prov_paid = new_iusd * (_prov_pct_val / 100.0)
                     st.markdown("---")
@@ -1143,9 +1144,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if _final_idx_month not in hm_all:
                             _final_idx_month = new_fm
                         fm_data=hm_all[_final_idx_month]
-                        _,_,_,final_pkg=bp_price(fm_data["ni_index"],fm_data["co_index"],
+                        _,_,_,_final_pkg_raw=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             _eff_ni,_eff_co,
                             _ni_pay, _co_pay)
+                        final_pkg = round(_final_pkg_raw, 3)
                         final_w=new_wkg*(1-new_moisture/100)
                         final_amt=final_pkg*final_w
                         index_diff=(final_pkg-prov_pkg)
@@ -1271,9 +1273,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _snap_fidx = _resolve_idx_month(_snap_st["final_idx"], new_ld, new_pm, new_fm)
                                     if _snap_fidx not in hm_all: _snap_fidx = new_fm
                                     _sfmd = hm_all[_snap_fidx]
-                                    _,_,_,_sfpkg = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
+                                    _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
                                                             _eff_ni, _eff_co,
                                                             _snap_st["ni_payable"], _snap_st["co_payable"])
+                                    _sfpkg = round(_sfpkg_raw, 3)
                                     _snap_final = round(_sfpkg * new_wkg * (1 - new_moisture/100), 2)
                             elif new_stat != "final":
                                 _snap_final = None  # final 상태 해제 시 스냅샷 제거
