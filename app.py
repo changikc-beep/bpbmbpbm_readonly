@@ -548,12 +548,36 @@ def _fifo_lot_trace(cfg, scrap_id):
 
 
 def _get_contract_for_shipment(cfg, ship_id):
-    """선적건 ID로 연결된 계약 반환 (배분 기록 우선, 없으면 None)."""
+    """선적건 ID로 연결된 계약 반환.
+    1순위: contract_allocations 명시적 배분
+    2순위: buyer + 선적일 범위로 활성 계약 자동 매칭 (단, 후보가 1건일 때만)
+    """
     alloc = next((a for a in cfg.get("contract_allocations", [])
                   if a.get("shipment_id") == ship_id), None)
     if alloc:
         return next((c for c in cfg.get("contracts", [])
                      if c.get("id") == alloc.get("contract_id")), None)
+    # fallback: 선적건에서 buyer_id + loading_date 조회
+    ship = next((s for s in cfg.get("shipments", []) if s.get("id") == ship_id), None)
+    if not ship:
+        return None
+    buyer_id = ship.get("buyer_id", "")
+    ld = ship.get("loading_date", "")
+    candidates = [
+        c for c in cfg.get("contracts", [])
+        if c.get("buyer_id") == buyer_id
+        and c.get("contract_status", "active") == "active"
+        and (not c.get("start_date") or (ld and ld >= c.get("start_date", "")))
+        and (not c.get("end_date")   or (ld and ld <= c.get("end_date",   "9999-12-31")))
+    ]
+    if not candidates and buyer_id:
+        # 날짜 범위 무시하고 활성 계약 재탐색
+        candidates = [c for c in cfg.get("contracts", [])
+                      if c.get("buyer_id") == buyer_id
+                      and c.get("contract_status", "active") == "active"]
+    # 후보가 정확히 1건일 때만 자동 적용 (복수면 ambiguous → None)
+    if len(candidates) == 1:
+        return candidates[0]
     return None
 
 def _settle_terms(contract, buyer):
@@ -1000,7 +1024,26 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     if b:
                         ni_diff=new_buyer_ni-b.get("ni_content",0)
                         co_diff=new_buyer_co-b.get("co_content",0)
-                        st.caption(f"초기값 대비: Ni {ni_diff:+.2f}%p / Co {co_diff:+.2f}%p")
+                        st.caption(f"매입사 대비 당사: Ni {ni_diff:+.2f}%p / Co {co_diff:+.2f}%p")
+                    # 최종정산 기준값 선택 (Ni / Co 각각)
+                    _src_opts = ["매입사값", "당사값", "평균"]
+                    _ni_src = st.selectbox("Ni 정산 기준",  _src_opts,
+                        index=_src_opts.index(s.get("ni_content_src","매입사값"))
+                              if s.get("ni_content_src") in _src_opts else 0,
+                        key=f"sh_ni_src_{real_i}",
+                        help="최종정산 단가 계산에 사용할 Ni 함유량 기준")
+                    _co_src = st.selectbox("Co 정산 기준",  _src_opts,
+                        index=_src_opts.index(s.get("co_content_src","매입사값"))
+                              if s.get("co_content_src") in _src_opts else 0,
+                        key=f"sh_co_src_{real_i}",
+                        help="최종정산 단가 계산에 사용할 Co 함유량 기준")
+                    _co_ni = b.get("ni_content",0) if b else 0  # 당사값
+                    _co_co = b.get("co_content",0) if b else 0
+                    _eff_ni = {"매입사값": new_buyer_ni, "당사값": _co_ni,
+                               "평균": round((new_buyer_ni + _co_ni) / 2, 4)}[_ni_src]
+                    _eff_co = {"매입사값": new_buyer_co, "당사값": _co_co,
+                               "평균": round((new_buyer_co + _co_co) / 2, 4)}[_co_src]
+                    st.caption(f"적용 Ni: **{_eff_ni:.4f}%** / Co: **{_eff_co:.4f}%**")
                 with sa3:
                     st.markdown("**기타 조정**")
                     new_other_adj=st.number_input("기타 조정 (USD)",
@@ -1052,7 +1095,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                             _final_idx_month = new_fm
                         fm_data=hm_all[_final_idx_month]
                         _,_,_,final_pkg=bp_price(fm_data["ni_index"],fm_data["co_index"],
-                            new_buyer_ni,new_buyer_co,
+                            _eff_ni,_eff_co,
                             _ni_pay, _co_pay)
                         final_w=new_wkg*(1-new_moisture/100)
                         final_amt=final_pkg*final_w
@@ -1098,8 +1141,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 |INDEX 기준월|{_prov_idx_month}|{_final_idx_month}||
 |Ni INDEX|${pm_data['ni_index']:,.2f}|${fm_data['ni_index']:,.2f}|${fm_data['ni_index']-pm_data['ni_index']:+,.2f}|
 |Co INDEX|${pm_data['co_index']:,.2f}|${fm_data['co_index']:,.2f}|${fm_data['co_index']-pm_data['co_index']:+,.2f}|
-|Ni 함유량|{b.get('ni_content',0):.2f}%|{new_buyer_ni:.2f}%|{new_buyer_ni-b.get('ni_content',0):+.2f}%p|
-|Co 함유량|{b.get('co_content',0):.2f}%|{new_buyer_co:.2f}%|{new_buyer_co-b.get('co_content',0):+.2f}%p|
+|Ni 함유량 (당사)|{b.get('ni_content',0):.4f}%|{new_buyer_ni:.4f}% (매입사)||
+|Co 함유량 (당사)|{b.get('co_content',0):.4f}%|{new_buyer_co:.4f}% (매입사)||
+|Ni 적용값 ({_ni_src})|—|**{_eff_ni:.4f}%**||
+|Co 적용값 ({_co_src})|—|**{_eff_co:.4f}%**||
 |중량|{new_wkg:,.0f} kg|{final_w:,.1f} kg|수분 {new_moisture:.1f}% 공제|
 |단가 ($/kg)|${prov_pkg:.5f}|${final_pkg:.5f}|${index_diff:+.5f}|
 |Invoice 총액|${new_iusd:,.2f}|—||
@@ -1156,9 +1201,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _snap_fidx = _resolve_idx_month(_snap_st["final_idx"], new_ld, new_pm, new_fm)
                                     if _snap_fidx not in hm_all: _snap_fidx = new_fm
                                     _sfmd = hm_all[_snap_fidx]
-                                    _bni2 = new_buyer_ni; _bco2 = new_buyer_co
                                     _,_,_,_sfpkg = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
-                                                            _bni2, _bco2,
+                                                            _eff_ni, _eff_co,
                                                             _snap_st["ni_payable"], _snap_st["co_payable"])
                                     _snap_final = round(_sfpkg * new_wkg * (1 - new_moisture/100), 2)
                             elif new_stat != "final":
@@ -1173,6 +1217,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 "moisture_pct":new_moisture if new_moisture > 0 else None,
                                 "buyer_ni_content":new_buyer_ni if new_buyer_ni!=default_ni or s.get("buyer_ni_content") else None,
                                 "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
+                                "ni_content_src":_ni_src,
+                                "co_content_src":_co_src,
                                 "other_adj_usd":new_other_adj if new_other_adj else None,
                                 "other_adj_desc":new_other_desc,
                                 "final_amount_usd": _snap_final})
@@ -1192,15 +1238,26 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 # 추가정산 계산 (가능한 경우)
                 net_disp="—"
                 pm2=s.get("prov_month","—"); fm2=s.get("final_month","—")
-                if (bx and pm2!="—" and fm2!="—" and pm2 in hm_all and fm2 in hm_all):
-                    _,_,_,fpkg2=bp_price(hm_all[fm2]["ni_index"],hm_all[fm2]["co_index"],
-                        s.get("buyer_ni_content") or bx.get("ni_content",0),
-                        s.get("buyer_co_content") or bx.get("co_content",0),
-                        bx.get("ni_payable",0),bx.get("co_payable",0))
-                    mst=s.get("moisture_pct") or 0
-                    fw2=s.get("weight_kg",0)*(1-mst/100)
-                    net_v=fpkg2*fw2 - s.get("invoice_usd",0) + (s.get("other_adj_usd") or 0)
-                    net_disp=f"${net_v:+,.2f}"
+                if (bx and pm2!="—" and pm2 in hm_all):
+                    _tst = _settle_terms(_get_contract_for_shipment(cfg, s.get("id","")), bx)
+                    _tprov = float(s.get("invoice_usd",0)) * (_tst["prov_pct"] / 100.0)
+                    _snapped2 = s.get("final_amount_usd")
+                    if _snapped2:
+                        net_v = float(_snapped2) - _tprov + (s.get("other_adj_usd") or 0)
+                        net_disp = f"${net_v:+,.2f}"
+                    elif fm2!="—" and fm2 in hm_all:
+                        _src_ni2 = s.get("ni_content_src","매입사값")
+                        _src_co2 = s.get("co_content_src","매입사값")
+                        _bni2 = s.get("buyer_ni_content") or bx.get("ni_content",0)
+                        _bco2 = s.get("buyer_co_content") or bx.get("co_content",0)
+                        _eni2 = {"매입사값":_bni2,"당사값":bx.get("ni_content",0),"평균":(_bni2+bx.get("ni_content",0))/2}.get(_src_ni2,_bni2)
+                        _eco2 = {"매입사값":_bco2,"당사값":bx.get("co_content",0),"평균":(_bco2+bx.get("co_content",0))/2}.get(_src_co2,_bco2)
+                        _,_,_,fpkg2=bp_price(hm_all[fm2]["ni_index"],hm_all[fm2]["co_index"],
+                            _eni2, _eco2, _tst["ni_payable"], _tst["co_payable"])
+                        mst=s.get("moisture_pct") or 0
+                        fw2=s.get("weight_kg",0)*(1-mst/100)
+                        net_v=fpkg2*fw2 - _tprov + (s.get("other_adj_usd") or 0)
+                        net_disp=f"${net_v:+,.2f} (추정)"
                 tbl_rows.append({
                     "HBL":s.get("hbl","—"),
                     "매입사":f"{bx.get('name','?')} ({bx.get('product','?')})",
