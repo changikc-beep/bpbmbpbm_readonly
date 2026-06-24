@@ -1128,11 +1128,16 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         st.markdown("#### 🔍 HBL 수명주기 조회")
         _lc_proc_m  = {p["id"]: p for p in cfg.get("processors", [])}
         _lc_scrap_m = {s["id"]: s for s in cfg.get("scrap_types", [])}
-        _lc_hbl_opts = {
-            f"{s.get('hbl','—')}  ·  {buyer_map.get(s.get('buyer_id',''),{}).get('name','?')}  ·  {s.get('loading_date','미정')}": s["id"]
-            for s in sorted(shipments, key=lambda x: x.get("loading_date",""), reverse=True)
-            if s.get("id")
-        }
+        _lc_hbl_opts = {}
+        for _ls in sorted(shipments, key=lambda x: x.get("loading_date",""), reverse=True):
+            if not _ls.get("id"):
+                continue
+            _lk = (f"{_ls.get('hbl','—')}  ·  "
+                   f"{buyer_map.get(_ls.get('buyer_id',''),{}).get('name','?')}  ·  "
+                   f"{_ls.get('loading_date','미정')}")
+            if _lk in _lc_hbl_opts:
+                _lk = f"{_lk}  [{_ls['id'][:4]}]"
+            _lc_hbl_opts[_lk] = _ls["id"]
         _lc_sel = st.selectbox("HBL 선택", list(_lc_hbl_opts), key="lc_hbl_sel")
         _lc_sid  = _lc_hbl_opts[_lc_sel]
         _lc_ship = next((s for s in shipments if s.get("id") == _lc_sid), {})
@@ -1190,7 +1195,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 "detail": f"기준월: {_fm}",
             })
 
-        _lc_events.sort(key=lambda e: e["sort"] if e["sort"] and e["sort"] != "—" else "9999")
+        _lc_events.sort(key=lambda e: e["sort"] if e["sort"] and e["sort"] != "—" else "9999-12-31")
 
         if _lc_events:
             for _ei, _ev in enumerate(_lc_events):
@@ -1570,7 +1575,10 @@ with t_pnl:
         if _tot_out > 0:
             _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
             _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
-            _stor_s1     = sum((_ph_storage_cost(r, cfg) or _auto_storage_for_batch(r)) for r in _ph_all)
+            _stor_s1     = sum(
+                _ph_storage_cost(r, cfg) if r.get("storage_days") else _auto_storage_for_batch(r)
+                for r in _ph_all
+            )
         else:
             _raw_fifo_s1 = _raw_mavg_s1 = _stor_s1 = 0.0
         _tot_real_fifo = _tot_net - _raw_fifo_s1 - _stor_s1
@@ -1589,7 +1597,7 @@ with t_pnl:
                    -_raw_fifo_s1, -_stor_s1, 0],
                 text=[f"${_tot_bp:,.0f}", f"+${_tot_sc_rev:,.0f}", f"-${_tot_repr:,.0f}",
                       f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}",
-                      f"-${_raw_fifo_s1:,.0f}", f"-${_stor_s1:,.0f}", f"${_tot_real_fifo:+,.0f}"],
+                      f"-${abs(_raw_fifo_s1):,.0f}", f"-${abs(_stor_s1):,.0f}", f"${_tot_real_fifo:+,.0f}"],
                 textposition="outside",
                 increasing=dict(marker=dict(color="#2E75B6")),
                 decreasing=dict(marker=dict(color="#E74C3C")),
@@ -1742,18 +1750,17 @@ with t_pnl:
                     return styles
                 # ── 트렌드 차트 ──────────────────────────────────────────────
                 try:
-                    import plotly.graph_objects as _go_mon
                     _mx   = [r["월"] for r in _mon_rows2]
                     _mgm  = [r["거래 마진"] for r in _mon_rows2]
                     _mrl  = [r["실질 손익"] for r in _mon_rows2]
-                    _fig_mon = _go_mon.Figure()
-                    _fig_mon.add_trace(_go_mon.Bar(
+                    _fig_mon = go.Figure()
+                    _fig_mon.add_trace(go.Bar(
                         x=_mx, y=_mgm, name="거래 마진",
                         marker_color=["#2E75B6" if v >= 0 else "#E74C3C" for v in _mgm],
                         text=[f"${v:+,.0f}" for v in _mgm],
                         textposition="outside", textfont=dict(size=9),
                     ))
-                    _fig_mon.add_trace(_go_mon.Scatter(
+                    _fig_mon.add_trace(go.Scatter(
                         x=_mx, y=_mrl, name="실질 손익",
                         mode="lines+markers+text",
                         line=dict(color="#F39C12", width=2),
@@ -5275,17 +5282,20 @@ def _contract_metrics(cfg, contract):
     end   = _norm_date(contract.get("end_date", "") or "9999-12-31", is_end=True) or "9999-12-31"
 
     # 선적 완료량 — 배분 기록 우선
-    # 같은 매입사의 어느 계약이라도 배분 기록이 있으면 전체 배분 모드 강제
+    # 같은 매입사 + 같은 스크랩 유형의 어느 계약이라도 배분 기록이 있으면 전체 배분 모드 강제
     # (없으면 buyer_id + scrap_type_id 기간 합산 fallback)
     _shipments  = cfg.get("shipments", [])
     ship_map    = {s["id"]: s for s in _shipments if s.get("id")}
-    ct_allocs   = [a for a in cfg.get("contract_allocations", [])
-                   if a.get("contract_id") == contract_id]
-    _buyer_contract_ids = {c["id"] for c in cfg.get("contracts", [])
-                           if c.get("buyer_id") == buyer_id}
+    all_allocs  = cfg.get("contract_allocations", [])
+    ct_allocs   = [a for a in all_allocs if a.get("contract_id") == contract_id]
+    _buyer_scrap_contract_ids = {
+        c["id"] for c in cfg.get("contracts", [])
+        if buyer_id and c.get("buyer_id") == buyer_id
+        and c.get("scrap_type_id") == scrap_id
+    }
     _buyer_has_any_alloc = any(
-        a for a in cfg.get("contract_allocations", [])
-        if a.get("contract_id") in _buyer_contract_ids
+        a for a in all_allocs
+        if a.get("contract_id") in _buyer_scrap_contract_ids
     )
     if ct_allocs:
         shipped_kg = sum(
@@ -5509,7 +5519,7 @@ with t_contract:
                     for _a in _ct_allocs_cur:
                         _s = _ship_map_disp.get(_a.get("shipment_id", ""), {})
                         _alloc_rows.append({
-                            "HBL": _s.get("hbl") or _s.get("hbl_number") or "—",
+                            "HBL": _s.get("hbl","—"),
                             "선적일": _s.get("loading_date", "—"),
                             "배분량 (MT)": round(float(_a.get("allocated_kg") or 0) / 1000, 3),
                             "_alloc_id": _a.get("id", ""),
@@ -5535,7 +5545,7 @@ with t_contract:
                 ]
                 if _buyer_ships:
                     _ship_opts = {
-                        f"{s.get('hbl') or s.get('hbl_number') or '—'}  ({s.get('loading_date','—')}, {float(s.get('weight_kg') or 0)/1000:,.2f} MT)": s["id"]
+                        f"{s.get('hbl','—')}  ({s.get('loading_date','—')}, {float(s.get('weight_kg') or 0)/1000:,.2f} MT)": s["id"]
                         for s in _buyer_ships if s.get("id")
                     }
                     with st.form(key=f"alloc_form_{_ct_id}"):
@@ -5550,10 +5560,8 @@ with t_contract:
                         st.caption(f"선적 합계 {_preview_total/1000:,.3f} MT  ·  기배분 {_preview_used/1000:,.3f} MT  ·  잔여 **{_preview_rem/1000:,.3f} MT**")
                         _add_alloc = st.form_submit_button("➕ 배분 추가")
                     if _add_alloc:
-                        _sel_sid = _ship_opts[_sel_ship_label]
-                        _ship_total_kg = float(next((s.get("weight_kg",0) for s in _buyer_ships if s.get("id")==_sel_sid), 0) or 0)
-                        _already_kg    = sum(float(a.get("allocated_kg",0)) for a in _allocs if a.get("shipment_id")==_sel_sid)
-                        _remain_kg     = _ship_total_kg - _already_kg
+                        _sel_sid   = _preview_sid
+                        _remain_kg = _preview_rem
                         if _alloc_kg_input <= 0:
                             st.error("배분량은 0보다 커야 합니다.")
                         elif _alloc_kg_input * 1000 > _remain_kg + 0.1:
