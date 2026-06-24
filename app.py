@@ -924,7 +924,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     new_b=st.selectbox("매입사",list(buyer_opts.keys()),
                         index=list(buyer_opts.keys()).index(cur_b_lbl[0]) if cur_b_lbl else 0,key=f"sh_buy_{real_i}")
                     new_wkg=st.number_input("선적 중량 (kg)",value=float(s.get("weight_kg",0)),step=1.0,format="%.0f",key=f"sh_wkg_{real_i}")
-                    new_iusd=st.number_input("Invoice (USD, Provisional 정산액)",value=float(s.get("invoice_usd",0)),step=1.0,format="%.2f",key=f"sh_iusd_{real_i}")
+                    new_iusd=st.number_input("Invoice 총액 (USD)",value=float(s.get("invoice_usd",0)),step=1.0,format="%.2f",key=f"sh_iusd_{real_i}")
                     new_eusd=st.number_input("수출비 (USD)",value=float(s.get("export_cost_usd") or 0),step=1.0,format="%.2f",key=f"sh_eusd_{real_i}",
                         help="Ocean Freight, THC 등 이 선적건 전체 수출비 합계. 배치별 생산량 비례로 자동 배분됩니다.")
                 with e3:
@@ -979,38 +979,74 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         key=f"sh_adjd_{real_i}")
 
                 # ── 정산 요약 계산 ──
+                # 계약 조건 조회 (계약 있으면 ni/co 지불율·가정산비율·INDEX기준 계약 우선)
+                _settle_ct   = _get_contract_for_shipment(cfg, s.get("id",""))
+                _st          = _settle_terms(_settle_ct, b)
+                _ni_pay      = _st["ni_payable"]
+                _co_pay      = _st["co_payable"]
+                _prov_pct_val= _st["prov_pct"]
+                _prov_idx_b  = _st["prov_idx"]
+                _final_idx_b = _st["final_idx"]
+                _ld_for_idx  = s.get("loading_date","")
+
                 if b and new_pm!="—" and new_pm in hm_all:
-                    pm_data=hm_all[new_pm]
+                    _prov_idx_month = _resolve_idx_month(_prov_idx_b, _ld_for_idx, new_pm, new_pm)
+                    if _prov_idx_month not in hm_all:
+                        _prov_idx_month = new_pm
+                    pm_data=hm_all[_prov_idx_month]
                     _,_,_,prov_pkg=bp_price(pm_data["ni_index"],pm_data["co_index"],
                         b.get("ni_content",0),b.get("co_content",0),
-                        b.get("ni_payable",0),b.get("co_payable",0))
+                        _ni_pay, _co_pay)
+                    # Invoice 총액 → Provisional 지급액
+                    prov_paid = new_iusd * (_prov_pct_val / 100.0)
                     st.markdown("---")
+
+                    # Provisional 조건 표시
+                    if _settle_ct:
+                        _ct_hint = []
+                        if _settle_ct.get("prov_pct"): _ct_hint.append(f"가정산 {_prov_pct_val:.0f}%")
+                        if _settle_ct.get("ni_payable_pct"): _ct_hint.append(f"Ni {_ni_pay:.1f}%")
+                        if _settle_ct.get("co_payable_pct"): _ct_hint.append(f"Co {_co_pay:.1f}%")
+                        if _prov_idx_b != "prov": _ct_hint.append(f"INDEX 기준: {_prov_idx_month}")
+                        if _ct_hint:
+                            st.caption(f"📋 계약 조건 적용: {', '.join(_ct_hint)}")
+
                     if new_fm!="—" and new_fm in hm_all:
                         # 확정산 계산
-                        fm_data=hm_all[new_fm]
+                        _final_idx_month = _resolve_idx_month(_final_idx_b, _ld_for_idx, new_pm, new_fm)
+                        if _final_idx_month not in hm_all:
+                            _final_idx_month = new_fm
+                        fm_data=hm_all[_final_idx_month]
                         _,_,_,final_pkg=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             new_buyer_ni,new_buyer_co,
-                            b.get("ni_payable",0),b.get("co_payable",0))
+                            _ni_pay, _co_pay)
                         final_w=new_wkg*(1-new_moisture/100)
-                        prov_amt=new_iusd
                         final_amt=final_pkg*final_w
                         index_diff=(final_pkg-prov_pkg)
-                        net_settle=final_amt-prov_amt+new_other_adj
+                        # Final 스냅샷 값 (저장된 값 우선)
+                        _snapped_final = s.get("final_amount_usd")
+                        _display_final = _snapped_final if _snapped_final else final_amt
+                        net_settle=_display_final - prov_paid + new_other_adj
 
                         st.markdown("**📋 정산 요약**")
                         rs1,rs2,rs3,rs4=st.columns(4)
                         with rs1:
-                            st.metric("Provisional 단가",f"${prov_pkg:.5f}/kg",
-                                      help=f"INDEX {new_pm}: Ni ${pm_data['ni_index']:,.2f} / Co ${pm_data['co_index']:,.2f}")
-                            st.metric("Provisional 정산액",f"${prov_amt:,.2f}")
+                            st.metric("Invoice 총액",f"${new_iusd:,.2f}")
+                            _prov_label = f"가정산 지급액 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
+                            st.metric(_prov_label, f"${prov_paid:,.2f}",
+                                      help=f"Provisional 단가 ${prov_pkg:.5f}/kg  |  INDEX {_prov_idx_month}: Ni ${pm_data['ni_index']:,.2f} / Co ${pm_data['co_index']:,.2f}")
                         with rs2:
                             st.metric("Final 단가",f"${final_pkg:.5f}/kg",
                                       delta=f"{index_diff:+.5f}",
-                                      help=f"INDEX {new_fm}: Ni ${fm_data['ni_index']:,.2f} / Co ${fm_data['co_index']:,.2f}")
+                                      help=f"INDEX {_final_idx_month}: Ni ${fm_data['ni_index']:,.2f} / Co ${fm_data['co_index']:,.2f}")
                             st.metric("정산 중량",f"{final_w:,.1f} kg",
                                       delta=f"{final_w-new_wkg:+,.1f} kg (수분 {new_moisture:.1f}%)")
                         with rs3:
-                            st.metric("최종정산액",f"${final_amt:,.2f}")
+                            if _snapped_final:
+                                st.metric("최종정산액 (확정)",f"${_display_final:,.2f}",
+                                          help="Final 전환 시 저장된 스냅샷")
+                            else:
+                                st.metric("최종정산액 (계산)",f"${final_amt:,.2f}")
                             if new_other_adj!=0:
                                 st.metric("기타 조정",f"${new_other_adj:+,.2f}",
                                           help=new_other_desc if new_other_desc else "기타")
@@ -1025,35 +1061,74 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         # 상세 항목 표
                         st.markdown(f"""| 항목 | Provisional | Final | 비고 |
 |------|------------|-------|------|
-|기준 월|{new_pm}|{new_fm}||
+|INDEX 기준월|{_prov_idx_month}|{_final_idx_month}||
 |Ni INDEX|${pm_data['ni_index']:,.2f}|${fm_data['ni_index']:,.2f}|${fm_data['ni_index']-pm_data['ni_index']:+,.2f}|
 |Co INDEX|${pm_data['co_index']:,.2f}|${fm_data['co_index']:,.2f}|${fm_data['co_index']-pm_data['co_index']:+,.2f}|
 |Ni 함유량|{b.get('ni_content',0):.2f}%|{new_buyer_ni:.2f}%|{new_buyer_ni-b.get('ni_content',0):+.2f}%p|
 |Co 함유량|{b.get('co_content',0):.2f}%|{new_buyer_co:.2f}%|{new_buyer_co-b.get('co_content',0):+.2f}%p|
 |중량|{new_wkg:,.0f} kg|{final_w:,.1f} kg|수분 {new_moisture:.1f}% 공제|
 |단가 ($/kg)|${prov_pkg:.5f}|${final_pkg:.5f}|${index_diff:+.5f}|
-|정산금액|${prov_amt:,.2f}|${final_amt:,.2f}||
+|Invoice 총액|${new_iusd:,.2f}|—||
+|가정산 지급|${prov_paid:,.2f} ({_prov_pct_val:.0f}%)|{f"${_display_final:,.2f} (확정)" if _snapped_final else f"${final_amt:,.2f} (계산)"}||
 |기타 조정|—|${new_other_adj:+,.2f}|{new_other_desc}|
 |**추가정산**|—|**${net_settle:+,.2f}**|{"🟢 수령" if net_settle>=0 else "🔴 지급"}|""")
                     else:
                         # Provisional만 있는 경우
-                        st.info(f"Provisional ({new_pm}): **${prov_pkg:.5f}/kg**  |  Provisional 정산액: **${new_iusd:,.2f}**  — Final 월을 선택하면 추가정산 계산이 가능합니다.")
+                        _prov_label2 = f"가정산 지급액 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
+                        st.info(
+                            f"Provisional ({_prov_idx_month}): **${prov_pkg:.5f}/kg**  |  "
+                            f"Invoice 총액: **${new_iusd:,.2f}**  |  {_prov_label2}: **${prov_paid:,.2f}**  "
+                            f"— Final 월을 선택하면 추가정산 계산이 가능합니다."
+                        )
 
                 ca,cb=st.columns(2)
                 with ca:
                     if st.button("💾 저장",key=f"sh_save_{real_i}"):
                         _save_err = []
-                        # 선적일 형식 검사
+                        # 선적일 형식·정합성 검사
                         if new_ld:
                             try: datetime.strptime(new_ld, "%Y-%m-%d")
                             except ValueError: _save_err.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD)")
+                        # ETA > 선적일 검사
+                        if new_ld and new_eta and new_eta < new_ld:
+                            _save_err.append(f"ETA({new_eta})가 선적일({new_ld})보다 앞섭니다")
+                        # Final월 >= Provisional월 검사
+                        if new_pm != "—" and new_fm != "—" and new_fm < new_pm:
+                            _save_err.append(f"Final월({new_fm})이 Provisional월({new_pm})보다 앞섭니다")
                         # HBL 중복 체크 (자기 자신 제외)
                         if new_hbl:
                             _dup = [s2 for j2,s2 in enumerate(shipments) if j2!=real_i and s2.get("hbl","").strip()==new_hbl.strip()]
                             if _dup: _save_err.append(f"HBL '{new_hbl}' 이(가) 이미 존재합니다")
+                        # 빈 HBL 동일 조합 중복 체크
+                        if not new_hbl.strip() and new_ld and new_wkg:
+                            _dup2 = [s2 for j2,s2 in enumerate(shipments)
+                                     if j2!=real_i
+                                     and not s2.get("hbl","").strip()
+                                     and s2.get("loading_date","") == new_ld
+                                     and s2.get("buyer_id","") == buyer_opts[new_b]
+                                     and abs(float(s2.get("weight_kg",0)) - new_wkg) < 1]
+                            if _dup2: _save_err.append("HBL 미입력인 동일 매입사·선적일·중량 선적건이 이미 있습니다")
                         if _save_err:
                             for _e in _save_err: st.error(_e)
                         else:
+                            _prev_stat = s.get("status","provisional")
+                            # Final 스냅샷: provisional → final 전환 시 최종정산액 확정
+                            _snap_final = s.get("final_amount_usd")
+                            if new_stat == "final" and _prev_stat != "final" and not _snap_final:
+                                # 현재 계산값으로 스냅샷 저장
+                                _snap_ct  = _get_contract_for_shipment(cfg, s.get("id",""))
+                                _snap_st  = _settle_terms(_snap_ct, b)
+                                if new_fm != "—" and new_fm in hm_all:
+                                    _snap_fidx = _resolve_idx_month(_snap_st["final_idx"], new_ld, new_pm, new_fm)
+                                    if _snap_fidx not in hm_all: _snap_fidx = new_fm
+                                    _sfmd = hm_all[_snap_fidx]
+                                    _bni2 = new_buyer_ni; _bco2 = new_buyer_co
+                                    _,_,_,_sfpkg = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
+                                                            _bni2, _bco2,
+                                                            _snap_st["ni_payable"], _snap_st["co_payable"])
+                                    _snap_final = round(_sfpkg * new_wkg * (1 - new_moisture/100), 2)
+                            elif new_stat != "final":
+                                _snap_final = None  # final 상태 해제 시 스냅샷 제거
                             cfg["shipments"][real_i].update({
                                 "hbl":new_hbl,"invoice_no":new_inv,
                                 "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
@@ -1065,7 +1140,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 "buyer_ni_content":new_buyer_ni if new_buyer_ni!=default_ni or s.get("buyer_ni_content") else None,
                                 "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
                                 "other_adj_usd":new_other_adj if new_other_adj else None,
-                                "other_adj_desc":new_other_desc})
+                                "other_adj_desc":new_other_desc,
+                                "final_amount_usd": _snap_final})
                             save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with cb:
                     with st.popover("🗑️ 삭제", use_container_width=True):
@@ -1105,6 +1181,60 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                          use_container_width=True,hide_index=True)
             st.download_button("📥 CSV",pd.DataFrame(tbl_rows).to_csv(index=False,encoding="utf-8-sig"),
                 f"선적정산_{date.today():%Y%m%d}.csv","text/csv")
+
+        # ── 📊 채권 Aging 보고서 ────────────────────────────────────────────
+        _aging_ships = [s for s in shipments if s.get("status","") != "paid"]
+        if _aging_ships:
+            with st.expander("📊 미수채권 Aging 보고서", expanded=False):
+                _today_str = date.today().isoformat()
+                _aging_rows = []
+                for _as in _aging_ships:
+                    _ab  = buyer_map.get(_as.get("buyer_id",""), {})
+                    _ald = _as.get("loading_date","")
+                    if _ald:
+                        try:
+                            _days = (date.today() - date.fromisoformat(_ald)).days
+                        except Exception:
+                            _days = -1
+                    else:
+                        _days = -1
+                    _aging_band = (
+                        "< 30일" if _days < 30
+                        else "30–60일" if _days < 60
+                        else "60–90일" if _days < 90
+                        else "> 90일"
+                    ) if _days >= 0 else "선적일 미정"
+                    # 가정산 지급액 계산
+                    _act  = _get_contract_for_shipment(cfg, _as.get("id",""))
+                    _ast  = _settle_terms(_act, _ab)
+                    _prov_paid_a = float(_as.get("invoice_usd",0)) * (_ast["prov_pct"] / 100.0)
+                    _aging_rows.append({
+                        "Aging":        _aging_band,
+                        "경과일":        _days if _days >= 0 else "—",
+                        "HBL":          _as.get("hbl","—"),
+                        "매입사":        _ab.get("name","?"),
+                        "선적일":        _ald or "—",
+                        "중량(MT)":      round(float(_as.get("weight_kg",0))/1000, 2),
+                        "Invoice(USD)": float(_as.get("invoice_usd",0)),
+                        "가정산 지급액":  round(_prov_paid_a, 2),
+                        "상태":          _as.get("status","provisional"),
+                    })
+                _aging_rows.sort(key=lambda r: (r["Aging"] == "선적일 미정", r.get("경과일", 0) if isinstance(r.get("경과일",0), int) else 0), reverse=True)
+                _df_aging = pd.DataFrame(_aging_rows)
+                # 합계 행
+                _tot_inv = sum(r["Invoice(USD)"] for r in _aging_rows)
+                _tot_prov = sum(r["가정산 지급액"] for r in _aging_rows)
+                _band_cnt = {}
+                for _r in _aging_rows:
+                    _band_cnt[_r["Aging"]] = _band_cnt.get(_r["Aging"], 0) + 1
+                st.caption(
+                    "  ·  ".join([f"**{b}**: {n}건" for b, n in sorted(_band_cnt.items())])
+                    + f"  |  Invoice 합계: **${_tot_inv:,.0f}**  |  가정산 지급 합계: **${_tot_prov:,.0f}**"
+                )
+                st.dataframe(
+                    _df_aging.style.format({"Invoice(USD)": "${:,.2f}", "가정산 지급액": "${:,.2f}", "중량(MT)": "{:,.2f}"}),
+                    use_container_width=True, hide_index=True,
+                )
 
     st.divider()
     st.subheader("새 선적건 추가")
@@ -2802,9 +2932,24 @@ with t_proc:
                         step=1.0, format="%.0f", key=f"slim_out_{_rk}")
                     _e_inp = _e_out / (_e_cv/100) if _e_cv > 0 else 0
                     st.metric("투입량 (스크랩)", f"{_e_inp:,.0f} kg")
-                    _e_bps = st.number_input("BP 매각단가 ($/kg)",
-                        value=float(rec.get("bp_sale_per_kg") or 0),
-                        step=0.0001, format="%.4f", key=f"slim_bps_{_rk}")
+                    # BP 매각단가: 연결 선적건이 final/paid이면 잠금
+                    _ship_stat_lock = ship_obj.get("status","") if ship_obj else ""
+                    _bp_locked = _ship_stat_lock in ("final","paid")
+                    if _bp_locked:
+                        st.metric("BP 매각단가 ($/kg) 🔒",
+                                  f"${float(rec.get('bp_sale_per_kg') or 0):.4f}",
+                                  help=f"선적 상태 '{_ship_stat_lock}' — 수정 잠금")
+                        _e_bps = float(rec.get("bp_sale_per_kg") or 0)
+                    else:
+                        _e_bps = st.number_input("BP 매각단가 ($/kg)",
+                            value=float(rec.get("bp_sale_per_kg") or 0),
+                            step=0.0001, format="%.4f", key=f"slim_bps_{_rk}")
+                    _e_scrap_sale = st.number_input(
+                        "스크랩 매각단가 ($/kg 투입)",
+                        value=float(rec.get("scrap_sale_per_kg") or 0),
+                        step=0.0001, format="%.4f", key=f"slim_scs_{_rk}",
+                        help="BP 생산 후 부산물(잔여 스크랩) 매각 단가. 손익 탭 '스크랩 매각수익' 항목에 반영됩니다.",
+                    )
                     _e_note = st.text_input("비고", rec.get("notes",""), key=f"slim_note_{_rk}")
 
                 _es1, _es2 = st.columns(2)
@@ -2818,6 +2963,7 @@ with t_proc:
                             "input_kg":            _e_inp,
                             "output_kg":           _e_out,
                             "bp_sale_per_kg":      _e_bps,
+                            "scrap_sale_per_kg":   _e_scrap_sale if _e_scrap_sale > 0 else None,
                             "notes":               _e_note,
                         })
                         save_cfg(cfg); st.toast("✅ 저장"); st.rerun()
@@ -3909,19 +4055,57 @@ with t_idx:
 
     _gs_c1, _gs_c2 = st.columns([2, 3])
     with _gs_c1:
-        if st.button("🔄 지금 동기화", type="primary", use_container_width=True):
-            with st.spinner("Google Sheets에서 데이터 가져오는 중..."):
-                _ok, _msg = _sync_from_gsheets(cfg)
-            if _ok:
-                save_cfg(cfg)
-                from datetime import datetime as _dt
-                _now_str = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state["last_sync_time"] = _now_str
-                st.session_state["last_sync_log"] = _msg
-                st.toast("✅ 동기화 완료")
-                st.rerun()
+        # ── 미리보기 ──────────────────────────────────────────────────────
+        if st.button("🔍 미리보기", use_container_width=True,
+                     help="실제 데이터를 변경하지 않고 동기화될 내용을 확인합니다"):
+            import copy as _copy
+            _preview_cfg = _copy.deepcopy(cfg)
+            with st.spinner("미리보기 계산 중..."):
+                _ok_p, _msg_p = _sync_from_gsheets(_preview_cfg)
+            if _ok_p:
+                st.session_state["sync_preview_log"] = _msg_p
+                st.session_state["sync_preview_ready"] = True
+                # 변경사항 요약
+                _old_dr  = len(cfg.get("dispatch_records", []))
+                _new_dr  = len(_preview_cfg.get("dispatch_records", []))
+                _old_pur = sum(len(v.get("purchases",[])) for v in cfg.get("raw_material_inventory",{}).values())
+                _new_pur = sum(len(v.get("purchases",[])) for v in _preview_cfg.get("raw_material_inventory",{}).values())
+                _old_sh  = len(cfg.get("shipments", []))
+                _new_sh  = len(_preview_cfg.get("shipments", []))
+                st.info(
+                    f"**미리보기 결과 (저장되지 않음)**  \n"
+                    f"선적: {_old_sh}건 → {_new_sh}건  ·  "
+                    f"출고: {_old_dr}건 → {_new_dr}건  ·  "
+                    f"입고: {_old_pur}건 → {_new_pur}건"
+                )
             else:
-                st.error(f"동기화 실패: {_msg}")
+                st.error(f"미리보기 실패: {_msg_p}")
+        _preview_log = st.session_state.get("sync_preview_log")
+        if _preview_log and st.session_state.get("sync_preview_ready"):
+            with st.expander("미리보기 상세", expanded=True):
+                for _pl in _preview_log.split("\n"):
+                    st.caption(_pl)
+
+        # ── 실제 동기화 ───────────────────────────────────────────────────
+        st.markdown("---")
+        if st.button("🔄 지금 동기화", type="primary", use_container_width=True):
+            if not st.session_state.get("sync_preview_ready"):
+                st.warning("⚠️ 동기화 전에 **미리보기**를 먼저 확인하세요.")
+            else:
+                with st.spinner("Google Sheets에서 데이터 가져오는 중..."):
+                    _ok, _msg = _sync_from_gsheets(cfg)
+                if _ok:
+                    save_cfg(cfg)
+                    from datetime import datetime as _dt
+                    _now_str = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state["last_sync_time"] = _now_str
+                    st.session_state["last_sync_log"] = _msg
+                    st.session_state["sync_preview_ready"] = False
+                    st.session_state["sync_preview_log"] = None
+                    st.toast("✅ 동기화 완료")
+                    st.rerun()
+                else:
+                    st.error(f"동기화 실패: {_msg}")
         _last_sync = st.session_state.get("last_sync_time")
         if _last_sync:
             st.caption(f"마지막 동기화: {_last_sync}")
@@ -3935,7 +4119,9 @@ with t_idx:
             "**동기화 범위**  \n"
             "- 선적: HBL 기준 upsert (정산 상세·수분 등은 보존)  \n"
             "- 입고: 스크랩 유형별 구매 이력 전체 교체 (기초재고 보존)  \n"
-            "- 출고: (출고유형, 스크랩유형) 조합 단위 교체"
+            "- 출고: (출고유형, 스크랩유형) 조합 단위 교체  \n"
+            "  \n"
+            "ℹ️ **미리보기** 후 실제 동기화 버튼이 활성화됩니다."
         )
 
     st.divider()
@@ -5259,6 +5445,39 @@ def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
     )
     return max(0.0, dispatched - processed)
 
+def _get_contract_for_shipment(cfg, ship_id):
+    """선적건 ID로 연결된 계약 반환 (배분 기록 우선, 없으면 None)."""
+    alloc = next((a for a in cfg.get("contract_allocations", [])
+                  if a.get("shipment_id") == ship_id), None)
+    if alloc:
+        return next((c for c in cfg.get("contracts", [])
+                     if c.get("id") == alloc.get("contract_id")), None)
+    return None
+
+def _settle_terms(contract, buyer):
+    """계약·매입사 마스터에서 유효 정산 조건 반환.
+    계약에 값이 있으면 계약 우선, 없으면 매입사 기본값 사용.
+    반환: {ni_payable, co_payable, prov_pct, prov_idx, final_idx}
+    """
+    ct  = contract or {}
+    b   = buyer or {}
+    return {
+        "ni_payable": float(ct.get("ni_payable_pct") or b.get("ni_payable", 0) or 0),
+        "co_payable": float(ct.get("co_payable_pct") or b.get("co_payable", 0) or 0),
+        "prov_pct":   float(ct.get("prov_pct")   or 100.0),
+        "prov_idx":   ct.get("prov_index_basis",  "prov"),   # "prov" | "loading"
+        "final_idx":  ct.get("final_index_basis", "final"),  # "final" | "prov" | "loading"
+    }
+
+def _resolve_idx_month(basis, loading_date, prov_month, final_month):
+    """INDEX 기준월 결정. basis: 'prov'|'final'|'loading'."""
+    if basis == "loading":
+        ld = (loading_date or "")[:7]
+        return ld or prov_month
+    if basis == "final":
+        return final_month
+    return prov_month  # default "prov"
+
 def _ship_in_period(ship, start, end):
     ld = ship.get("loading_date", "")
     if not ld:
@@ -5396,6 +5615,23 @@ with t_contract:
         _ct_end    = _cf7.text_input("계약 종료일 (YYYY-MM-DD)", key="ct_end")
         _ct_pr_sel = _cf8.selectbox("임가공사 (선택)", list(_ct_pr_opts), key="ct_proc",
                                      help="지정 시 해당 임가공사 재고만 충당에 반영")
+        # ── 가격·정산 조건 ────────────────────────────────────────────────
+        st.markdown("**💰 가격·정산 조건** (선택 — 미입력 시 매입사 기본값 사용)")
+        _cp1, _cp2, _cp3 = st.columns(3)
+        _ct_ni_pay = _cp1.number_input("Ni 지불율 (%)",  min_value=0.0, max_value=100.0, value=0.0,
+                                        step=0.1, format="%.2f", key="ct_ni_pay",
+                                        help="0이면 매입사 기본 지불율 사용")
+        _ct_co_pay = _cp2.number_input("Co 지불율 (%)",  min_value=0.0, max_value=100.0, value=0.0,
+                                        step=0.1, format="%.2f", key="ct_co_pay",
+                                        help="0이면 매입사 기본 지불율 사용")
+        _ct_prov_pct = _cp3.number_input("가정산 비율 (%)", min_value=0.0, max_value=100.0, value=100.0,
+                                          step=5.0, format="%.0f", key="ct_prov_pct",
+                                          help="예: 80 → Invoice 총액의 80%를 가정산으로 지급")
+        _cp4, _cp5 = st.columns(2)
+        _prov_idx_map = {"가정산월 INDEX": "prov", "선적월 INDEX": "loading"}
+        _final_idx_map = {"확정정산월 INDEX": "final", "선적월 INDEX": "loading", "가정산월 INDEX": "prov"}
+        _ct_prov_idx = _cp4.selectbox("Provisional INDEX 기준", list(_prov_idx_map), key="ct_prov_idx")
+        _ct_final_idx = _cp5.selectbox("Final INDEX 기준", list(_final_idx_map), key="ct_final_idx")
         _ct_notes = st.text_input("메모", key="ct_notes")
         if st.button("💾 계약 등록", key="ct_add_btn"):
             def _is_valid_date(s):
@@ -5408,16 +5644,22 @@ with t_contract:
                 st.error("날짜 형식 오류 — YYYY-MM-DD 형식으로 입력하세요. (예: 2026-05-01)")
             else:
                 _ct_list.append({
-                    "id":              str(uuid.uuid4())[:8],
-                    "buyer_id":        _ct_by_opts[_ct_buyer_sel],
-                    "product":         _ct_prod,
-                    "scrap_type_id":   _ct_sc_opts[_ct_sc_sel],
-                    "processor_id":    _ct_pr_opts[_ct_pr_sel],
-                    "contract_qty_mt": _ct_qty,
-                    "tolerance_pct":   _ct_tol,
-                    "start_date":      _ct_start.strip(),
-                    "end_date":        _ct_end.strip(),
-                    "notes":           _ct_notes.strip(),
+                    "id":                str(uuid.uuid4())[:8],
+                    "buyer_id":          _ct_by_opts[_ct_buyer_sel],
+                    "product":           _ct_prod,
+                    "scrap_type_id":     _ct_sc_opts[_ct_sc_sel],
+                    "processor_id":      _ct_pr_opts[_ct_pr_sel],
+                    "contract_qty_mt":   _ct_qty,
+                    "tolerance_pct":     _ct_tol,
+                    "start_date":        _ct_start.strip(),
+                    "end_date":          _ct_end.strip(),
+                    "notes":             _ct_notes.strip(),
+                    "contract_status":   "active",
+                    "ni_payable_pct":    _ct_ni_pay   if _ct_ni_pay   > 0 else None,
+                    "co_payable_pct":    _ct_co_pay   if _ct_co_pay   > 0 else None,
+                    "prov_pct":          _ct_prov_pct if _ct_prov_pct < 100 else None,
+                    "prov_index_basis":  _prov_idx_map[_ct_prov_idx],
+                    "final_index_basis": _final_idx_map[_ct_final_idx],
                 })
                 cfg["contracts"] = _ct_list
                 save_cfg(cfg)
@@ -5427,6 +5669,18 @@ with t_contract:
     if not _ct_list:
         st.info("등록된 계약이 없습니다.")
     else:
+        # ── 계약 상태 필터 ────────────────────────────────────────────────────
+        _ct_status_opts = ["active", "closed", "cancelled"]
+        _ct_status_labels = {"active": "진행 중", "closed": "완료", "cancelled": "취소"}
+        _ct_stat_filter = st.multiselect(
+            "계약 상태 필터", _ct_status_opts,
+            default=["active"],
+            format_func=lambda s: _ct_status_labels.get(s, s),
+            key="ct_stat_filter",
+        )
+        _ct_list_show = [c for c in _ct_list
+                         if c.get("contract_status", "active") in _ct_stat_filter]
+
         # ── 재고 현황 요약 (임가공사별) ───────────────────────────────────────
         st.markdown("#### 📦 가용 재고 현황")
         _inv_cols = st.columns(len(active_scraps)) if active_scraps else []
@@ -5458,7 +5712,7 @@ with t_contract:
         # ── 계약별 이행 현황 ──────────────────────────────────────────────────
         st.markdown("#### 계약별 이행 현황")
         _ship_map_disp = {s["id"]: s for s in cfg.get("shipments", [])}
-        for _ct in _ct_list:
+        for _ct in _ct_list_show:
             _ct_id   = _ct.get("id","")
             _ct_buyer_obj = _ct_buyers.get(_ct.get("buyer_id",""), {})
             _bname   = f"{_ct_buyer_obj.get('name','—')} ({_ct_buyer_obj.get('product','')})" if _ct_buyer_obj else "—"
@@ -5466,20 +5720,26 @@ with t_contract:
             _prname  = _ct_procs.get(_ct.get("processor_id",""), {}).get("name", "") if _ct.get("processor_id") else ""
             _m       = _contract_metrics(cfg, _ct)
 
+            _ct_cstatus = _ct.get("contract_status", "active")
+            _ct_cst_lbl = {"active": "진행 중", "closed": "완료", "cancelled": "취소"}.get(_ct_cstatus, _ct_cstatus)
+            _ct_cst_ico = {"active": "🟢", "closed": "🔵", "cancelled": "⚫"}.get(_ct_cstatus, "⚪")
             _stat_color = {"complete": "🟢", "ok": "🟡", "short": "🔴"}.get(_m["status"], "⚪")
             _stat_label = {"complete": "이행 완료", "ok": "재고 충분", "short": "재고 부족"}.get(_m["status"], "—")
 
             with st.expander(
-                f"{_stat_color} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
+                f"{_ct_cst_ico} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
                 + (f" / {_prname}" if _prname else "")
                 + f"  |  계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%"
                 + f"  |  선적 {_m['shipped_mt']:,.2f} MT ({_m['fulfill_pct']:.1f}%)"
-                + f"  |  {_stat_label}",
+                + f"  |  {_stat_label}  [{_ct_cst_lbl}]",
                 expanded=_m["status"] == "short",
             ):
                 # 이행률 프로그레스
                 _prog_val = 1.0 if _m["status"] == "complete" else (min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0)
                 st.progress(_prog_val)
+                # 상한 초과 경고
+                if _m["max_mt"] > 0 and _m["shipped_mt"] > _m["max_mt"]:
+                    st.warning(f"⚠️ 선적량({_m['shipped_mt']:.2f} MT)이 계약 상한({_m['max_mt']:.2f} MT)을 초과했습니다.")
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
                 _mc1.metric("계약량", f"{_m['qty_mt']:,.1f} MT",
@@ -5500,12 +5760,87 @@ with t_contract:
                     f"창고 원료 {_m['warehouse_raw_kg']/1000:,.2f} MT → BP {_m['warehouse_bp_mt']:,.2f} MT  ·  "
                     f"임가공사 미처리 {_m['at_proc_raw_kg']/1000:,.2f} MT → BP {_m['at_proc_bp_mt']:,.2f} MT"
                 )
+
+                # 가격·정산 조건 표시
+                _ct_ni_disp = f"{_ct['ni_payable_pct']:.2f}%" if _ct.get("ni_payable_pct") else "매입사 기본"
+                _ct_co_disp = f"{_ct['co_payable_pct']:.2f}%" if _ct.get("co_payable_pct") else "매입사 기본"
+                _prov_pct_disp = f"{_ct['prov_pct']:.0f}%" if _ct.get("prov_pct") else "100%"
+                _prov_idx_disp_map = {"prov": "가정산월", "loading": "선적월"}
+                _final_idx_disp_map = {"final": "확정월", "prov": "가정산월", "loading": "선적월"}
+                _prov_idx_d = _prov_idx_disp_map.get(_ct.get("prov_index_basis","prov"), "가정산월")
+                _final_idx_d = _final_idx_disp_map.get(_ct.get("final_index_basis","final"), "확정월")
+                st.caption(
+                    f"💰 Ni 지불율: {_ct_ni_disp}  ·  Co 지불율: {_ct_co_disp}  ·  "
+                    f"가정산: {_prov_pct_disp}  ·  Prov INDEX: {_prov_idx_d}  ·  Final INDEX: {_final_idx_d}"
+                )
                 if _ct.get("notes"):
                     st.caption(f"📝 {_ct['notes']}")
 
                 # 기간 표시
                 if _ct.get("start_date") or _ct.get("end_date"):
                     st.caption(f"📅 계약 기간: {_ct.get('start_date','—')} ~ {_ct.get('end_date','—')}")
+
+                # ── 계약 편집 ────────────────────────────────────────────────
+                with st.expander("✏️ 계약 수정", expanded=False):
+                    _edf1, _edf2, _edf3 = st.columns(3)
+                    _ed_qty  = _edf1.number_input("계약량 (MT)", value=float(_ct.get("contract_qty_mt",0)),
+                                                   step=1.0, format="%.1f", key=f"ed_qty_{_ct_id}")
+                    _ed_tol  = _edf2.number_input("허용 오차 (%)", value=float(_ct.get("tolerance_pct",5)),
+                                                   min_value=0.0, max_value=20.0, step=1.0, format="%.0f",
+                                                   key=f"ed_tol_{_ct_id}")
+                    _ed_cst  = _edf3.selectbox("계약 상태", _ct_status_opts,
+                                                index=_ct_status_opts.index(_ct.get("contract_status","active")),
+                                                format_func=lambda s: _ct_status_labels.get(s, s),
+                                                key=f"ed_cst_{_ct_id}")
+                    _edf4, _edf5 = st.columns(2)
+                    _ed_start = _edf4.text_input("계약 시작일", value=_ct.get("start_date",""), key=f"ed_start_{_ct_id}")
+                    _ed_end   = _edf5.text_input("계약 종료일", value=_ct.get("end_date",""), key=f"ed_end_{_ct_id}")
+                    _edf6, _edf7, _edf8 = st.columns(3)
+                    _ed_ni_pay = _edf6.number_input("Ni 지불율 (%)", value=float(_ct.get("ni_payable_pct") or 0),
+                                                     min_value=0.0, max_value=100.0, step=0.1, format="%.2f",
+                                                     key=f"ed_ni_{_ct_id}", help="0이면 매입사 기본값")
+                    _ed_co_pay = _edf7.number_input("Co 지불율 (%)", value=float(_ct.get("co_payable_pct") or 0),
+                                                     min_value=0.0, max_value=100.0, step=0.1, format="%.2f",
+                                                     key=f"ed_co_{_ct_id}", help="0이면 매입사 기본값")
+                    _ed_prov_pct = _edf8.number_input("가정산 비율 (%)", value=float(_ct.get("prov_pct") or 100),
+                                                       min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
+                                                       key=f"ed_pp_{_ct_id}")
+                    _edp1, _edp2 = st.columns(2)
+                    _ed_prov_idx = _edp1.selectbox(
+                        "Provisional INDEX 기준",
+                        list(_prov_idx_map),
+                        index=list(_prov_idx_map.values()).index(_ct.get("prov_index_basis","prov"))
+                              if _ct.get("prov_index_basis","prov") in _prov_idx_map.values() else 0,
+                        key=f"ed_pidx_{_ct_id}",
+                    )
+                    _ed_final_idx = _edp2.selectbox(
+                        "Final INDEX 기준",
+                        list(_final_idx_map),
+                        index=list(_final_idx_map.values()).index(_ct.get("final_index_basis","final"))
+                              if _ct.get("final_index_basis","final") in _final_idx_map.values() else 0,
+                        key=f"ed_fidx_{_ct_id}",
+                    )
+                    _ed_notes = st.text_input("메모", value=_ct.get("notes",""), key=f"ed_notes_{_ct_id}")
+                    if st.button("💾 수정 저장", key=f"ed_save_{_ct_id}"):
+                        for _c2 in cfg["contracts"]:
+                            if _c2.get("id") == _ct_id:
+                                _c2.update({
+                                    "contract_qty_mt":   _ed_qty,
+                                    "tolerance_pct":     _ed_tol,
+                                    "contract_status":   _ed_cst,
+                                    "start_date":        _ed_start.strip(),
+                                    "end_date":          _ed_end.strip(),
+                                    "ni_payable_pct":    _ed_ni_pay   if _ed_ni_pay   > 0 else None,
+                                    "co_payable_pct":    _ed_co_pay   if _ed_co_pay   > 0 else None,
+                                    "prov_pct":          _ed_prov_pct if _ed_prov_pct < 100 else None,
+                                    "prov_index_basis":  _prov_idx_map[_ed_prov_idx],
+                                    "final_index_basis": _final_idx_map[_ed_final_idx],
+                                    "notes":             _ed_notes.strip(),
+                                })
+                                break
+                        save_cfg(cfg)
+                        st.toast("✅ 계약 수정 완료")
+                        st.rerun()
 
                 # ── 선적 배분 관리 ──────────────────────────────────────────
                 st.divider()
@@ -5562,10 +5897,17 @@ with t_contract:
                     if _add_alloc:
                         _sel_sid   = _preview_sid
                         _remain_kg = _preview_rem
+                        # 계약 상한 초과 검증
+                        _cur_alloc_mt = sum(
+                            float(a.get("allocated_kg",0)) for a in _allocs if a.get("contract_id") == _ct_id
+                        ) / 1000
+                        _after_mt = _cur_alloc_mt + _alloc_kg_input
                         if _alloc_kg_input <= 0:
                             st.error("배분량은 0보다 커야 합니다.")
                         elif _alloc_kg_input * 1000 > _remain_kg + 0.1:
                             st.error(f"배분량이 잔여량을 초과합니다. 잔여: {_remain_kg/1000:,.3f} MT")
+                        elif _m["max_mt"] > 0 and _after_mt > _m["max_mt"] + 0.001:
+                            st.error(f"배분 후 계약 상한({_m['max_mt']:.2f} MT)을 초과합니다. 추가 가능: {(_m['max_mt']-_cur_alloc_mt):.3f} MT")
                         else:
                             _allocs.append({
                                 "id":           str(uuid.uuid4())[:8],
