@@ -1123,7 +1123,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     _,_,_,_prov_pkg_raw=bp_price(pm_data["ni_index"],pm_data["co_index"],
                         b.get("ni_content",0),b.get("co_content",0),
                         _ni_pay, _co_pay)
-                    prov_pkg = round(_prov_pkg_raw, 3)
+                    prov_pkg = round(_prov_pkg_raw, 2)
                     # Invoice 총액 → Provisional 지급액
                     prov_paid = new_iusd * (_prov_pct_val / 100.0)
                     st.markdown("---")
@@ -1147,7 +1147,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _,_,_,_final_pkg_raw=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             _eff_ni,_eff_co,
                             _ni_pay, _co_pay)
-                        final_pkg = round(_final_pkg_raw, 3)
+                        final_pkg = round(_final_pkg_raw, 2)
                         final_w=new_wkg*(1-new_moisture/100)
                         final_amt=final_pkg*final_w
                         index_diff=(final_pkg-prov_pkg)
@@ -1164,13 +1164,13 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _inv_vs_final = _display_final - new_iusd
                         with rs1:
                             st.metric("① Invoice 총액", f"${new_iusd:,.2f}",
-                                      help=f"단가 ${_inv_per_kg:.3f}/kg  ·  {new_wkg:,.0f} kg")
+                                      help=f"단가 ${_inv_per_kg:.2f}/kg  ·  {new_wkg:,.0f} kg")
                             st.metric(f"② 가정산 수령 ({_prov_pct_val:.0f}%)", f"${prov_paid:,.2f}",
-                                      help=f"Prov INDEX {_prov_idx_month}  ·  단가 ${prov_pkg:.3f}/kg")
+                                      help=f"Prov INDEX {_prov_idx_month}  ·  단가 ${prov_pkg:.2f}/kg")
                         with rs2:
                             _final_lbl = "③ 최종정산액 (확정)" if _snapped_final else "③ 최종정산액 (계산)"
                             st.metric(_final_lbl, f"${_display_final:,.2f}",
-                                      help=f"Final INDEX {_final_idx_month}  ·  단가 ${final_pkg:.3f}/kg  ·  {final_w:,.1f} kg")
+                                      help=f"Final INDEX {_final_idx_month}  ·  단가 ${final_pkg:.2f}/kg  ·  {final_w:,.1f} kg")
                             if new_other_adj:
                                 st.metric("기타 조정", f"${new_other_adj:+,.2f}",
                                           help=new_other_desc or "기타 조정")
@@ -1188,18 +1188,18 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                       delta="최종이 더 큼" if _inv_vs_final >= 0 else "최종이 더 작음",
                                       delta_color=_diff_color,
                                       help="최종정산액 − Invoice 총액")
-                            st.metric("최종 단가", f"${_final_per_kg:.3f}/kg",
+                            st.metric("최종 단가", f"${_final_per_kg:.2f}/kg",
                                       delta=f"{_final_per_kg-_inv_per_kg:+.3f}",
-                                      help=f"Invoice 단가 ${_inv_per_kg:.3f}/kg 대비")
+                                      help=f"Invoice 단가 ${_inv_per_kg:.2f}/kg 대비")
 
                         # ── 정산 흐름표 ───────────────────────────────────────
                         st.markdown(f"""
 | 단계 | 항목 | 금액 | 비고 |
 |:----:|------|-----:|------|
-| ① | Invoice 발행 | **${new_iusd:,.2f}** | 단가 ${_inv_per_kg:.3f}/kg · {new_wkg:,.0f} kg |
-| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −${prov_paid:,.2f} | INDEX {_prov_idx_month} · ${prov_pkg:.3f}/kg |
+| ① | Invoice 발행 | **${new_iusd:,.2f}** | 단가 ${_inv_per_kg:.2f}/kg · {new_wkg:,.0f} kg |
+| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −${prov_paid:,.2f} | INDEX {_prov_idx_month} · ${prov_pkg:.2f}/kg |
 | | **가정산 후 미수잔액** | **${new_iusd - prov_paid:,.2f}** | |
-| ③ | 최종정산액{"(확정)" if _snapped_final else "(계산)"} | ${_display_final:,.2f} | INDEX {_final_idx_month} · ${final_pkg:.3f}/kg · {_ni_src}/{_co_src} |
+| ③ | 최종정산액{"(확정)" if _snapped_final else "(계산)"} | ${_display_final:,.2f} | INDEX {_final_idx_month} · ${final_pkg:.2f}/kg · {_ni_src}/{_co_src} |
 {"| | 기타 조정 | " + f"${new_other_adj:+,.2f}" + " | " + (new_other_desc or "—") + " |" if new_other_adj else ""}
 | **④** | **{"확정산 청구액" if net_settle>=0 else "확정산 반환액"}** | **${net_settle:+,.2f}** | {"🟢 수령 예정" if net_settle>=0 else "🔴 반환 예정"} |
 """)
@@ -1220,14 +1220,14 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 | Ni 함유량 | {b.get('ni_content',0):.3f}% (당사) | {new_buyer_ni:.3f}% (매입사) · **{_eff_ni:.3f}%** 적용 | {_ni_diff:+.3f}%p | 기준: {_ni_src} |
 | Co 함유량 | {b.get('co_content',0):.3f}% (당사) | {new_buyer_co:.3f}% (매입사) · **{_eff_co:.3f}%** 적용 | {_co_diff:+.3f}%p | 기준: {_co_src} |
 | 정산 중량 | {new_wkg:,.0f} kg | {final_w:,.1f} kg | {_wt_diff:+,.1f} kg | 수분 {new_moisture:.1f}% 공제 |
-| 단가 ($/kg) | **${prov_pkg:.3f}** | **${final_pkg:.3f}** | **${index_diff:+.3f}** | |
+| 단가 ($/kg) | **${prov_pkg:.2f}** | **${final_pkg:.2f}** | **${index_diff:+.2f}** | |
 | 정산 합계 | ${new_iusd:,.2f} | ${_display_final:,.2f} | **${_inv_vs_final:+,.2f}** | |
 """)
                     else:
                         # Provisional만 있는 경우
                         _prov_label2 = f"가정산 수령 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
                         st.info(
-                            f"Prov INDEX {_prov_idx_month}: **${prov_pkg:.3f}/kg**  |  "
+                            f"Prov INDEX {_prov_idx_month}: **${prov_pkg:.2f}/kg**  |  "
                             f"Invoice 총액: **${new_iusd:,.2f}**  |  {_prov_label2}: **${prov_paid:,.2f}**  "
                             f"— Final 월을 선택하면 확정산 청구액을 계산합니다."
                         )
@@ -1276,7 +1276,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
                                                             _eff_ni, _eff_co,
                                                             _snap_st["ni_payable"], _snap_st["co_payable"])
-                                    _sfpkg = round(_sfpkg_raw, 3)
+                                    _sfpkg = round(_sfpkg_raw, 2)
                                     _snap_final = round(_sfpkg * new_wkg * (1 - new_moisture/100), 2)
                             elif new_stat != "final":
                                 _snap_final = None  # final 상태 해제 시 스냅샷 제거
