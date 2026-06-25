@@ -688,15 +688,22 @@ with st.sidebar:
 
 st.title("BP / BM 재고·손익 관리")
 
-(t_report,t_bp,t_sens,
- t_ship,t_freight,t_pnl,
- t_buy,t_proc,t_stype,t_outflow,t_idx,t_docs,t_contract) = st.tabs([
+(t_report, t_bp, t_sens,
+ t_ship, t_freight, t_pnl,
+ t_contract, t_master) = st.tabs([
     "📋 요약 보고서",
-    "📊 BP/BM 매각 단가","📉 민감도 분석",
-    "🚢 선적 정산 추적","🚛 포워더 운임 관리","💰 손익 분석",
-    "🏢 매입사 관리","🏭 임가공사 관리","🗃️ 스크랩 유형 관리",
-    "📥 입출고 기록","📈 INDEX 이력","📎 문서 보관함","📋 계약 이행"
+    "📊 BP/BM 매각 단가", "📉 민감도 분석",
+    "🚢 선적 정산 추적", "🚛 포워더 운임 관리", "💰 손익 분석",
+    "📋 계약 이행", "⚙️ 설정·관리",
 ])
+
+# 설정·관리 서브탭 — t_master 안에서 정의하지만 이후 with t_xxx: 로 개별 사용 가능
+with t_master:
+    (t_buy, t_proc, t_stype,
+     t_outflow, t_idx, t_docs) = st.tabs([
+        "🏢 매입사 관리", "🏭 임가공사 관리", "🗃️ 스크랩 유형 관리",
+        "📥 입출고 기록", "📈 INDEX 이력", "📎 문서 보관함",
+    ])
 
 active_buyers = [b for b in cfg["buyers"] if b.get("active",True)]
 active_procs  = [p for p in cfg.get("processors",[]) if p.get("active",True)]
@@ -737,9 +744,13 @@ with t_bp:
                     "Ni Value($/ton)":round(nv,2),"Co Value($/ton)":round(cv,2),
                     "단가($/ton)":round(tot,2),"단가($/kg)":round(pkg,5),
                     "단가(원/ton)":round(tot*XR,0),"단가(원/kg)":round(pkg*XR,2)})
-            cols=st.columns(len(show))
-            for i,(b,r) in enumerate(zip(show,rows)):
-                with cols[i]:
+            _MAX_CARD_COLS = 4
+            _pairs = list(zip(show, rows))
+            for _ci in range(0, len(_pairs), _MAX_CARD_COLS):
+                _chunk = _pairs[_ci:_ci + _MAX_CARD_COLS]
+                _cols = st.columns(len(_chunk))
+                for i, (b, r) in enumerate(_chunk):
+                  with _cols[i]:
                     bd=f'<span class="b-{"bp" if b["product"]=="BP" else "bm"}">{b["product"]}</span>'
                     st.markdown(f"#### {b['name']}  {bd}",unsafe_allow_html=True)
                     st.markdown(f"""<div class="mbox"><div class="sp">매각 단가</div>
@@ -979,9 +990,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _hdr_prov_paid = float(s.get("invoice_usd") or 0) * (_hdr_st["prov_pct"] / 100.0)
                 _hdr_net = float(_snapped) - _hdr_prov_paid + float(s.get("other_adj_usd") or 0)
                 settle_preview = f"  |  추가정산: ${_hdr_net:+,.2f}"
-            ld_disp  = s.get("loading_date","").strip() or "선적일 미정"
-            eta_disp = s.get("eta","").strip() or "TBD"
-            hdr=f"#{i+1}  {stat_txt}  {s.get('hbl','—')}  |  {buyer_lbl}  |  {ld_disp}  →  ETA {eta_disp}  |  {s.get('weight_kg',0):,.0f} kg{settle_preview}"
+            ld_disp   = s.get("loading_date","").strip() or "선적일 미정"
+            eta_disp  = s.get("eta","").strip() or "TBD"
+            _inv_hdr  = f"  |  💵 ${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
+            hdr=f"#{i+1}  {stat_txt}  {s.get('hbl','—')}  |  {buyer_lbl}  |  {ld_disp}  →  ETA {eta_disp}  |  {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{settle_preview}"
             with st.expander(hdr,expanded=False):
                 # ── 기본 정보 입력 ──
                 e1,e2,e3,e4=st.columns(4)
@@ -4363,11 +4375,13 @@ with t_idx:
     else: st.info("저장된 INDEX 이력이 없습니다.")
     st.divider()
     st.subheader("새 INDEX 추가 / 수정")
+    _idx_dflt_ni = _latest_idx[0]["ni_index"] if _latest_idx else 17093.18
+    _idx_dflt_co = _latest_idx[0]["co_index"] if _latest_idx else 56598.72
     with st.form("add_idx"):
         i1,i2,i3=st.columns(3)
         with i1: im =st.text_input("기준월 (YYYY-MM)",placeholder="2026-04")
-        with i2: ini=st.number_input("Ni INDEX($/ton)",value=17093.18,step=10.0,format="%.2f")
-        with i3: ico=st.number_input("Co INDEX($/ton)",value=56598.72,step=10.0,format="%.2f")
+        with i2: ini=st.number_input("Ni INDEX($/ton)",value=_idx_dflt_ni,step=10.0,format="%.2f")
+        with i3: ico=st.number_input("Co INDEX($/ton)",value=_idx_dflt_co,step=10.0,format="%.2f")
         if st.form_submit_button("💾 저장"):
             try: datetime.strptime(im,"%Y-%m")
             except: st.error("YYYY-MM 형식으로 입력하세요.")
@@ -4831,6 +4845,57 @@ with t_report:
     _ya4.metric("Invoice 합계", f"${_yr_inv:,.0f}")
     _ya5.metric("거래 마진",     f"${_yr_net:+,.0f}",
                 delta_color="normal" if _yr_net >= 0 else "inverse")
+
+    # ── 미수금 / ETA 임박 / 계약 잔여 ─────────────────────────────────────────
+    _all_ships   = cfg.get("shipments", [])
+    _buyer_m_rpt = {b["id"]: b for b in cfg["buyers"]}
+    _today_rpt   = date.today()
+    _eta14_end   = (_today_rpt + timedelta(days=14)).isoformat()
+
+    # 미수금 — provisional/final 상태 선적건의 (invoice - prov_paid) 합
+    _ar_total = 0.0
+    _ar_cnt   = 0
+    for _ars in _all_ships:
+        if _ars.get("status","provisional") not in ("provisional","final"):
+            continue
+        _arb  = _buyer_m_rpt.get(_ars.get("buyer_id",""), {})
+        _arst = _settle_terms(_get_contract_for_shipment(cfg, _ars.get("id","")), _arb)
+        _ar_prov  = float(_ars.get("invoice_usd",0) or 0) * (_arst["prov_pct"] / 100.0)
+        _ar_final = float(_ars.get("final_amount_usd",0) or 0)
+        if _ar_final:
+            _ar_total += _ar_final - _ar_prov + float(_ars.get("other_adj_usd",0) or 0)
+        else:
+            _ar_total += float(_ars.get("invoice_usd",0) or 0) - _ar_prov
+        _ar_cnt += 1
+
+    # ETA 14일 이내
+    _eta_soon = [s for s in _all_ships
+                 if s.get("eta","") and _today_rpt.isoformat() <= s.get("eta","") <= _eta14_end
+                 and s.get("status","") != "paid"]
+
+    # 계약 잔여 이행 의무 합계
+    _ct_remaining = 0.0
+    for _ctc in cfg.get("contracts", []):
+        if _ctc.get("contract_status","active") != "active":
+            continue
+        _mc = _contract_metrics(cfg, _ctc)
+        _ct_remaining += _mc["remaining_mt"]
+
+    _yb1, _yb2, _yb3, _yb4 = st.columns(4)
+    _yb1.metric("미수금 추정 (미입금 건)",
+                f"${_ar_total:+,.0f}",
+                help=f"Provisional/Final 상태 {_ar_cnt}건 — Invoice 잔액 기준",
+                delta_color="inverse" if _ar_total > 0 else "normal")
+    _yb2.metric("ETA 14일 이내",
+                f"{len(_eta_soon)}건",
+                help="  ·  ".join(s.get("hbl","—") for s in _eta_soon) or "없음")
+    _yb3.metric("계약 잔여 의무",
+                f"{_ct_remaining:,.1f} MT",
+                help="진행 중 계약의 최소 이행 미충족 잔량 합계",
+                delta_color="inverse" if _ct_remaining > 0 else "normal")
+    _yb4.metric("미정산 건수",
+                f"{_ar_cnt}건",
+                help="상태가 provisional 또는 final인 선적건")
 
     # ── 월별 거래 마진 추이 ──────────────────────────────────────────────────
     _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0})
@@ -5924,6 +5989,12 @@ with t_contract:
             _stat_color = {"complete": "🟢", "ok": "🟡", "short": "🔴"}.get(_m["status"], "⚪")
             _stat_label = {"complete": "이행 완료", "ok": "재고 충분", "short": "재고 부족"}.get(_m["status"], "—")
 
+            # 이행률 progress bar — expander 바깥에서 항상 표시
+            _prog_val = 1.0 if _m["status"] == "complete" else (min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0)
+            _prog_txt = (f"{_stat_color} {_bname}  ·  {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT"
+                         f"  ({_m['fulfill_pct']:.1f}%)  —  {_stat_label}")
+            st.progress(_prog_val, text=_prog_txt)
+
             with st.expander(
                 f"{_ct_cst_ico} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
                 + (f" / {_prname}" if _prname else "")
@@ -5932,9 +6003,6 @@ with t_contract:
                 + f"  |  {_stat_label}  [{_ct_cst_lbl}]",
                 expanded=_m["status"] == "short",
             ):
-                # 이행률 프로그레스
-                _prog_val = 1.0 if _m["status"] == "complete" else (min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0)
-                st.progress(_prog_val)
                 # 상한 초과 경고
                 if _m["max_mt"] > 0 and _m["shipped_mt"] > _m["max_mt"]:
                     st.warning(f"⚠️ 선적량({_m['shipped_mt']:.2f} MT)이 계약 상한({_m['max_mt']:.2f} MT)을 초과했습니다.")
