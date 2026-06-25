@@ -1896,7 +1896,7 @@ with t_pnl:
                         "투입(kg)": "{:,.1f}", "생산(kg BP)": "{:,.1f}",
                         "전환율(%)": "{:.1f}", "단가($/kg투입)": "${:.4f}",
                         "총 임가공비($)": "${:,.2f}", "임가공비/kg BP": "${:.4f}",
-                    }).background_gradient(subset=["임가공비/kg BP"], cmap="YlOrRd"),
+                    }),
                     use_container_width=True, hide_index=True,
                 )
                 # 임가공사별 소계
