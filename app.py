@@ -627,6 +627,104 @@ def status_badge(s):
     lbl,cls=m.get(s,("—","b-ng"))
     return f'<span class="{cls}">{lbl}</span>'
 
+def _avg_conv_rate(cfg, scrap_id):
+    """스크랩 유형별 평균 전환율(%) — 처리 이력 실적 기반."""
+    rates = [float(r["conversion_rate_pct"])
+             for r in cfg.get("processing_history", [])
+             if r.get("scrap_type_id") == scrap_id and r.get("conversion_rate_pct")]
+    return round(sum(rates) / len(rates), 1) if rates else 80.0
+
+def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
+    """임가공사에 있는 미처리 원료 추정량(kg) = 출하 누계 − 처리 이력 투입 누계."""
+    def _pr_ok(pid): return processor_id is None or pid == processor_id
+    dispatched = sum(
+        float(dr.get("quantity_kg") or 0)
+        for dr in cfg.get("dispatch_records", [])
+        if dr.get("scrap_type_id") == scrap_id and _pr_ok(dr.get("processor_id"))
+    )
+    processed = sum(
+        _ph_input_kg(r)
+        for r in cfg.get("processing_history", [])
+        if r.get("scrap_type_id") == scrap_id and _pr_ok(r.get("processor_id"))
+    )
+    return max(0.0, dispatched - processed)
+
+def _ship_in_period(ship, start, end):
+    ld = ship.get("loading_date", "")
+    if not ld:
+        return False
+    return (not start or ld >= start) and ld <= end
+
+def _contract_metrics(cfg, contract):
+    """계약 한 건의 이행 현황 지표 dict 반환."""
+    contract_id = contract.get("id", "")
+    buyer_id  = contract.get("buyer_id", "")
+    scrap_id  = contract.get("scrap_type_id", "")
+    qty_mt    = float(contract.get("contract_qty_mt") or 0)
+    tol       = float(contract.get("tolerance_pct") or 0)
+    def _norm_date(d, is_end=False):
+        if not d: return d
+        d = d.strip()
+        if len(d) == 7:
+            return d + ("-31" if is_end else "-01")
+        return d
+    start = _norm_date(contract.get("start_date", ""))
+    end   = _norm_date(contract.get("end_date", "") or "9999-12-31", is_end=True) or "9999-12-31"
+    _shipments  = cfg.get("shipments", [])
+    ship_map    = {s["id"]: s for s in _shipments if s.get("id")}
+    all_allocs  = cfg.get("contract_allocations", [])
+    ct_allocs   = [a for a in all_allocs if a.get("contract_id") == contract_id]
+    _buyer_scrap_contract_ids = {
+        c["id"] for c in cfg.get("contracts", [])
+        if buyer_id and c.get("buyer_id") == buyer_id
+        and c.get("scrap_type_id") == scrap_id
+    }
+    _buyer_has_any_alloc = any(
+        a for a in all_allocs
+        if a.get("contract_id") in _buyer_scrap_contract_ids
+    )
+    if ct_allocs:
+        shipped_kg = sum(
+            float(a.get("allocated_kg") or 0)
+            for a in ct_allocs
+            if _ship_in_period(ship_map.get(a.get("shipment_id",""), {}), start, end)
+        )
+    elif _buyer_has_any_alloc:
+        shipped_kg = 0.0
+    else:
+        shipped_kg = sum(
+            float(s.get("weight_kg") or 0)
+            for s in _shipments
+            if s.get("buyer_id") == buyer_id
+            and _ship_in_period(s, start, end)
+        )
+    shipped_mt  = shipped_kg / 1000
+    min_mt      = qty_mt * (1 - tol / 100)
+    max_mt      = qty_mt * (1 + tol / 100)
+    fulfill_pct = (shipped_mt / qty_mt * 100) if qty_mt else 0
+    remaining_mt = max(0.0, min_mt - shipped_mt)
+    conv = _avg_conv_rate(cfg, scrap_id)
+    _, _, _lot_rem = _fifo_lot_trace(cfg, scrap_id)
+    warehouse_raw_kg  = sum(lot.get("remain", 0) for lot in _lot_rem)
+    warehouse_bp_mt   = warehouse_raw_kg * conv / 100 / 1000
+    _ct_proc_id    = contract.get("processor_id") or None
+    at_proc_raw_kg = _at_processor_raw_kg(cfg, scrap_id, _ct_proc_id)
+    at_proc_bp_mt  = at_proc_raw_kg * conv / 100 / 1000
+    total_avail_mt = warehouse_bp_mt + at_proc_bp_mt
+    if shipped_mt >= min_mt:
+        status = "complete"
+    elif total_avail_mt >= remaining_mt:
+        status = "ok"
+    else:
+        status = "short"
+    return {
+        "shipped_mt": shipped_mt, "qty_mt": qty_mt, "min_mt": min_mt, "max_mt": max_mt,
+        "fulfill_pct": fulfill_pct, "remaining_mt": remaining_mt, "conv_pct": conv,
+        "warehouse_raw_kg": warehouse_raw_kg, "warehouse_bp_mt": warehouse_bp_mt,
+        "at_proc_raw_kg": at_proc_raw_kg, "at_proc_bp_mt": at_proc_bp_mt,
+        "total_avail_mt": total_avail_mt, "status": status,
+    }
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 cfg = load_cfg()
 hist_opts = [h["month"] for h in sorted(cfg.get("index_history",[]),key=lambda x:x["month"],reverse=True)]
@@ -5704,132 +5802,6 @@ with t_docs:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 계약 이행
 # ══════════════════════════════════════════════════════════════════════════════
-
-def _avg_conv_rate(cfg, scrap_id):
-    """스크랩 유형별 평균 전환율(%) — 처리 이력 실적 기반."""
-    rates = [float(r["conversion_rate_pct"])
-             for r in cfg.get("processing_history", [])
-             if r.get("scrap_type_id") == scrap_id and r.get("conversion_rate_pct")]
-    return round(sum(rates) / len(rates), 1) if rates else 80.0
-
-def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
-    """임가공사에 있는 미처리 원료 추정량(kg) = 출하 누계 − 처리 이력 투입 누계.
-    processor_id 지정 시 해당 임가공사 한정."""
-    def _pr_ok(pid): return processor_id is None or pid == processor_id
-    dispatched = sum(
-        float(dr.get("quantity_kg") or 0)
-        for dr in cfg.get("dispatch_records", [])
-        if dr.get("scrap_type_id") == scrap_id and _pr_ok(dr.get("processor_id"))
-    )
-    processed = sum(
-        _ph_input_kg(r)
-        for r in cfg.get("processing_history", [])
-        if r.get("scrap_type_id") == scrap_id and _pr_ok(r.get("processor_id"))
-    )
-    return max(0.0, dispatched - processed)
-
-def _ship_in_period(ship, start, end):
-    ld = ship.get("loading_date", "")
-    if not ld:
-        return False
-    return (not start or ld >= start) and ld <= end
-
-def _contract_metrics(cfg, contract):
-    """계약 한 건의 이행 현황 지표 dict 반환."""
-    contract_id = contract.get("id", "")
-    buyer_id  = contract.get("buyer_id", "")
-    scrap_id  = contract.get("scrap_type_id", "")
-    qty_mt    = float(contract.get("contract_qty_mt") or 0)
-    tol       = float(contract.get("tolerance_pct") or 0)
-    def _norm_date(d, is_end=False):
-        if not d: return d
-        d = d.strip()
-        if len(d) == 7:
-            return d + ("-31" if is_end else "-01")
-        return d
-    start = _norm_date(contract.get("start_date", ""))
-    end   = _norm_date(contract.get("end_date", "") or "9999-12-31", is_end=True) or "9999-12-31"
-
-    # 선적 완료량 — 배분 기록 우선
-    # 같은 매입사 + 같은 스크랩 유형의 어느 계약이라도 배분 기록이 있으면 전체 배분 모드 강제
-    # (없으면 buyer_id + scrap_type_id 기간 합산 fallback)
-    _shipments  = cfg.get("shipments", [])
-    ship_map    = {s["id"]: s for s in _shipments if s.get("id")}
-    all_allocs  = cfg.get("contract_allocations", [])
-    ct_allocs   = [a for a in all_allocs if a.get("contract_id") == contract_id]
-    _buyer_scrap_contract_ids = {
-        c["id"] for c in cfg.get("contracts", [])
-        if buyer_id and c.get("buyer_id") == buyer_id
-        and c.get("scrap_type_id") == scrap_id
-    }
-    _buyer_has_any_alloc = any(
-        a for a in all_allocs
-        if a.get("contract_id") in _buyer_scrap_contract_ids
-    )
-    if ct_allocs:
-        shipped_kg = sum(
-            float(a.get("allocated_kg") or 0)
-            for a in ct_allocs
-            if _ship_in_period(ship_map.get(a.get("shipment_id",""), {}), start, end)
-        )
-    elif _buyer_has_any_alloc:
-        # 다른 계약에 배분이 있으면 이 계약은 배분 미입력 = 0
-        shipped_kg = 0.0
-    else:
-        shipped_kg = sum(
-            float(s.get("weight_kg") or 0)
-            for s in _shipments
-            if s.get("buyer_id") == buyer_id
-            and _ship_in_period(s, start, end)
-        )
-    shipped_mt = shipped_kg / 1000
-
-    # 허용 범위
-    min_mt = qty_mt * (1 - tol / 100)
-    max_mt = qty_mt * (1 + tol / 100)
-
-    # 이행률 (계약 중심값 기준)
-    fulfill_pct = (shipped_mt / qty_mt * 100) if qty_mt else 0
-
-    # 잔여 의무 (min 기준 — 최소 이행해야 할 잔여)
-    remaining_mt = max(0.0, min_mt - shipped_mt)
-
-    # 창고 원료 → BP 환산
-    conv = _avg_conv_rate(cfg, scrap_id)
-    _, _, _lot_rem = _fifo_lot_trace(cfg, scrap_id)
-    warehouse_raw_kg  = sum(lot.get("remain", 0) for lot in _lot_rem)
-    warehouse_bp_mt   = warehouse_raw_kg * conv / 100 / 1000
-
-    # 임가공사 미처리 → BP 예상 (계약에 임가공사 지정 시 해당 임가공사만)
-    _ct_proc_id    = contract.get("processor_id") or None
-    at_proc_raw_kg = _at_processor_raw_kg(cfg, scrap_id, _ct_proc_id)
-    at_proc_bp_mt  = at_proc_raw_kg * conv / 100 / 1000
-
-    total_avail_mt = warehouse_bp_mt + at_proc_bp_mt
-
-    # 상태 판정
-    if shipped_mt >= min_mt:
-        status = "complete"        # 이미 최소 충족
-    elif total_avail_mt >= remaining_mt:
-        status = "ok"              # 재고로 충당 가능
-    else:
-        status = "short"           # 재고 부족
-
-    return {
-        "shipped_mt":       shipped_mt,
-        "qty_mt":           qty_mt,
-        "min_mt":           min_mt,
-        "max_mt":           max_mt,
-        "fulfill_pct":      fulfill_pct,
-        "remaining_mt":     remaining_mt,
-        "conv_pct":         conv,
-        "warehouse_raw_kg": warehouse_raw_kg,
-        "warehouse_bp_mt":  warehouse_bp_mt,
-        "at_proc_raw_kg":   at_proc_raw_kg,
-        "at_proc_bp_mt":    at_proc_bp_mt,
-        "total_avail_mt":   total_avail_mt,
-        "status":           status,
-    }
 
 with t_contract:
     st.markdown("### 📋 계약 이행 현황")
