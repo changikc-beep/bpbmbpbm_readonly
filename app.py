@@ -4944,6 +4944,8 @@ with t_report:
     _ya5.metric("거래 마진",     f"${_yr_net:+,.0f}",
                 delta_color="normal" if _yr_net >= 0 else "inverse")
 
+    st.divider()
+    st.markdown("#### 🔔 현재 운영 현황")
     # ── 미수금 / ETA 임박 / 계약 잔여 ─────────────────────────────────────────
     _all_ships   = cfg.get("shipments", [])
     _buyer_m_rpt = {b["id"]: b for b in cfg["buyers"]}
