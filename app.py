@@ -5809,9 +5809,9 @@ with t_contract:
         _ct_co_pay = _cp2.number_input("Co 지불율 (%)",  min_value=0.0, max_value=100.0, value=0.0,
                                         step=0.1, format="%.2f", key="ct_co_pay",
                                         help="0이면 매입사 기본 지불율 사용")
-        _ct_prov_pct = _cp3.number_input("가정산 비율 (%)", min_value=0.0, max_value=100.0, value=100.0,
+        _ct_prov_pct = _cp3.number_input("가정산 비율 (%)", min_value=0.0, value=100.0,
                                           step=5.0, format="%.0f", key="ct_prov_pct",
-                                          help="예: 80 → Invoice 총액의 80%를 가정산으로 지급")
+                                          help="예: 80 → Invoice의 80%, 125 → Invoice의 125% 지급")
         _cp4, _cp5 = st.columns(2)
         _prov_idx_map  = {"가정산월 INDEX": "prov", "선적월 INDEX": "loading", "특정월 지정": "custom"}
         _final_idx_map = {"확정정산월 INDEX": "final", "선적월 INDEX": "loading", "가정산월 INDEX": "prov", "특정월 지정": "custom"}
@@ -5855,7 +5855,7 @@ with t_contract:
                     "contract_status":   "active",
                     "ni_payable_pct":    _ct_ni_pay   if _ct_ni_pay   > 0 else None,
                     "co_payable_pct":    _ct_co_pay   if _ct_co_pay   > 0 else None,
-                    "prov_pct":          _ct_prov_pct if _ct_prov_pct < 100 else None,
+                    "prov_pct":          _ct_prov_pct if _ct_prov_pct != 100.0 else None,
                     "prov_index_basis":  _prov_basis_val,
                     "final_index_basis": _final_basis_val,
                 })
@@ -6001,7 +6001,7 @@ with t_contract:
                                                      min_value=0.0, max_value=100.0, step=0.1, format="%.2f",
                                                      key=f"ed_co_{_ct_id}", help="0이면 매입사 기본값")
                     _ed_prov_pct = _edf8.number_input("가정산 비율 (%)", value=float(_ct.get("prov_pct") or 100),
-                                                       min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
+                                                       min_value=0.0, step=5.0, format="%.0f",
                                                        key=f"ed_pp_{_ct_id}")
                     _edp1, _edp2 = st.columns(2)
                     # 기존 저장값이 YYYY-MM 고정월이면 "특정월 지정"으로 표시
@@ -6055,7 +6055,7 @@ with t_contract:
                                         "end_date":          _ed_end.strip(),
                                         "ni_payable_pct":    _ed_ni_pay   if _ed_ni_pay   > 0 else None,
                                         "co_payable_pct":    _ed_co_pay   if _ed_co_pay   > 0 else None,
-                                        "prov_pct":          _ed_prov_pct if _ed_prov_pct < 100 else None,
+                                        "prov_pct":          _ed_prov_pct if _ed_prov_pct != 100.0 else None,
                                         "prov_index_basis":  _ed_prov_basis_val,
                                         "final_index_basis": _ed_final_basis_val,
                                         "notes":             _ed_notes.strip(),
