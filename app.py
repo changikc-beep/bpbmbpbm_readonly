@@ -5803,10 +5803,10 @@ with t_contract:
         # ── 가격·정산 조건 ────────────────────────────────────────────────
         st.markdown("**💰 가격·정산 조건** (선택 — 미입력 시 매입사 기본값 사용)")
         _cp1, _cp2, _cp3 = st.columns(3)
-        _ct_ni_pay = _cp1.number_input("Ni 지불율 (%)",  min_value=0.0, max_value=100.0, value=0.0,
+        _ct_ni_pay = _cp1.number_input("Ni 지불율 (%)",  min_value=0.0, value=0.0,
                                         step=0.1, format="%.2f", key="ct_ni_pay",
                                         help="0이면 매입사 기본 지불율 사용")
-        _ct_co_pay = _cp2.number_input("Co 지불율 (%)",  min_value=0.0, max_value=100.0, value=0.0,
+        _ct_co_pay = _cp2.number_input("Co 지불율 (%)",  min_value=0.0, value=0.0,
                                         step=0.1, format="%.2f", key="ct_co_pay",
                                         help="0이면 매입사 기본 지불율 사용")
         _ct_prov_pct = _cp3.number_input("가정산 비율 (%)", min_value=0.0, value=100.0,
@@ -5995,10 +5995,10 @@ with t_contract:
                     _ed_end   = _edf5.text_input("계약 종료일", value=_ct.get("end_date",""), key=f"ed_end_{_ct_id}")
                     _edf6, _edf7, _edf8 = st.columns(3)
                     _ed_ni_pay = _edf6.number_input("Ni 지불율 (%)", value=float(_ct.get("ni_payable_pct") or 0),
-                                                     min_value=0.0, max_value=100.0, step=0.1, format="%.2f",
+                                                     min_value=0.0, step=0.1, format="%.2f",
                                                      key=f"ed_ni_{_ct_id}", help="0이면 매입사 기본값")
                     _ed_co_pay = _edf7.number_input("Co 지불율 (%)", value=float(_ct.get("co_payable_pct") or 0),
-                                                     min_value=0.0, max_value=100.0, step=0.1, format="%.2f",
+                                                     min_value=0.0, step=0.1, format="%.2f",
                                                      key=f"ed_co_{_ct_id}", help="0이면 매입사 기본값")
                     _ed_prov_pct = _edf8.number_input("가정산 비율 (%)", value=float(_ct.get("prov_pct") or 100),
                                                        min_value=0.0, step=5.0, format="%.0f",
