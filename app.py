@@ -1865,6 +1865,59 @@ with t_pnl:
         _kd4.metric("수출비",           f"${_tot_eu:,.2f}",
                     delta=f"${_epk_all:.4f}/kg BP" if _tot_out>0 else None)
 
+        # ── 임가공비 상세 검증 ─────────────────────────────────────────────────
+        with st.expander("🔍 임가공비 배치별 상세 검증", expanded=False):
+            _proc_map  = {p["id"]: p["name"] for p in cfg.get("processors", [])}
+            _stype_map = {s["id"]: s["name"] for s in cfg.get("scrap_types", [])}
+            _ship_map2 = {s["id"]: s.get("hbl","—") for s in cfg.get("shipments", [])}
+            _veri_rows = []
+            for _vr in _ph_all:
+                _vi   = _ph_input_kg(_vr)
+                _vo   = _vr.get("output_kg", 0) or 0
+                _vfee = float(_vr.get("processing_fee_per_kg") or 0)
+                _vcv  = (_vo / _vi * 100) if _vi > 0 else 0
+                _vtot = _vfee * _vi
+                _vbp  = (_vtot / _vo) if _vo > 0 else 0
+                _veri_rows.append({
+                    "HBL":          _ship_map2.get(_vr.get("shipment_id",""), "—"),
+                    "임가공사":     _proc_map.get(_vr.get("processor_id",""), "—"),
+                    "스크랩":       _stype_map.get(_vr.get("scrap_type_id",""), "—"),
+                    "투입(kg)":     round(_vi, 1),
+                    "생산(kg BP)":  round(_vo, 1),
+                    "전환율(%)":    round(_vcv, 1),
+                    "단가($/kg투입)": _vfee,
+                    "총 임가공비($)": round(_vtot, 2),
+                    "임가공비/kg BP": round(_vbp, 4),
+                })
+            if _veri_rows:
+                _vdf = pd.DataFrame(_veri_rows)
+                st.dataframe(
+                    _vdf.style.format({
+                        "투입(kg)": "{:,.1f}", "생산(kg BP)": "{:,.1f}",
+                        "전환율(%)": "{:.1f}", "단가($/kg투입)": "${:.4f}",
+                        "총 임가공비($)": "${:,.2f}", "임가공비/kg BP": "${:.4f}",
+                    }).background_gradient(subset=["임가공비/kg BP"], cmap="YlOrRd"),
+                    use_container_width=True, hide_index=True,
+                )
+                # 임가공사별 소계
+                st.markdown("**임가공사별 소계**")
+                _vsub = _vdf.groupby("임가공사").agg(
+                    투입=("투입(kg)", "sum"),
+                    생산=("생산(kg BP)", "sum"),
+                    임가공비=("총 임가공비($)", "sum"),
+                ).reset_index()
+                _vsub["전환율(%)"]    = (_vsub["생산"] / _vsub["투입"] * 100).round(1)
+                _vsub["단가/kg투입"]  = (_vsub["임가공비"] / _vsub["투입"]).round(4)
+                _vsub["단가/kg BP"]   = (_vsub["임가공비"] / _vsub["생산"]).round(4)
+                st.dataframe(
+                    _vsub.style.format({
+                        "투입": "{:,.1f}", "생산": "{:,.1f}", "전환율(%)": "{:.1f}",
+                        "임가공비": "${:,.2f}", "단가/kg투입": "${:.4f}", "단가/kg BP": "${:.4f}",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+                st.caption("💡 '단가($/kg투입)' = 계약서 기준 단가. '임가공비/kg BP' = 전환율 반영 후 BP 생산량 기준 환산값")
+
         # 원료비·보관비 사전 계산 (waterfall + 단가 분해 공용)
         _default_rmc_s1 = float(st.session_state.get("pnl_rmc_default", 0.0))
         if _tot_out > 0:
