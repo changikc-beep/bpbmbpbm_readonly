@@ -5087,7 +5087,6 @@ with t_report:
 
     # ── 연간 누계 요약 ────────────────────────────────────────────────────────
     _cur_year = date.today().year
-    st.markdown(f"#### 📅 {_cur_year}년 누계")
     _yr_ph    = [r for r in _rpt_ph_all
                  if (_rpt_ship_m0.get(r.get("shipment_id",""),{}).get("loading_date","") or "")[:4] == str(_cur_year)]
     _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year)]
@@ -5097,23 +5096,67 @@ with t_report:
     _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
     _yr_inv   = sum(float(s.get("invoice_usd",0) or 0) for s in _yr_ships)
     _yr_net   = _yr_bp - _yr_pf - _yr_eu
-    _ya1,_ya2,_ya3,_ya4,_ya5 = st.columns(5)
-    _ya1.metric("선적 건수",    f"{len(_yr_ships)}건")
-    _ya2.metric("선적 중량",    f"{sum(float(s.get('weight_kg',0)) for s in _yr_ships):,.0f} kg")
-    _ya3.metric("BP 생산",      f"{_yr_out:,.0f} kg")
-    _ya4.metric("Invoice 합계", f"${_yr_inv:,.0f}")
-    _ya5.metric("거래 마진",     f"${_yr_net:+,.0f}",
-                delta_color="normal" if _yr_net >= 0 else "inverse")
+
+    _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
+    _yoy_sub      = f"전년 동기 {len(_yr_ships) - len(_yr_ships_ly):+d}건"
+    _yr_input_kg  = sum(float(r.get("input_kg",0) or 0) for r in _yr_ph) or 1
+    _conv_sub     = f"투입 대비 전환율 {_yr_out / _yr_input_kg * 100:.1f}%"
+    _inv_sub      = f"평균 ${(_yr_inv / len(_yr_ships) / 1000):.0f}k / 건" if _yr_ships else "선적 없음"
+    _margin_pct   = (_yr_net / _yr_inv * 100) if _yr_inv else 0
+    _margin_sub   = f"마진율 {_margin_pct:.1f}%"
+    _margin_col   = "#4ade80" if _yr_net >= 0 else "#f87171"
+    _margin_fmt   = (f"${_yr_net/1_000_000:+.1f}M" if abs(_yr_net) >= 1_000_000
+                     else f"${_yr_net/1000:+.0f}k")
+
+    def _kpi_card(label, value, sub="", val_color="#e5e5e5", left_border=""):
+        _bl = f"border-left:3px solid {left_border};" if left_border else ""
+        _sub_h = (f'<div style="font-size:.75rem;color:#9b9b9b;margin-top:6px;'
+                  f'line-height:1.4">{sub}</div>') if sub else ""
+        return (
+            f'<div style="background:#2a2a2a;border:1px solid #383838;border-radius:12px;'
+            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4);height:100%">'
+            f'<div style="font-size:.75rem;color:#9b9b9b;margin-bottom:8px;font-weight:500">'
+            f'{label}</div>'
+            f'<div style="font-size:1.6rem;font-weight:700;color:{val_color};'
+            f'letter-spacing:-.5px;line-height:1.15">{value}</div>'
+            f'{_sub_h}</div>'
+        )
+
+    def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
+                        val_color="#e5e5e5", left_border=""):
+        _bl  = f"border-left:3px solid {left_border};" if left_border else ""
+        _bdg = (f'<span style="background:{badge_color}26;color:{badge_color};'
+                f'padding:1px 8px;border-radius:20px;font-size:.68rem;font-weight:600;'
+                f'border:1px solid {badge_color}44;margin-left:7px;'
+                f'vertical-align:middle">{badge_txt}</span>') if badge_txt else ""
+        _sub_h = (f'<div style="font-size:.75rem;color:#9b9b9b;margin-top:6px;'
+                  f'line-height:1.4">{sub}</div>') if sub else ""
+        return (
+            f'<div style="background:#2a2a2a;border:1px solid #383838;border-radius:12px;'
+            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4);height:100%">'
+            f'<div style="font-size:.75rem;color:#9b9b9b;margin-bottom:8px;font-weight:500">'
+            f'{label}{_bdg}</div>'
+            f'<div style="font-size:1.6rem;font-weight:700;color:{val_color};'
+            f'letter-spacing:-.5px;line-height:1.15">{value}</div>'
+            f'{_sub_h}</div>'
+        )
+
+    st.markdown(f"#### 📅 {_cur_year}년 누계")
+    _ya1, _ya2, _ya3, _ya4 = st.columns(4)
+    _ya1.markdown(_kpi_card("🚢 선적 건수",    f"{len(_yr_ships)}건",  _yoy_sub),                         unsafe_allow_html=True)
+    _ya2.markdown(_kpi_card("⚗️ BP 생산",      f"{_yr_out/1000:.1f} t", _conv_sub),                       unsafe_allow_html=True)
+    _ya3.markdown(_kpi_card("💵 Invoice 합계", f"${_yr_inv/1_000_000:.1f}M", _inv_sub),                   unsafe_allow_html=True)
+    _ya4.markdown(_kpi_card("📈 거래 마진",    _margin_fmt, _margin_sub, val_color=_margin_col),           unsafe_allow_html=True)
 
     st.divider()
     st.markdown("#### 🔔 현재 운영 현황")
+
     # ── 미수금 / ETA 임박 / 계약 잔여 ─────────────────────────────────────────
     _all_ships   = cfg.get("shipments", [])
     _buyer_m_rpt = {b["id"]: b for b in cfg["buyers"]}
     _today_rpt   = date.today()
     _eta14_end   = (_today_rpt + timedelta(days=14)).isoformat()
 
-    # 미수금 — provisional/final 상태 선적건의 (invoice - prov_paid) 합
     _ar_total = 0.0
     _ar_cnt   = 0
     for _ars in _all_ships:
@@ -5129,12 +5172,10 @@ with t_report:
             _ar_total += float(_ars.get("invoice_usd",0) or 0) - _ar_prov
         _ar_cnt += 1
 
-    # ETA 14일 이내
     _eta_soon = [s for s in _all_ships
                  if s.get("eta","") and _today_rpt.isoformat() <= s.get("eta","") <= _eta14_end
                  and s.get("status","") != "paid"]
 
-    # 계약 잔여 이행 의무 합계
     _ct_remaining = 0.0
     for _ctc in cfg.get("contracts", []):
         if _ctc.get("contract_status","active") != "active":
@@ -5142,21 +5183,30 @@ with t_report:
         _mc = _contract_metrics(cfg, _ctc)
         _ct_remaining += _mc["remaining_mt"]
 
+    _ar_fmt      = (f"${_ar_total/1_000_000:.1f}M" if abs(_ar_total) >= 1_000_000
+                    else f"${_ar_total/1000:.0f}k")
+    _eta_hbls    = "  ·  ".join(s.get("hbl","—") for s in _eta_soon) or "없음"
+    _ct_border   = "#f87171" if _ct_remaining > 0 else ""
+    _ct_val_col  = "#f87171" if _ct_remaining > 0 else "#e5e5e5"
+    _prov_cnt    = sum(1 for s in _all_ships if s.get("status","") == "provisional")
+    _final_cnt   = sum(1 for s in _all_ships if s.get("status","") == "final")
+
     _yb1, _yb2, _yb3, _yb4 = st.columns(4)
-    _yb1.metric("미수금 추정 (미입금 건)",
-                f"${_ar_total:+,.0f}",
-                help=f"Provisional/Final 상태 {_ar_cnt}건 — Invoice 잔액 기준",
-                delta_color="inverse" if _ar_total > 0 else "normal")
-    _yb2.metric("ETA 14일 이내",
-                f"{len(_eta_soon)}건",
-                help="  ·  ".join(s.get("hbl","—") for s in _eta_soon) or "없음")
-    _yb3.metric("계약 잔여 의무",
-                f"{_ct_remaining:,.1f} MT",
-                help="진행 중 계약의 최소 이행 미충족 잔량 합계",
-                delta_color="inverse" if _ct_remaining > 0 else "normal")
-    _yb4.metric("미정산 건수",
-                f"{_ar_cnt}건",
-                help="상태가 provisional 또는 final인 선적건")
+    _yb1.markdown(_kpi_card_badge("⏳ 미수금 추정", f"{_ar_cnt}건 미정산", "#fb923c",
+                                  _ar_fmt, "Provisional/Final 잔액 기준"),
+                  unsafe_allow_html=True)
+    _yb2.markdown(_kpi_card_badge("✈️ ETA 14일 이내", f"{len(_eta_soon)}건", "#60a5fa",
+                                  f"{len(_eta_soon)}건", _eta_hbls),
+                  unsafe_allow_html=True)
+    _yb3.markdown(_kpi_card("📋 계약 잔여 의무",
+                             f"{_ct_remaining:,.1f} MT",
+                             "진행 중 계약 최소 이행 잔량",
+                             val_color=_ct_val_col, left_border=_ct_border),
+                  unsafe_allow_html=True)
+    _yb4.markdown(_kpi_card("✅ 미정산 건수",
+                             f"{_ar_cnt}건",
+                             f"provisional {_prov_cnt} · final {_final_cnt}"),
+                  unsafe_allow_html=True)
 
     # ── 월별 거래 마진 추이 ──────────────────────────────────────────────────
     _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0})
