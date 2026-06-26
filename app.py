@@ -7,98 +7,181 @@ from io import BytesIO
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
-/* ── Layout ── */
-.main .block-container{padding-top:1.5rem;padding-bottom:2rem}
-section[data-testid="stSidebar"]{min-width:270px;border-right:1px solid #e2e8f0}
+/* ══════════════════════════════════════════════
+   Notion Dark — custom theme layer
+   bg:#191919  surface:#252525  border:#373737
+   accent:#2383e2  text-2:#9b9b9b
+   ══════════════════════════════════════════════ */
 
-/* ── Tab navigation — pill style ── */
+/* ── Layout ── */
+.main .block-container{
+    padding-top:1.5rem;padding-bottom:2.5rem;
+    max-width:1280px
+}
+section[data-testid="stSidebar"]{
+    min-width:260px;
+    background:#1e1e1e !important;
+    border-right:1px solid #2d2d2d !important
+}
+
+/* ── Tab bar — pill strip on dark ── */
+div[data-testid="stTabs"]>div:first-child{
+    background:#252525;border-radius:10px;padding:3px;
+    border:1px solid #333;gap:2px;
+    display:flex;flex-wrap:nowrap
+}
 div[data-testid="stTabs"] button[role="tab"]{
-    border-radius:8px !important;font-size:.85rem;font-weight:500;
-    padding:5px 14px !important;color:#64748b;transition:background .15s,color .15s
+    border-radius:7px !important;font-size:.82rem;font-weight:500;
+    padding:5px 13px !important;color:#9b9b9b;
+    transition:background .15s,color .15s;border:none !important;
+    white-space:nowrap
 }
 div[data-testid="stTabs"] button[role="tab"]:hover{
-    background:rgba(0,0,0,.05) !important;color:#0f172a
+    background:rgba(255,255,255,.06) !important;color:#e5e5e5
 }
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
-    background:white !important;color:#0f172a !important;
-    font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.10) !important
+    background:#2383e2 !important;color:#fff !important;
+    font-weight:600;box-shadow:0 1px 6px rgba(35,131,226,.40) !important
 }
 div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
+div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
-/* ── Expanders — card style ── */
+/* ── Expanders — elevated dark card ── */
 div[data-testid="stExpander"] details{
-    border-radius:12px !important;border:1px solid #e2e8f0 !important;
-    overflow:hidden;transition:border-color .15s;background:white
+    border-radius:12px !important;
+    border:1px solid #333 !important;
+    background:#252525 !important;
+    overflow:hidden;
+    transition:border-color .15s,box-shadow .15s;
+    box-shadow:0 1px 3px rgba(0,0,0,.35)
 }
-div[data-testid="stExpander"] details:hover{border-color:#cbd5e1 !important}
+div[data-testid="stExpander"] details:hover{
+    border-color:#4a4a4a !important;
+    box-shadow:0 2px 8px rgba(0,0,0,.45) !important
+}
 div[data-testid="stExpander"] details summary{
-    padding:12px 16px !important;font-weight:500
+    padding:13px 18px !important;font-weight:500;
+    background:#2a2a2a !important
 }
-div[data-testid="stExpander"] details[open] summary{
-    border-bottom:1px solid #e2e8f0
+div[data-testid="stExpander"] details[open]>summary{
+    border-bottom:1px solid #333 !important
+}
+div[data-testid="stExpander"] details>div{
+    padding:4px 6px !important
 }
 
-/* ── Metric cards ── */
+/* ── Metric cards — dark surface ── */
 div[data-testid="metric-container"]{
-    background:white;border:1px solid #e2e8f0;
-    border-radius:12px;padding:14px 16px !important;
-    transition:border-color .15s
+    background:#252525 !important;
+    border:1px solid #333 !important;
+    border-radius:12px !important;
+    padding:14px 18px !important;
+    transition:border-color .15s,box-shadow .15s;
+    box-shadow:0 1px 3px rgba(0,0,0,.3)
 }
-div[data-testid="metric-container"]:hover{border-color:#cbd5e1}
-div[data-testid="stMetricValue"]{font-size:1.4rem !important;letter-spacing:-.5px}
-div[data-testid="stMetricLabel"] p{font-size:.78rem !important;color:#64748b !important}
+div[data-testid="metric-container"]:hover{
+    border-color:#4a4a4a !important;
+    box-shadow:0 2px 8px rgba(0,0,0,.4) !important
+}
+div[data-testid="stMetricValue"]{font-size:1.45rem !important;letter-spacing:-.5px;font-weight:600}
+div[data-testid="stMetricLabel"] p{font-size:.78rem !important;color:#9b9b9b !important}
+div[data-testid="stMetricDelta"] svg{width:14px;height:14px}
+
+/* ── Sidebar metric cards — slightly different shade ── */
+section[data-testid="stSidebar"] div[data-testid="metric-container"]{
+    background:#2a2a2a !important;border-color:#363636 !important
+}
 
 /* ── Buttons ── */
 div[data-testid="stButton"]>button,
 div[data-testid="stPopover"]>button,
 div[data-testid="stFormSubmitButton"]>button{
-    border-radius:8px !important;font-weight:500;transition:all .15s
+    border-radius:8px !important;font-weight:500;
+    transition:all .15s;
+    border:1px solid #3d3d3d !important
+}
+div[data-testid="stButton"]>button:hover,
+div[data-testid="stFormSubmitButton"]>button:hover{
+    border-color:#555 !important;
+    box-shadow:0 0 0 2px rgba(35,131,226,.25) !important
 }
 
 /* ── Inputs ── */
 div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input,
-div[data-testid="stTextAreaInput"] textarea{border-radius:8px !important}
+div[data-testid="stTextAreaInput"] textarea{
+    border-radius:8px !important;
+    background:#2a2a2a !important;
+    border-color:#3d3d3d !important
+}
+div[data-testid="stTextInput"] input:focus,
+div[data-testid="stNumberInput"] input:focus,
+div[data-testid="stTextAreaInput"] textarea:focus{
+    border-color:#2383e2 !important;
+    box-shadow:0 0 0 2px rgba(35,131,226,.20) !important
+}
 div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
-div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{border-radius:8px !important}
+div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
+    border-radius:8px !important;
+    background:#2a2a2a !important;
+    border-color:#3d3d3d !important
+}
 
-/* ── Progress bars — slim & rounded ── */
-div[data-testid="stProgress"]>div{border-radius:20px;height:8px !important;overflow:hidden}
-div[data-testid="stProgress"]>div>div{border-radius:20px}
-div[data-testid="stProgress"] p{font-size:.8rem;color:#475569;margin-bottom:4px}
+/* ── Progress bars — slim accent ── */
+div[data-testid="stProgress"]>div{
+    border-radius:20px !important;height:6px !important;
+    overflow:hidden;background:#333 !important
+}
+div[data-testid="stProgress"]>div>div{
+    border-radius:20px !important;
+    background:linear-gradient(90deg,#2383e2,#60a5fa) !important
+}
+div[data-testid="stProgress"] p{font-size:.8rem;color:#9b9b9b;margin-bottom:5px}
 
 /* ── Alert / info boxes ── */
 div[data-testid="stAlert"]{border-radius:10px !important}
-div.stNotification{border-radius:10px !important}
 
 /* ── Forms ── */
-div[data-testid="stForm"]{border-radius:12px !important;padding:16px !important}
-
-/* ── Sidebar metric cards ── */
-section[data-testid="stSidebar"] div[data-testid="metric-container"]{
-    background:#f1f5f9;border-color:#e2e8f0
+div[data-testid="stForm"]{
+    border-radius:12px !important;
+    border:1px solid #333 !important;
+    background:#252525 !important;
+    padding:16px !important
 }
 
 /* ── Dividers ── */
-hr{border-color:#e2e8f0 !important;margin:1rem 0}
+hr{border-color:#2d2d2d !important;margin:1.2rem 0}
+
+/* ── Dataframes ── */
+div[data-testid="stDataFrame"] iframe{border-radius:10px}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
-    background:white !important;border:1px solid #e2e8f0 !important;
-    border-radius:10px !important;padding:12px 16px;margin:5px 0;
-    transition:border-color .15s
+    background:#252525 !important;
+    border:1px solid #333 !important;
+    border-radius:12px !important;
+    padding:14px 18px;margin:6px 0;
+    transition:border-color .15s,box-shadow .15s;
+    box-shadow:0 1px 3px rgba(0,0,0,.3)
 }
-.mbox:hover{border-color:#cbd5e1 !important}
-.ph{font-size:1.3rem !important;font-weight:600 !important;color:#1e3a5f !important;letter-spacing:-.4px}
-.sp{font-size:.82rem;color:#64748b;margin-bottom:2px}
+.mbox:hover{
+    border-color:#4a4a4a !important;
+    box-shadow:0 3px 10px rgba(0,0,0,.4) !important
+}
+.ph{
+    font-size:1.35rem !important;font-weight:700 !important;
+    color:#e5e5e5 !important;letter-spacing:-.4px
+}
+.sp{font-size:.82rem;color:#9b9b9b;margin-bottom:3px}
 
-/* ── Status badges — softer & rounder ── */
-.b-bp{background:#dbeafe;color:#1d4ed8;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
-.b-bm{background:#dcfce7;color:#15803d;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
-.b-sc{background:#fef3c7;color:#b45309;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
-.b-ok{background:#dcfce7;color:#15803d;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
-.b-wn{background:#fef9c3;color:#a16207;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
-.b-ng{background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
+/* ── Status badges ── */
+.b-bp{background:rgba(35,131,226,.18);color:#60a5fa;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(35,131,226,.3)}
+.b-bm{background:rgba(34,197,94,.15);color:#4ade80;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(34,197,94,.25)}
+.b-sc{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
+.b-ok{background:rgba(34,197,94,.15);color:#4ade80;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(34,197,94,.25)}
+.b-wn{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
+.b-ng{background:rgba(239,68,68,.15);color:#f87171;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(239,68,68,.25)}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
