@@ -15,20 +15,17 @@ st.markdown("""
 
 /* ── Layout ── */
 .main .block-container{
-    padding-top:1.5rem;padding-bottom:2.5rem;
-    max-width:1280px
+    padding-top:1.5rem;padding-bottom:2.5rem
 }
 section[data-testid="stSidebar"]{
     min-width:260px;
-    background:#1e1e1e !important;
     border-right:1px solid #2d2d2d !important
 }
 
 /* ── Tab bar — pill strip on dark ── */
-div[data-testid="stTabs"]>div:first-child{
+div[data-testid="stTabs"] div[data-baseweb="tab-list"]{
     background:#252525;border-radius:10px;padding:3px;
-    border:1px solid #333;gap:2px;
-    display:flex;flex-wrap:nowrap
+    border:1px solid #333;gap:2px
 }
 div[data-testid="stTabs"] button[role="tab"]{
     border-radius:7px !important;font-size:.82rem;font-weight:500;
