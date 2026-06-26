@@ -7,17 +7,98 @@ from io import BytesIO
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
-    section[data-testid="stSidebar"]{min-width:270px}
-    .mbox{background:#f0f2f6;border-radius:8px;padding:12px 16px;margin:4px 0}
-    .ph{font-size:1.35rem;font-weight:700;color:#1f4e79}
-    .sp{font-size:0.88rem;color:#555;margin-bottom:2px}
-    .b-bp{background:#d6e4f0;color:#1a5276;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:600}
-    .b-bm{background:#d5f5e3;color:#1e8449;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:600}
-    .b-sc{background:#fdebd0;color:#784212;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:600}
-    .b-ok{background:#d4efdf;color:#1d6a39;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:600}
-    .b-wn{background:#fef9e7;color:#7d6608;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:600}
-    .b-ng{background:#fadbd8;color:#922b21;padding:2px 8px;border-radius:4px;font-size:.78rem;font-weight:600}
-    div[data-testid="stTabs"] button{font-size:.9rem;font-weight:600}
+/* ── Layout ── */
+.main .block-container{padding-top:1.5rem;padding-bottom:2rem}
+section[data-testid="stSidebar"]{min-width:270px;border-right:1px solid #e2e8f0}
+
+/* ── Tab navigation — pill style ── */
+div[data-testid="stTabs"] button[role="tab"]{
+    border-radius:8px !important;font-size:.85rem;font-weight:500;
+    padding:5px 14px !important;color:#64748b;transition:background .15s,color .15s
+}
+div[data-testid="stTabs"] button[role="tab"]:hover{
+    background:rgba(0,0,0,.05) !important;color:#0f172a
+}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
+    background:white !important;color:#0f172a !important;
+    font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.10) !important
+}
+div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
+
+/* ── Expanders — card style ── */
+div[data-testid="stExpander"] details{
+    border-radius:12px !important;border:1px solid #e2e8f0 !important;
+    overflow:hidden;transition:border-color .15s;background:white
+}
+div[data-testid="stExpander"] details:hover{border-color:#cbd5e1 !important}
+div[data-testid="stExpander"] details summary{
+    padding:12px 16px !important;font-weight:500
+}
+div[data-testid="stExpander"] details[open] summary{
+    border-bottom:1px solid #e2e8f0
+}
+
+/* ── Metric cards ── */
+div[data-testid="metric-container"]{
+    background:white;border:1px solid #e2e8f0;
+    border-radius:12px;padding:14px 16px !important;
+    transition:border-color .15s
+}
+div[data-testid="metric-container"]:hover{border-color:#cbd5e1}
+div[data-testid="stMetricValue"]{font-size:1.4rem !important;letter-spacing:-.5px}
+div[data-testid="stMetricLabel"] p{font-size:.78rem !important;color:#64748b !important}
+
+/* ── Buttons ── */
+div[data-testid="stButton"]>button,
+div[data-testid="stPopover"]>button,
+div[data-testid="stFormSubmitButton"]>button{
+    border-radius:8px !important;font-weight:500;transition:all .15s
+}
+
+/* ── Inputs ── */
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input,
+div[data-testid="stTextAreaInput"] textarea{border-radius:8px !important}
+div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{border-radius:8px !important}
+
+/* ── Progress bars — slim & rounded ── */
+div[data-testid="stProgress"]>div{border-radius:20px;height:8px !important;overflow:hidden}
+div[data-testid="stProgress"]>div>div{border-radius:20px}
+div[data-testid="stProgress"] p{font-size:.8rem;color:#475569;margin-bottom:4px}
+
+/* ── Alert / info boxes ── */
+div[data-testid="stAlert"]{border-radius:10px !important}
+div.stNotification{border-radius:10px !important}
+
+/* ── Forms ── */
+div[data-testid="stForm"]{border-radius:12px !important;padding:16px !important}
+
+/* ── Sidebar metric cards ── */
+section[data-testid="stSidebar"] div[data-testid="metric-container"]{
+    background:#f1f5f9;border-color:#e2e8f0
+}
+
+/* ── Dividers ── */
+hr{border-color:#e2e8f0 !important;margin:1rem 0}
+
+/* ── mbox — BP/BM price cards ── */
+.mbox{
+    background:white !important;border:1px solid #e2e8f0 !important;
+    border-radius:10px !important;padding:12px 16px;margin:5px 0;
+    transition:border-color .15s
+}
+.mbox:hover{border-color:#cbd5e1 !important}
+.ph{font-size:1.3rem !important;font-weight:600 !important;color:#1e3a5f !important;letter-spacing:-.4px}
+.sp{font-size:.82rem;color:#64748b;margin-bottom:2px}
+
+/* ── Status badges — softer & rounder ── */
+.b-bp{background:#dbeafe;color:#1d4ed8;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
+.b-bm{background:#dcfce7;color:#15803d;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
+.b-sc{background:#fef3c7;color:#b45309;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
+.b-ok{background:#dcfce7;color:#15803d;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
+.b-wn{background:#fef9c3;color:#a16207;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
+.b-ng{background:#fee2e2;color:#b91c1c;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
