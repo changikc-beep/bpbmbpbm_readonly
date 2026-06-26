@@ -65,7 +65,7 @@ div[data-testid="stExpander"] details[open]>summary{
     border-bottom:1px solid #333 !important
 }
 div[data-testid="stExpander"] details>div{
-    padding:4px 6px !important
+    padding:16px 20px !important
 }
 
 /* ── Metric cards — dark surface ── */
@@ -109,20 +109,33 @@ div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input,
 div[data-testid="stTextAreaInput"] textarea{
     border-radius:8px !important;
-    background:#2a2a2a !important;
-    border-color:#3d3d3d !important
+    background:#2e2e2e !important;
+    border:1px solid #575757 !important;
+    color:#e5e5e5 !important
 }
 div[data-testid="stTextInput"] input:focus,
 div[data-testid="stNumberInput"] input:focus,
 div[data-testid="stTextAreaInput"] textarea:focus{
     border-color:#2383e2 !important;
-    box-shadow:0 0 0 2px rgba(35,131,226,.20) !important
+    box-shadow:0 0 0 2px rgba(35,131,226,.25) !important;
+    outline:none !important
 }
 div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
 div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
     border-radius:8px !important;
-    background:#2a2a2a !important;
-    border-color:#3d3d3d !important
+    background:#2e2e2e !important;
+    border:1px solid #575757 !important
+}
+div[data-testid="stSelectbox"] [data-baseweb="select"]>div:focus-within,
+div[data-testid="stMultiSelect"] [data-baseweb="select"]>div:focus-within{
+    border-color:#2383e2 !important;
+    box-shadow:0 0 0 2px rgba(35,131,226,.25) !important
+}
+div[data-testid="stDateInput"] input{
+    border-radius:8px !important;
+    background:#2e2e2e !important;
+    border:1px solid #575757 !important;
+    color:#e5e5e5 !important
 }
 
 /* ── Progress bars — slim accent ── */
@@ -1270,9 +1283,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _today_dt = datetime.today()
                 _fig.add_vline(
                     x=_today_dt.timestamp()*1000,
-                    line_dash="dot", line_color="#E74C3C", line_width=2,
+                    line_dash="dot", line_color="#ef4444", line_width=2,
                     annotation_text=f"오늘 ({_today_dt.strftime('%m/%d')})",
-                    annotation_font=dict(color="#E74C3C", size=10),
+                    annotation_font=dict(color="#ef4444", size=10),
                     annotation_position="top left",
                 )
                 _fig.update_yaxes(
@@ -1283,22 +1296,22 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _fig.update_xaxes(
                     showgrid=True, gridcolor="rgba(255,255,255,0.08)",
                     tickformat="%m/%d",
-                    tickfont=dict(size=10, color="#D0D0E8"),
+                    tickfont=dict(size=10, color="#c5c5c5"),
                 )
                 _fig.update_layout(
                     height=max(280, len(_gantt)*54+110),
                     xaxis_title="", yaxis_title="",
                     margin=dict(l=150, r=20, t=50, b=20),
-                    plot_bgcolor="#1E1E2E",
-                    paper_bgcolor="#16213E",
-                    font=dict(color="#D0D0E8"),
+                    plot_bgcolor="#1e1e1e",
+                    paper_bgcolor="#252525",
+                    font=dict(color="#c5c5c5"),
                     legend=dict(
                         title="",
                         orientation="h",
                         yanchor="bottom", y=1.02,
                         xanchor="right", x=1,
-                        font=dict(size=11, color="#D0D0E8"),
-                        bgcolor="rgba(30,30,50,0.85)",
+                        font=dict(size=11, color="#c5c5c5"),
+                        bgcolor="rgba(37,37,37,0.90)",
                     ),
                 )
                 st.plotly_chart(_fig, use_container_width=True)
@@ -1529,16 +1542,18 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                             st.caption(f"기타 조정: ${new_other_adj:+,.2f}  {new_other_desc or ''}")
 
                         # ── 정산 흐름표 ───────────────────────────────────────
-                        st.markdown(f"""
-| 단계 | 항목 | 금액 | 비고 |
-|:----:|------|-----:|------|
-| ① | Invoice 발행 | **${new_iusd:,.2f}** | 단가 ${_inv_per_kg:.2f}/kg · {new_wkg:,.0f} kg |
-| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −${prov_paid:,.2f} | INDEX {_prov_idx_month} · ${prov_pkg:.2f}/kg |
-| | **가정산 후 미수잔액** | **${new_iusd - prov_paid:,.2f}** | |
-| ③ | 최종정산액{"(확정)" if _snapped_final else "(계산)"} | ${_display_final:,.2f} | INDEX {_final_idx_month} · ${final_pkg:.2f}/kg · {_ni_src}/{_co_src} |
-{"| | 기타 조정 | " + f"${new_other_adj:+,.2f}" + " | " + (new_other_desc or "—") + " |" if new_other_adj else ""}
-| **④** | **{"확정산 청구액" if net_settle>=0 else "확정산 반환액"}** | **${net_settle:+,.2f}** | {"🟢 수령 예정" if net_settle>=0 else "🔴 반환 예정"} |
-""")
+                        _fl_rows = [
+                            f"| ① | Invoice 발행 | **${new_iusd:,.2f}** | 단가 ${_inv_per_kg:.2f}/kg · {new_wkg:,.0f} kg |",
+                            f"| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −${prov_paid:,.2f} | INDEX {_prov_idx_month} · ${prov_pkg:.2f}/kg |",
+                            f"| | **가정산 후 미수잔액** | **${new_iusd - prov_paid:,.2f}** | |",
+                            f"| ③ | 최종정산액{'(확정)' if _snapped_final else '(계산)'} | ${_display_final:,.2f} | INDEX {_final_idx_month} · ${final_pkg:.2f}/kg · {_ni_src}/{_co_src} |",
+                        ]
+                        if new_other_adj:
+                            _fl_rows.append(f"| | 기타 조정 | ${new_other_adj:+,.2f} | {new_other_desc or '—'} |")
+                        _fl_net_lbl  = "확정산 청구액" if net_settle >= 0 else "확정산 반환액"
+                        _fl_net_icon = "🟢 수령 예정" if net_settle >= 0 else "🔴 반환 예정"
+                        _fl_rows.append(f"| **④** | **{_fl_net_lbl}** | **${net_settle:+,.2f}** | {_fl_net_icon} |")
+                        st.markdown("| 단계 | 항목 | 금액 | 비고 |\n|:----:|------|-----:|------|\n" + "\n".join(_fl_rows))
 
                         # ── Invoice vs 최종 비교표 ────────────────────────────
                         _ni_diff  = _eff_ni  - b.get("ni_content", 0)
@@ -2282,10 +2297,10 @@ with t_pnl:
                       f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}",
                       f"-${abs(_raw_fifo_s1):,.0f}", f"-${abs(_stor_s1):,.0f}", f"${_tot_real_fifo:+,.0f}"],
                 textposition="outside",
-                increasing=dict(marker=dict(color="#2E75B6")),
-                decreasing=dict(marker=dict(color="#E74C3C")),
-                totals=dict(marker=dict(color="#7B68EE")),
-                connector=dict(line=dict(color="#555577", width=1, dash="dot")),
+                increasing=dict(marker=dict(color="#2383e2")),
+                decreasing=dict(marker=dict(color="#ef4444")),
+                totals=dict(marker=dict(color="#8b5cf6")),
+                connector=dict(line=dict(color="#484848", width=1, dash="dot")),
                 hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
             ))
             _wf.update_layout(
@@ -2293,9 +2308,9 @@ with t_pnl:
                     text=f"거래 마진 ${_tot_net:+,.0f}  →  실질 손익 {_real_sign} ${_tot_real_fifo:+,.0f}  (원료비 FIFO 기준)",
                     font=dict(size=13)),
                 height=380, margin=dict(l=10, r=10, t=55, b=10),
-                yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.08)"),
-                plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
-                font=dict(color="#D0D0E8"),
+                yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.07)"),
+                plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
+                font=dict(color="#c5c5c5"),
                 showlegend=False,
             )
             st.plotly_chart(_wf, use_container_width=True)
@@ -2439,25 +2454,25 @@ with t_pnl:
                     _fig_mon = go.Figure()
                     _fig_mon.add_trace(go.Bar(
                         x=_mx, y=_mgm, name="거래 마진",
-                        marker_color=["#2E75B6" if v >= 0 else "#E74C3C" for v in _mgm],
+                        marker_color=["#2383e2" if v >= 0 else "#ef4444" for v in _mgm],
                         text=[f"${v:+,.0f}" for v in _mgm],
                         textposition="outside", textfont=dict(size=9),
                     ))
                     _fig_mon.add_trace(go.Scatter(
                         x=_mx, y=_mrl, name="실질 손익",
                         mode="lines+markers+text",
-                        line=dict(color="#F39C12", width=2),
-                        marker=dict(size=7, color=["#1E8449" if v >= 0 else "#E74C3C" for v in _mrl]),
+                        line=dict(color="#f59e0b", width=2),
+                        marker=dict(size=7, color=["#4ade80" if v >= 0 else "#ef4444" for v in _mrl]),
                         text=[f"${v:+,.0f}" for v in _mrl],
-                        textposition="top center", textfont=dict(size=9, color="#F39C12"),
+                        textposition="top center", textfont=dict(size=9, color="#f59e0b"),
                     ))
                     _fig_mon.add_hline(y=0, line_dash="dot",
-                                       line_color="rgba(255,255,255,0.25)", line_width=1)
+                                       line_color="rgba(255,255,255,0.20)", line_width=1)
                     _fig_mon.update_layout(
                         height=300, margin=dict(l=10, r=10, t=30, b=10),
-                        yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.08)"),
-                        plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
-                        font=dict(color="#D0D0E8"),
+                        yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.07)"),
+                        plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
+                        font=dict(color="#c5c5c5"),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02,
                                     xanchor="right", x=1, bgcolor="rgba(0,0,0,0)"),
                         barmode="overlay",
@@ -5257,15 +5272,15 @@ with t_report:
             _df_mo = pd.DataFrame(_mo_rows)
             _fig_mo = px.bar(
                 _df_mo, x="월", y="거래 마진", color="구분", text="거래 마진",
-                color_discrete_map={"흑자": "#2ECC71", "적자": "#E74C3C"},
+                color_discrete_map={"흑자": "#4ade80", "적자": "#ef4444"},
             )
             _fig_mo.update_traces(texttemplate="$%{y:,.0f}", textposition="outside")
             _fig_mo.add_hline(y=0, line_color="rgba(255,255,255,0.3)", line_width=1)
             _fig_mo.update_layout(
                 height=320, showlegend=False,
                 margin=dict(l=10, r=10, t=30, b=10),
-                plot_bgcolor="#1E1E2E", paper_bgcolor="#16213E",
-                font=dict(color="#D0D0E8"),
+                plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
+                font=dict(color="#c5c5c5"),
                 xaxis_title="", yaxis_title="",
             )
             _fig_mo.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
