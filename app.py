@@ -126,6 +126,7 @@ div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
 }
 
 /* ── Progress bars — slim accent ── */
+div[data-testid="stProgress"]{margin-bottom:14px !important;margin-top:2px !important}
 div[data-testid="stProgress"]>div{
     border-radius:20px !important;height:6px !important;
     overflow:hidden;background:#333 !important
@@ -147,11 +148,52 @@ div[data-testid="stForm"]{
     padding:16px !important
 }
 
+/* ── Column row bottom spacing ── */
+div[data-testid="stHorizontalBlock"]{margin-bottom:16px !important}
+
 /* ── Dividers ── */
 hr{border-color:#2d2d2d !important;margin:1.2rem 0}
 
-/* ── Dataframes ── */
-div[data-testid="stDataFrame"] iframe{border-radius:10px}
+/* ── Dataframes — dark card container ── */
+div[data-testid="stDataFrame"]{
+    border:1px solid #383838 !important;
+    border-radius:10px !important;
+    overflow:hidden !important;
+    box-shadow:0 2px 8px rgba(0,0,0,.35) !important;
+    margin-bottom:8px !important
+}
+
+/* ── Markdown tables — dark card style ── */
+div[data-testid="stMarkdown"] table{
+    border-collapse:separate !important;
+    border-spacing:0 !important;
+    border:1px solid #383838 !important;
+    border-radius:10px !important;
+    overflow:hidden !important;
+    width:100%;
+    margin-bottom:12px !important
+}
+div[data-testid="stMarkdown"] table thead tr th{
+    background:#2d2d2d !important;
+    color:#e5e5e5 !important;
+    font-weight:600 !important;
+    padding:10px 14px !important;
+    border-bottom:1px solid #383838 !important;
+    font-size:.82rem !important;
+    white-space:nowrap
+}
+div[data-testid="stMarkdown"] table tbody tr td{
+    padding:8px 14px !important;
+    border-bottom:1px solid #2d2d2d !important;
+    color:#c5c5c5 !important;
+    font-size:.82rem !important
+}
+div[data-testid="stMarkdown"] table tbody tr:last-child td{
+    border-bottom:none !important
+}
+div[data-testid="stMarkdown"] table tbody tr:hover td{
+    background:rgba(255,255,255,.04) !important
+}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
@@ -793,7 +835,8 @@ def _kpi_card(label, value, sub="", val_color="#e5e5e5", left_border=""):
     _sub_h = (f'<div style="font-size:.75rem;color:#9b9b9b;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
     return (f'<div style="background:#2a2a2a;border:1px solid #383838;border-radius:12px;'
-            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4)">'
+            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4);'
+            f'margin-bottom:4px">'
             f'<div style="font-size:.75rem;color:#9b9b9b;margin-bottom:8px;font-weight:500">{label}</div>'
             f'<div style="font-size:1.5rem;font-weight:700;color:{val_color};'
             f'letter-spacing:-.5px;line-height:1.15">{value}</div>'
@@ -809,7 +852,8 @@ def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
     _sub_h = (f'<div style="font-size:.75rem;color:#9b9b9b;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
     return (f'<div style="background:#2a2a2a;border:1px solid #383838;border-radius:12px;'
-            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4)">'
+            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4);'
+            f'margin-bottom:4px">'
             f'<div style="font-size:.75rem;color:#9b9b9b;margin-bottom:8px;font-weight:500">'
             f'{label}{_bdg}</div>'
             f'<div style="font-size:1.5rem;font-weight:700;color:{val_color};'
