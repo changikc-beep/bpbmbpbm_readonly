@@ -64,7 +64,8 @@ div[data-testid="stExpander"] details summary{
 div[data-testid="stExpander"] details[open]>summary{
     border-bottom:1px solid #333 !important
 }
-div[data-testid="stExpander"] details>div{
+div[data-testid="stExpander"] details>div,
+div[data-testid="stExpander"] details>div>div{
     padding:16px 20px !important
 }
 
@@ -6226,6 +6227,7 @@ with t_contract:
             _prog_txt = (f"{_stat_color} {_bname}  ·  {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT"
                          f"  ({_m['fulfill_pct']:.1f}%)  —  {_stat_label}")
             st.progress(_prog_val, text=_prog_txt)
+            st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
 
             with st.expander(
                 f"{_ct_cst_ico} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
