@@ -3390,13 +3390,20 @@ with t_proc:
                     _ns_etd  = st.text_input("ETD (선택)", placeholder="2026-04-05")
                 if st.form_submit_button("➕ 선적건 추가"):
                     _ns_errs = []
-                    if not _ns_hbl: _ns_errs.append("HBL을 입력하세요.")
                     if not _ns_ld:  _ns_errs.append("선적일을 입력하세요.")
                     else:
                         try: datetime.strptime(_ns_ld, "%Y-%m-%d")
                         except ValueError: _ns_errs.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD)")
                     if _ns_hbl and any(s.get("hbl","").strip()==_ns_hbl.strip() for s in ship_list_ph):
                         _ns_errs.append(f"HBL '{_ns_hbl}' 이(가) 이미 존재합니다.")
+                    if not _ns_hbl.strip() and _ns_ld and _ns_wkg:
+                        _ns_buyer_id = buyer_opts.get(_ns_buy, "")
+                        _ns_dup = [s2 for s2 in ship_list_ph
+                                   if not s2.get("hbl","").strip()
+                                   and s2.get("loading_date","") == _ns_ld
+                                   and s2.get("buyer_id","") == _ns_buyer_id
+                                   and abs(float(s2.get("weight_kg",0)) - _ns_wkg) < 1]
+                        if _ns_dup: _ns_errs.append("동일한 선적일·매입사·중량의 HBL 미입력 선적건이 이미 있습니다.")
                     if _ns_errs:
                         for _e in _ns_errs: st.error(_e)
                     else:
