@@ -974,6 +974,28 @@ def _contract_metrics(cfg, contract):
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 cfg = load_cfg()
+
+# ── 기존 배치 스크랩 매각단가 일괄 기본값 적용 (미설정 배치만) ─────────────
+if not READ_ONLY:
+    _mig_buyers = {b["id"]: b for b in cfg.get("buyers", [])}
+    _mig_ships  = {s["id"]: s for s in cfg.get("shipments", [])}
+    _mig_changed = False
+    for _mrec in cfg.get("processing_history", []):
+        if _mrec.get("scrap_sale_per_kg"):
+            continue  # 이미 설정된 배치는 건너뜀
+        _mbid = (_mrec.get("buyer_id","") or
+                 _mig_ships.get(_mrec.get("shipment_id",""), {}).get("buyer_id",""))
+        _mprod = _mig_buyers.get(_mbid, {}).get("product","").upper()
+        if "BP" in _mprod:
+            _mrec["scrap_sale_per_kg"] = 5.5
+            _mig_changed = True
+        elif "BM" in _mprod:
+            _mrec["scrap_sale_per_kg"] = 3.2
+            _mig_changed = True
+    if _mig_changed:
+        save_cfg(cfg)
+# ─────────────────────────────────────────────────────────────────────────────
+
 hist_opts = [h["month"] for h in sorted(cfg.get("index_history",[]),key=lambda x:x["month"],reverse=True)]
 
 # NI/CO: 가장 최근 INDEX 이력 자동 적용 (사이드바 입력 제거)
@@ -3662,6 +3684,11 @@ with t_proc:
                     _fnbps = st.number_input("BP 매각단가 ($/kg)",
                         value=_auto_bps_f, step=0.0001, format="%.4f", key=f"fa_bps_{_fk}",
                         help=f"현재 INDEX → {_t2_buyer.get('name','?')}: ${_auto_bps_f:.5f}" if _t2_buyer else "")
+                    _fn_prod = (_t2_buyer.get("product","") if _t2_buyer else "").upper()
+                    _fn_scrap_default = 5.5 if "BP" in _fn_prod else (3.2 if "BM" in _fn_prod else 0.0)
+                    _fnscrap = st.number_input("잔여 스크랩 매각단가 ($/kg)",
+                        value=_fn_scrap_default, step=0.0001, format="%.4f", key=f"fa_scrap_{_fk}",
+                        help="BP 생산 후 잔여 스크랩 매각 단가. BP 기본 $5.5, BM 기본 $3.2")
                     _fnnotes = st.text_input("비고", key=f"fa_notes_{_fk}")
                 if st.form_submit_button("➕ 추가"):
                     _fn_inp = _fno / (_fnv/100) if _fnv > 0 else 0
@@ -3674,6 +3701,7 @@ with t_proc:
                         "conversion_rate_pct":   _fnv if _fnv > 0 else None,
                         "input_kg":              _fn_inp,
                         "bp_sale_per_kg":        _fnbps,
+                        "scrap_sale_per_kg":     _fnscrap if _fnscrap > 0 else None,
                         "processing_fee_per_kg": _fn_cond.get("processing_fee"),  # 계약값 자동
                         "buyer_id":              _t2_buyer.get("id","") if _t2_buyer else "",
                         "notes":                 _fnnotes,
