@@ -6237,11 +6237,34 @@ with t_contract:
             _stat_label = {"complete": "이행 완료", "ok": "재고 충분", "short": "재고 부족"}.get(_m["status"], "—")
 
             # 이행률 progress bar — expander 바깥에서 항상 표시
-            _prog_val = 1.0 if _m["status"] == "complete" else (min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0)
-            _prog_txt = (f"{_stat_color} {_bname}  ·  {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT"
-                         f"  ({_m['fulfill_pct']:.1f}%)  —  {_stat_label}")
-            st.progress(_prog_val, text=_prog_txt)
-            st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
+            _prog_pct  = min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0
+            _prog_pct  = 1.0 if _m["status"] == "complete" else _prog_pct
+            _bar_color = {"complete": "#4ade80", "ok": "#2383e2", "short": "#ef4444"}.get(_m["status"], "#9b9b9b")
+            _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#333")
+            _sub_lbl   = f" / {_prname}" if _prname else ""
+            st.markdown(f"""
+<div style="background:#252525;border:1px solid #383838;border-radius:10px;
+            padding:11px 16px 10px;margin-bottom:10px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-size:.85rem;font-weight:600;color:#e5e5e5">
+      {_bname} &nbsp;·&nbsp; {_scname}{_sub_lbl}
+    </span>
+    <span style="font-size:.75rem;font-weight:600;color:{_bar_color};
+                 background:{_stat_badge_color};border-radius:5px;padding:2px 8px">
+      {_stat_label}
+    </span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="flex:1;background:#383838;border-radius:20px;height:7px;overflow:hidden">
+      <div style="width:{_prog_pct*100:.1f}%;height:100%;
+                  background:linear-gradient(90deg,{_bar_color}cc,{_bar_color});
+                  border-radius:20px"></div>
+    </div>
+    <span style="font-size:.78rem;color:#9b9b9b;white-space:nowrap;min-width:160px;text-align:right">
+      {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT &nbsp;({_m['fulfill_pct']:.1f}%)
+    </span>
+  </div>
+</div>""", unsafe_allow_html=True)
 
             with st.expander(
                 f"{_ct_cst_ico} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
