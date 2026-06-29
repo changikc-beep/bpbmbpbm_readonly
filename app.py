@@ -3687,7 +3687,7 @@ with t_proc:
                     _fn_prod = (_t2_buyer.get("product","") if _t2_buyer else "").upper()
                     _fn_scrap_default = 5.5 if "BP" in _fn_prod else (3.2 if "BM" in _fn_prod else 0.0)
                     _fnscrap = st.number_input("잔여 스크랩 매각단가 ($/kg)",
-                        value=_fn_scrap_default, step=0.0001, format="%.4f", key=f"fa_scrap_{_fk}",
+                        value=_fn_scrap_default, step=0.0001, format="%.4f", key=f"fa_scrapsale_{_fk}",
                         help="BP 생산 후 잔여 스크랩 매각 단가. BP 기본 $5.5, BM 기본 $3.2")
                     _fnnotes = st.text_input("비고", key=f"fa_notes_{_fk}")
                 if st.form_submit_button("➕ 추가"):
