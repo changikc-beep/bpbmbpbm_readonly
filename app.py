@@ -1336,11 +1336,16 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _hdr_st = _settle_terms(_get_contract_for_shipment(cfg, s.get("id","")), b)
                 _hdr_prov_paid = float(s.get("invoice_usd") or 0) * (_hdr_st["prov_pct"] / 100.0)
                 _hdr_net = float(_snapped) - _hdr_prov_paid + float(s.get("other_adj_usd") or 0)
-                settle_preview = f"  |  추가정산: ${_hdr_net:+,.2f}"
+                settle_preview = f"추가정산 ${_hdr_net:+,.2f}"
             ld_disp   = s.get("loading_date","").strip() or "선적일 미정"
-            eta_disp  = s.get("eta","").strip() or "TBD"
-            _inv_hdr  = f"  |  💵 ${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
-            hdr=f"#{i+1}  {stat_txt}  {s.get('hbl','—')}  |  {buyer_lbl}  |  {ld_disp}  →  ETA {eta_disp}  |  {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{settle_preview}"
+            _eta_raw  = s.get("eta","").strip()
+            eta_disp  = _eta_raw[5:] if _eta_raw and len(_eta_raw) >= 7 else (_eta_raw or "TBD")
+            _inv_hdr  = f"  ·  💵 ${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
+            _settle_hdr = (f"  ·  🔁 {settle_preview}" if settle_preview else "")
+            hdr = (f"#{i+1}  ·  {stat_txt}"
+                   f"  │  🔖 {s.get('hbl','—')}  ·  🏢 {buyer_lbl}"
+                   f"  │  📅 {ld_disp} → ETA {eta_disp}"
+                   f"  │  ⚖️ {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{_settle_hdr}")
             with st.expander(hdr,expanded=False):
                 # ── 기본 정보 입력 ──
                 e1,e2,e3,e4=st.columns(4)
@@ -2652,9 +2657,11 @@ with t_pnl:
             _hreal  = _htrade - _h["raw"] - _h["stor"]
             _hmgr   = _hreal / _h["bp_rev"] * 100 if _h["bp_rev"] > 0 else 0
             _icon   = "🟢" if _hreal >= 0 else "🔴"
+            _pnl_color = "🟢" if _hreal >= 0 else "🔴"
             with st.expander(
-                f"{_icon}  {_h['hbl']}  ·  {_h['매입사']}  ·  {_h['load_date']}"
-                f"  |  실질손익 ${_hreal:+,.0f}  ({_hmgr:+.1f}%)",
+                f"{_pnl_color}  🔖 {_h['hbl']}  ·  🏢 {_h['매입사']}"
+                f"  │  📅 {_h['load_date']}"
+                f"  │  💰 ${_hreal:+,.0f}  ({_hmgr:+.1f}%)",
                 expanded=False,
             ):
                 _cl, _cr = st.columns([5, 7])
@@ -3444,10 +3451,10 @@ with t_proc:
             _bcnt_lbl = f"  [{_bcnt2}건]" if _bcnt2 else "  [배치없음]"
             _hbl_lbl = _s2.get("hbl","").strip() or f"HBL미정 {_s2.get('weight_kg',0):,.0f}kg"
             _t2_hbl_d[
-                f"{_icon2}  {_hbl_lbl}  |  "
-                f"{_s2.get('loading_date','?')[:7]}  "
-                f"{_b2.get('name','?')} ({_b2.get('product','?')})"
-                f"{_bcnt_lbl}"
+                f"{_icon2}  🔖 {_hbl_lbl}"
+                f"  │  🏢 {_b2.get('name','?')} ({_b2.get('product','?')})"
+                f"  │  📅 {_s2.get('loading_date','?')[:7]}"
+                f"  {_bcnt_lbl}"
             ] = _s2["id"]
         _unlinked_lbl = f"🔖 미연결 배치" + (f"  [{_unlinked_cnt}건]" if _unlinked_cnt else "  [없음]")
         _t2_hbl_d[_unlinked_lbl] = "__unlinked__"
