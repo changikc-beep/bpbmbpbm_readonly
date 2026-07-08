@@ -235,6 +235,19 @@ div[data-testid="stMarkdown"] table tbody tr:hover td{
 .b-ok{background:rgba(34,197,94,.15);color:#4ade80;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(34,197,94,.25)}
 .b-wn{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
 .b-ng{background:rgba(239,68,68,.15);color:#f87171;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(239,68,68,.25)}
+
+/* ── Baseweb 드롭다운 layer 잔류 오버레이 수정 ──
+   selectbox를 열고 닫은 후 data-baseweb="layer" 포털 요소가
+   DOM에 남아 탭 클릭 이벤트를 가로채는 문제 방지. ── */
+[data-baseweb="layer"]{pointer-events:none !important}
+[data-baseweb="layer"] [role="listbox"],
+[data-baseweb="layer"] [role="option"],
+[data-baseweb="layer"] [role="combobox"],
+[data-baseweb="layer"] [data-baseweb="menu"],
+[data-baseweb="layer"] [data-baseweb="popover"],
+[data-baseweb="layer"] [data-baseweb="calendar"],
+[data-baseweb="layer"] [data-baseweb="datepicker"],
+[data-baseweb="layer"] [data-baseweb="tooltip"]{pointer-events:auto !important}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
