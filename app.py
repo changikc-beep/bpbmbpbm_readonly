@@ -41,7 +41,7 @@ div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
     font-weight:600;box-shadow:0 1px 6px rgba(35,131,226,.40) !important
 }
 div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
-div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{visibility:hidden !important;pointer-events:none !important}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
 div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
 /* ── Expanders — elevated dark card ── */
@@ -236,18 +236,6 @@ div[data-testid="stMarkdown"] table tbody tr:hover td{
 .b-wn{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
 .b-ng{background:rgba(239,68,68,.15);color:#f87171;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(239,68,68,.25)}
 
-/* ── Baseweb 드롭다운 layer 잔류 오버레이 수정 ──
-   selectbox를 열고 닫은 후 data-baseweb="layer" 포털 요소가
-   DOM에 남아 탭 클릭 이벤트를 가로채는 문제 방지. ── */
-[data-baseweb="layer"]{pointer-events:none !important}
-[data-baseweb="layer"] [role="listbox"],
-[data-baseweb="layer"] [role="option"],
-[data-baseweb="layer"] [role="combobox"],
-[data-baseweb="layer"] [data-baseweb="menu"],
-[data-baseweb="layer"] [data-baseweb="popover"],
-[data-baseweb="layer"] [data-baseweb="calendar"],
-[data-baseweb="layer"] [data-baseweb="datepicker"],
-[data-baseweb="layer"] [data-baseweb="tooltip"]{pointer-events:auto !important}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
