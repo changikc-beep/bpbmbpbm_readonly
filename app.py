@@ -41,7 +41,7 @@ div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
     font-weight:600;box-shadow:0 1px 6px rgba(35,131,226,.40) !important
 }
 div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
-div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{visibility:hidden !important;pointer-events:none !important}
 div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
 /* ── Expanders — elevated dark card ── */
