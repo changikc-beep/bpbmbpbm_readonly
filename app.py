@@ -1597,8 +1597,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 | INDEX 기준월 | {_prov_idx_month} | {_final_idx_month} | — | |
 | Ni INDEX | ${pm_data['ni_index']:,.2f} | ${fm_data['ni_index']:,.2f} | ${_idx_ni_d:+,.2f} | /MT |
 | Co INDEX | ${pm_data['co_index']:,.2f} | ${fm_data['co_index']:,.2f} | ${_idx_co_d:+,.2f} | /MT |
-| Ni 함유량 | {b.get('ni_content',0):.3f}% (당사) | {new_buyer_ni:.3f}% (매입사) · **{_eff_ni:.3f}%** 적용 | {_ni_diff:+.3f}%p | 기준: {_ni_src} |
-| Co 함유량 | {b.get('co_content',0):.3f}% (당사) | {new_buyer_co:.3f}% (매입사) · **{_eff_co:.3f}%** 적용 | {_co_diff:+.3f}%p | 기준: {_co_src} |
+| Ni 함유량 | {b.get('ni_content',0):.2f}% (당사) | {new_buyer_ni:.2f}% (매입사) · **{round(_eff_ni,2):.2f}%** 적용 | {_ni_diff:+.2f}%p | 기준: {_ni_src} |
+| Co 함유량 | {b.get('co_content',0):.2f}% (당사) | {new_buyer_co:.2f}% (매입사) · **{round(_eff_co,2):.2f}%** 적용 | {_co_diff:+.2f}%p | 기준: {_co_src} |
 | 정산 중량 | {new_wkg:,.0f} kg | {final_w:,.1f} kg | {_wt_diff:+,.1f} kg | 수분 {new_moisture:.1f}% 공제 |
 | 단가 ($/kg) | **${prov_pkg:.2f}** | **${final_pkg:.2f}** | **${index_diff:+.2f}** | |
 | 정산 합계 | ${new_iusd:,.2f} | ${_display_final:,.2f} | **${_inv_vs_final:+,.2f}** | |
