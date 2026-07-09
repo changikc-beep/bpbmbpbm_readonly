@@ -1367,7 +1367,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             ld_disp   = s.get("loading_date","").strip() or "선적일 미정"
             _eta_raw  = s.get("eta","").strip()
             eta_disp  = _eta_raw[5:] if _eta_raw and len(_eta_raw) >= 7 else (_eta_raw or "TBD")
-            _inv_hdr    = f"  ·  ${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
+            _inv_hdr    = f"  ·  \\${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
             _settle_hdr = f"  ·  {settle_preview}" if settle_preview else ""
             hdr = (f"#{i+1}  ·  {stat_txt}"
                    f"  │  {s.get('hbl','—')}  ·  {buyer_lbl}"
