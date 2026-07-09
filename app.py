@@ -1570,6 +1570,16 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if new_other_adj:
                             st.caption(f"기타 조정: ${new_other_adj:+,.2f}  {new_other_desc or ''}")
 
+                        # 확정 스냅샷이 최신 계산식(반올림 전 원단가) 결과와 다르면 재계산 제안
+                        if _snapped_final and abs(_snapped_final - final_amt) >= 0.01:
+                            st.warning(
+                                f"⚠️ 확정 스냅샷(${_snapped_final:,.2f})이 현재 계산식(${final_amt:,.2f})과 "
+                                f"${_snapped_final - final_amt:+,.2f} 차이납니다 — 단가 반올림 방식 개선 이전 값일 수 있습니다."
+                            )
+                            if st.button("🔄 최신 계산식으로 재계산", key=f"sh_recalc_{real_i}"):
+                                cfg["shipments"][real_i]["final_amount_usd"] = final_amt
+                                save_cfg(cfg); st.toast("✅ 재계산 완료"); st.rerun()
+
                         # ── 정산 흐름표 ───────────────────────────────────────
                         _fl_rows = [
                             f"| ① | Invoice 발행 | **${new_iusd:,.2f}** | 단가 ${_inv_per_kg:.2f}/kg · {new_wkg:,.0f} kg |",
