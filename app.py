@@ -6325,9 +6325,13 @@ with t_contract:
                 + f"  |  {_stat_label}  [{_ct_cst_lbl}]",
                 expanded=_m["status"] == "short",
             ):
-                # 상한 초과 경고
+                # 상한 초과 / 하한 미달 경고 (협의 하에 발생 가능 — 저장은 항상 허용, 안내만 표시)
                 if _m["max_mt"] > 0 and _m["shipped_mt"] > _m["max_mt"]:
-                    st.warning(f"⚠️ 선적량({_m['shipped_mt']:.2f} MT)이 계약 상한({_m['max_mt']:.2f} MT)을 초과했습니다.")
+                    st.warning(f"⚠️ 선적량({_m['shipped_mt']:.2f} MT)이 계약 상한({_m['max_mt']:.2f} MT)을 "
+                               f"{_m['shipped_mt']-_m['max_mt']:.2f} MT 초과했습니다.")
+                elif _m["min_mt"] > 0 and _m["shipped_mt"] > 0 and _m["shipped_mt"] < _m["min_mt"] and _ct_cstatus == "closed":
+                    st.warning(f"⚠️ 선적량({_m['shipped_mt']:.2f} MT)이 계약 하한({_m['min_mt']:.2f} MT)에 "
+                               f"{_m['min_mt']-_m['shipped_mt']:.2f} MT 미달합니다.")
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
                 _rem_val = f"{_m['remaining_mt']:,.2f} MT" if _m["remaining_mt"] > 0 else "충족"
@@ -6519,9 +6523,10 @@ with t_contract:
                             st.error("배분량은 0보다 커야 합니다.")
                         elif _alloc_kg_input * 1000 > _remain_kg + 0.1:
                             st.error(f"배분량이 잔여량을 초과합니다. 잔여: {_remain_kg/1000:,.3f} MT")
-                        elif _m["max_mt"] > 0 and _after_mt > _m["max_mt"] + 0.001:
-                            st.error(f"배분 후 계약 상한({_m['max_mt']:.2f} MT)을 초과합니다. 추가 가능: {(_m['max_mt']-_cur_alloc_mt):.3f} MT")
                         else:
+                            # 계약 상한 초과 시에도 저장은 허용 (양사 협의 하에 발생 가능) — 초과분은 배너로 안내
+                            if _m["max_mt"] > 0 and _after_mt > _m["max_mt"] + 0.001:
+                                st.toast(f"⚠️ 배분 후 총량이 계약 상한을 {(_after_mt-_m['max_mt']):.3f} MT 초과합니다 — 저장은 진행됩니다.")
                             _allocs.append({
                                 "id":           str(uuid.uuid4())[:8],
                                 "contract_id":  _ct_id,
