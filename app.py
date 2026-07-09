@@ -1476,10 +1476,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     _co_ni = b.get("ni_content",0) if b else 0  # 당사값
                     _co_co = b.get("co_content",0) if b else 0
                     _eff_ni = {"매입사값": new_buyer_ni, "당사값": _co_ni,
-                               "평균": round((new_buyer_ni + _co_ni) / 2, 4)}[_ni_src]
+                               "평균": round((new_buyer_ni + _co_ni) / 2, 2)}[_ni_src]
                     _eff_co = {"매입사값": new_buyer_co, "당사값": _co_co,
-                               "평균": round((new_buyer_co + _co_co) / 2, 4)}[_co_src]
-                    st.caption(f"적용 Ni: **{_eff_ni:.4f}%** / Co: **{_eff_co:.4f}%**")
+                               "평균": round((new_buyer_co + _co_co) / 2, 2)}[_co_src]
+                    st.caption(f"적용 Ni: **{_eff_ni:.2f}%** / Co: **{_eff_co:.2f}%**")
                 with sa3:
                     st.markdown("**기타 조정**")
                     new_other_adj=st.number_input("기타 조정 (USD)",
