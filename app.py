@@ -1534,9 +1534,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _,_,_,_final_pkg_raw=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             _eff_ni,_eff_co,
                             _ni_pay, _co_pay)
-                        final_pkg = round(_final_pkg_raw, 2)
+                        final_pkg = round(_final_pkg_raw, 2)  # 화면 표시용
                         final_w=new_wkg*(1-new_moisture/100)
-                        final_amt=final_pkg*final_w
+                        final_amt=round(_final_pkg_raw*final_w, 2)  # 실제 금액: 반올림 전 원단가로 계산
                         index_diff=(final_pkg-prov_pkg)
                         # Final 스냅샷 값 (저장된 값 우선)
                         _snapped_final = s.get("final_amount_usd")
@@ -1656,8 +1656,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
                                                             _eff_ni, _eff_co,
                                                             _snap_st["ni_payable"], _snap_st["co_payable"])
-                                    _sfpkg = round(_sfpkg_raw, 2)
-                                    _snap_final = round(_sfpkg * new_wkg * (1 - new_moisture/100), 2)
+                                    _snap_final = round(_sfpkg_raw * new_wkg * (1 - new_moisture/100), 2)
                             elif new_stat != "final":
                                 _snap_final = None  # final 상태 해제 시 스냅샷 제거
                             cfg["shipments"][real_i].update({
