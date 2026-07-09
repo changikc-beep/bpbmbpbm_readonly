@@ -121,14 +121,18 @@ div[data-testid="stTextAreaInput"] textarea:focus{
     box-shadow:0 0 0 2px rgba(35,131,226,.25) !important;
     outline:none !important
 }
+/* baseweb 버전에 따라 select 내부 div 깊이가 달라질 수 있어 루트와 1단계 자식 모두에
+   동일 스타일을 적용 (multiselect 태그 pill은 건드리지 않도록 자손 전체는 건드리지 않음) */
+div[data-testid="stSelectbox"] [data-baseweb="select"],
 div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+div[data-testid="stMultiSelect"] [data-baseweb="select"],
 div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
     border-radius:8px !important;
     background:#2e2e2e !important;
     border:1px solid #575757 !important
 }
-div[data-testid="stSelectbox"] [data-baseweb="select"]>div:focus-within,
-div[data-testid="stMultiSelect"] [data-baseweb="select"]>div:focus-within{
+div[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
+div[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within{
     border-color:#2383e2 !important;
     box-shadow:0 0 0 2px rgba(35,131,226,.25) !important
 }
@@ -1359,12 +1363,12 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _hdr_st = _settle_terms(_get_contract_for_shipment(cfg, s.get("id","")), b)
                 _hdr_prov_paid = float(s.get("invoice_usd") or 0) * (_hdr_st["prov_pct"] / 100.0)
                 _hdr_net = float(_snapped) - _hdr_prov_paid + float(s.get("other_adj_usd") or 0)
-                settle_preview = f"추가정산 ${_hdr_net:+,.2f}"
+                settle_preview = f"가정산 ${_hdr_prov_paid:,.0f}  ·  확정산 ${_hdr_net:+,.0f}"
             ld_disp   = s.get("loading_date","").strip() or "선적일 미정"
             _eta_raw  = s.get("eta","").strip()
             eta_disp  = _eta_raw[5:] if _eta_raw and len(_eta_raw) >= 7 else (_eta_raw or "TBD")
             _inv_hdr    = f"  ·  ${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
-            _settle_hdr = f"  ·  추가정산 {settle_preview.split('$')[1] if '$' in settle_preview else settle_preview}" if settle_preview else ""
+            _settle_hdr = f"  ·  {settle_preview}" if settle_preview else ""
             hdr = (f"#{i+1}  ·  {stat_txt}"
                    f"  │  {s.get('hbl','—')}  ·  {buyer_lbl}"
                    f"  │  {ld_disp} → ETA {eta_disp}"
