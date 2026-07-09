@@ -1536,7 +1536,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                             _ni_pay, _co_pay)
                         final_pkg = round(_final_pkg_raw, 2)  # 화면 표시용
                         final_w=new_wkg*(1-new_moisture/100)
-                        final_amt=round(_final_pkg_raw*final_w, 2)  # 실제 금액: 반올림 전 원단가로 계산
+                        # 매입사에 따라 단가 반올림 시점이 다름: 기본은 원단가 사용, 매입사 설정 시 반올림 단가 사용
+                        _rbm = b.get("round_price_before_moisture", False) if b else False
+                        final_amt=round((final_pkg if _rbm else _final_pkg_raw)*final_w, 2)
                         index_diff=(final_pkg-prov_pkg)
                         # Final 스냅샷 값 (저장된 값 우선)
                         _snapped_final = s.get("final_amount_usd")
@@ -1666,7 +1668,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
                                                             _eff_ni, _eff_co,
                                                             _snap_st["ni_payable"], _snap_st["co_payable"])
-                                    _snap_final = round(_sfpkg_raw * new_wkg * (1 - new_moisture/100), 2)
+                                    _snap_rbm = b.get("round_price_before_moisture", False) if b else False
+                                    _snap_price = round(_sfpkg_raw, 2) if _snap_rbm else _sfpkg_raw
+                                    _snap_final = round(_snap_price * new_wkg * (1 - new_moisture/100), 2)
                             elif new_stat != "final":
                                 _snap_final = None  # final 상태 해제 시 스냅샷 제거
                             cfg["shipments"][real_i].update({
@@ -3220,7 +3224,12 @@ with t_buy:
             with c5: nnc=st.number_input("Ni 함유량(%)",value=b["ni_content"],step=0.01,format="%.2f",key=f"bnc_{i}")
             with c6: ncc=st.number_input("Co 함유량(%)",value=b["co_content"],step=0.01,format="%.2f",key=f"bcc_{i}")
             ba,bb=st.columns(2)
-            with ba: na=st.checkbox("활성",b.get("active",True),key=f"bact_{i}")
+            with ba:
+                na=st.checkbox("활성",b.get("active",True),key=f"bact_{i}")
+                nrbm=st.checkbox("단가 반올림 후 수분공제 (일부 매입사 방식)",
+                    b.get("round_price_before_moisture", False),key=f"brbm_{i}",
+                    help="켜면 단가를 소수 2자리로 반올림한 뒤 수분공제 중량과 곱해 정산액을 계산합니다. "
+                         "매입사 계산서가 이 방식(예: EcoPro)이면 켜세요. 기본은 꺼짐(반올림 전 원단가 사용).")
             with bb:
                 s1,s2,s3,s4=st.columns(4)
                 with s1:
@@ -3233,7 +3242,7 @@ with t_buy:
                         save_cfg(cfg); st.rerun()
                 with s3:
                     if st.button("💾 저장",key=f"bsave_{i}",use_container_width=True):
-                        cfg["buyers"][i].update({"name":nn,"product":np_,"ni_payable":nnp,"co_payable":ncp,"ni_content":nnc,"co_content":ncc,"active":na})
+                        cfg["buyers"][i].update({"name":nn,"product":np_,"ni_payable":nnp,"co_payable":ncp,"ni_content":nnc,"co_content":ncc,"active":na,"round_price_before_moisture":nrbm})
                         save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with s4:
                     with st.popover("🗑️", use_container_width=True):
