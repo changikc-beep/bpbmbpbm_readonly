@@ -1675,8 +1675,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _snap_rbm = b.get("round_price_before_moisture", False) if b else False
                                     _snap_price = round(_sfpkg_raw, 2) if _snap_rbm else _sfpkg_raw
                                     _snap_final = round(_snap_price * new_wkg * (1 - new_moisture/100), 2)
-                            elif new_stat != "final":
-                                _snap_final = None  # final 상태 해제 시 스냅샷 제거
+                            elif new_stat == "provisional":
+                                _snap_final = None  # final 상태 해제(재정산) 시에만 스냅샷 제거 — paid는 final 스냅샷을 유지
                             cfg["shipments"][real_i].update({
                                 "hbl":new_hbl,"invoice_no":new_inv,
                                 "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
