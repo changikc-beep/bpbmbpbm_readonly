@@ -863,26 +863,37 @@ def _resolve_idx_month(basis, loading_date, prov_month, final_month):
     return prov_month  # fallback
 
 
-def _recompute_final_settlement(cfg, s, hm_all=None):
+def _recompute_final_settlement(cfg, s, hm_all=None, fallback_index=None):
     """저장된 선적건 데이터 기준으로 '지금 저장하면 나올' 최종정산액을 재계산.
     final_amount_usd 스냅샷과 비교해 재계산 필요 여부를 판단할 때 사용.
     반환: 계산 불가(계약/INDEX월 미비) 시 None, 가능하면 확정산 금액(float).
+
+    fallback_index=(ni, co): Final월 INDEX가 아직 없을 때 이 값으로 대신 계산
+    (현금흐름 전망의 '추정치' 용도 — 확정 계산에는 절대 사용하지 말 것).
     """
     if hm_all is None:
         hm_all = {h["month"]: h for h in cfg.get("index_history", [])}
     final_month = s.get("final_month", "—")
     if not final_month or final_month == "—" or final_month not in hm_all:
-        return None
+        if fallback_index is None:
+            return None
+        # Final월 INDEX 미등록 → 추정 INDEX로 대체해 계속 진행
+        final_month = None
     buyers = {b["id"]: b for b in cfg.get("buyers", [])}
     b = buyers.get(s.get("buyer_id", ""), {})
     ct = _get_contract_for_shipment(cfg, s.get("id", ""))
     st_terms = _settle_terms(ct, b)
-    ld = s.get("loading_date", "")
-    prov_month = s.get("prov_month", "—")
-    final_idx_month = _resolve_idx_month(st_terms["final_idx"], ld, prov_month, final_month)
-    if final_idx_month not in hm_all:
-        final_idx_month = final_month
-    fm_data = hm_all[final_idx_month]
+    if final_month is None:
+        # 추정 모드: fallback_index를 그대로 사용
+        ni_index, co_index = fallback_index
+    else:
+        ld = s.get("loading_date", "")
+        prov_month = s.get("prov_month", "—")
+        final_idx_month = _resolve_idx_month(st_terms["final_idx"], ld, prov_month, final_month)
+        if final_idx_month not in hm_all:
+            final_idx_month = final_month
+        fm_data = hm_all[final_idx_month]
+        ni_index, co_index = fm_data["ni_index"], fm_data["co_index"]
 
     default_ni = float(b.get("ni_content", 0) or 0)
     default_co = float(b.get("co_content", 0) or 0)
@@ -895,7 +906,7 @@ def _recompute_final_settlement(cfg, s, hm_all=None):
     eff_co = {"매입사값": buyer_co, "당사값": default_co,
               "평균": round((buyer_co + default_co) / 2, 2)}.get(co_src, buyer_co)
 
-    _, _, _, final_pkg_raw = bp_price(fm_data["ni_index"], fm_data["co_index"],
+    _, _, _, final_pkg_raw = bp_price(ni_index, co_index,
                                        eff_ni, eff_co,
                                        st_terms["ni_payable"], st_terms["co_payable"])
     weight_kg = float(s.get("weight_kg", 0) or 0)
@@ -5428,6 +5439,153 @@ with t_report:
                                file_name=f"BP_BM_요약보고서_{rpt_month}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                use_container_width=True)
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 할 일 패널 — 앱 곳곳에 흩어진 경고를 한 곳에 모은 액션 목록
+    # ══════════════════════════════════════════════════════════════════════════
+    _td_ships  = cfg.get("shipments", [])
+    _td_buyers = {b["id"]: b for b in cfg["buyers"]}
+    _td_hm     = {h["month"]: h for h in cfg.get("index_history", [])}
+    _td_today  = date.today()
+
+    def _td_hbls(ships, limit=4):
+        _ls = [s.get("hbl", "").strip() or "HBL미정" for s in ships]
+        return ", ".join(_ls[:limit]) + (f" 외 {len(_ls)-limit}건" if len(_ls) > limit else "")
+
+    _todo = []   # (심각도 도형, 제목, 상세, 처리 위치)
+
+    # 1) 확정 스냅샷이 최신 계산식과 어긋난 건
+    _td_recalc = []
+    for _ts in _td_ships:
+        if _ts.get("status") in ("final", "paid") and _ts.get("final_amount_usd"):
+            _tl = _recompute_final_settlement(cfg, _ts, _td_hm)
+            if _tl is not None and abs(_tl - float(_ts["final_amount_usd"])) >= 0.01:
+                _td_recalc.append(_ts)
+    if _td_recalc:
+        _todo.append(("🔴", f"확정액 재계산 필요 {len(_td_recalc)}건",
+                      _td_hbls(_td_recalc), "선적 정산 추적"))
+
+    # 2) 고아 배치 (삭제된 선적건에 연결된 배치)
+    _td_sids   = {s["id"] for s in _td_ships}
+    _td_orphan = sum(1 for p in cfg.get("processing_history", [])
+                     if p.get("shipment_id", "") and p.get("shipment_id", "") not in _td_sids)
+    if _td_orphan:
+        _todo.append(("🔴", f"고아 배치 {_td_orphan}건",
+                      "삭제된 선적건에 연결된 배치", "설정·관리 > 임가공사 관리 > 세부 내역"))
+
+    # 3) 전월 INDEX 미등록
+    _td_prev_m = (_td_today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    if _td_prev_m not in _td_hm:
+        _todo.append(("🟡", f"전월({_td_prev_m}) INDEX 미등록",
+                      "확정산 계산에 필요할 수 있음", "설정·관리 > INDEX 이력"))
+
+    # 4) 확정산 진행 가능 (Final월 INDEX가 이미 등록된 provisional 건)
+    _td_ready = [s for s in _td_ships
+                 if s.get("status") == "provisional"
+                 and s.get("final_month", "—") not in ("—", "")
+                 and s.get("final_month") in _td_hm]
+    if _td_ready:
+        _todo.append(("🟡", f"확정산 진행 가능 {len(_td_ready)}건",
+                      _td_hbls(_td_ready), "선적 정산 추적"))
+
+    # 5) 수출비 미입력
+    _td_no_eu = [s for s in _td_ships if not s.get("export_cost_usd")]
+    if _td_no_eu:
+        _todo.append(("🟡", f"수출비 미입력 {len(_td_no_eu)}건",
+                      _td_hbls(_td_no_eu), "선적 정산 추적"))
+
+    # 6) ETA 14일 이내 도착 예정 (미확정 건)
+    _td_eta = [s for s in _td_ships
+               if s.get("eta", "") and s.get("eta", "") >= _td_today.isoformat()
+               and s.get("eta", "") <= (_td_today + timedelta(days=14)).isoformat()
+               and s.get("status", "") != "final"]
+    if _td_eta:
+        _todo.append(("🟡", f"ETA 14일 이내 도착 예정 {len(_td_eta)}건",
+                      _td_hbls(_td_eta), "선적 정산 추적"))
+
+    if _todo:
+        with st.expander(f"📌 할 일 — {len(_todo)}개 항목", expanded=True):
+            for _dot, _title, _detail, _tab in _todo:
+                st.markdown(f"{_dot} **{_title}** — {_detail}  ·  `{_tab}`")
+    else:
+        st.caption("📌 할 일: 처리할 항목이 없습니다.")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 미수 현금 전망 — 미입금 선적건의 확정산 잔액 (청구 가능 vs INDEX 대기)
+    # ══════════════════════════════════════════════════════════════════════════
+    _cf_rows = []
+    for _cs in _td_ships:
+        if _cs.get("status") not in ("provisional", "final"):
+            continue
+        _cb    = _td_buyers.get(_cs.get("buyer_id", ""), {})
+        _cst   = _settle_terms(_get_contract_for_shipment(cfg, _cs.get("id", "")), _cb)
+        _cpp   = float(_cs.get("invoice_usd") or 0) * (_cst["prov_pct"] / 100.0)
+        _cadj  = float(_cs.get("other_adj_usd") or 0)
+        _csnap = _cs.get("final_amount_usd")
+        if _csnap:
+            _camt, _cbasis = float(_csnap), "확정"
+        else:
+            _ccalc = _recompute_final_settlement(cfg, _cs, _td_hm)
+            if _ccalc is not None:
+                _camt, _cbasis = _ccalc, "계산"
+            else:
+                # Final월 INDEX 미등록 → 최신 INDEX로 추정 (참고치)
+                _camt   = _recompute_final_settlement(cfg, _cs, _td_hm, fallback_index=(NI, CO))
+                _cbasis = "추정"
+        if _camt is None:
+            continue  # 매입사/계약 정보 미비 등 — 전망에서 제외
+        _cnet = _camt - _cpp + _cadj
+        _cfm  = _cs.get("final_month", "—")
+        if _cbasis in ("확정", "계산"):
+            _cwhen = "청구 가능"
+        elif _cfm not in ("—", ""):
+            _cwhen = f"{_cfm} INDEX 대기"
+        else:
+            _cwhen = "Final월 미지정"
+        _cf_rows.append({
+            "구분":        _cwhen,
+            "HBL":         _cs.get("hbl", "").strip() or "HBL미정",
+            "매입사":      _cb.get("name", "?"),
+            "상태":        _cs.get("status", ""),
+            "Final월":     _cfm,
+            "기준":        _cbasis,
+            "가정산 수령": round(_cpp, 0),
+            "확정산 잔액": round(_cnet, 0),
+        })
+
+    st.markdown("#### 💵 미수 현금 전망")
+    if not _cf_rows:
+        st.caption("미입금 선적건이 없습니다.")
+    else:
+        _cf_now  = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] == "청구 가능")
+        _cf_wait = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] != "청구 가능")
+        _cf_tot  = _cf_now + _cf_wait
+        _cfc1, _cfc2, _cfc3 = st.columns(3)
+        _cfc1.markdown(_kpi_card("청구 가능 (INDEX 확정)", f"${_cf_now:+,.0f}",
+                                 f"{sum(1 for r in _cf_rows if r['구분'] == '청구 가능')}건",
+                                 val_color="#4ade80" if _cf_now >= 0 else "#f87171"),
+                       unsafe_allow_html=True)
+        _cfc2.markdown(_kpi_card("INDEX 대기 (추정)", f"${_cf_wait:+,.0f}",
+                                 "최신 INDEX 기준 추정 — Final월 INDEX 등록 시 변동",
+                                 val_color="#9b9b9b"),
+                       unsafe_allow_html=True)
+        _cfc3.markdown(_kpi_card("합계 (미수 확정산)", f"${_cf_tot:+,.0f}",
+                                 f"KRW ₩{_cf_tot*XR:+,.0f}",
+                                 val_color="#4ade80" if _cf_tot >= 0 else "#f87171"),
+                       unsafe_allow_html=True)
+        with st.expander("선적건별 상세", expanded=False):
+            st.caption("가정산은 수령 완료로 간주합니다. '추정'은 최신 INDEX로 계산한 참고치이며 "
+                       "실제 입금 시기는 매입사 정산 관행에 따라 다릅니다. 음수는 반환 예정액입니다.")
+            _cf_rows.sort(key=lambda r: (r["구분"] != "청구 가능", r["Final월"]))
+            st.dataframe(
+                pd.DataFrame(_cf_rows).style.format({
+                    "가정산 수령": "${:,.0f}",
+                    "확정산 잔액": "${:+,.0f}",
+                }),
+                use_container_width=True, hide_index=True,
+            )
 
     st.divider()
 
