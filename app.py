@@ -2849,7 +2849,7 @@ with t_pnl:
             st.info("📦 원료단가 적용 우선순위: **FIFO** (출고 기록 탭) → 수동 입력 → 이동평균 → 수동 기본값  \n"
                     "출고 기록이 완전히 입력된 B/L은 FIFO 원가가 자동 적용됩니다.")
         elif _inv_avail_pnl:
-            _avg_parts = [f"**{nm}** ${avg:.5f}/kg" for nm, (_, avg) in _inv_avail_pnl.items()]
+            _avg_parts = [f"**{nm}** \\${avg:.5f}/kg" for nm, (_, avg) in _inv_avail_pnl.items()]
             st.info("📊 이동평균 자동 적용 중 — " + " | ".join(_avg_parts)
                     + "  _(출고 기록 탭에서 임가공 출고를 입력하면 FIFO 원가로 자동 전환됩니다)_")
 
@@ -5211,7 +5211,7 @@ with t_report:
     with ro1:
         _rpt_month_opts = hist_opts if hist_opts else [f"{date.today().year}-{date.today().month:02d}"]
         rpt_month = st.selectbox("기준월", _rpt_month_opts, key="rpt_month_sel")
-        st.markdown(f"**작성일**: `{date.today()}`  |  **Ni**: `${NI:,.2f}/t`  **Co**: `${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
+        st.markdown(f"**작성일**: `{date.today()}`  |  **Ni**: `\\${NI:,.2f}/t`  **Co**: `\\${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
     with ro2:
         if active_buyers:
             xl_bytes = generate_excel_report(cfg, NI, CO, XR, rpt_month,
