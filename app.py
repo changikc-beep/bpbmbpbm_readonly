@@ -370,6 +370,21 @@ def bp_price(ni_i,co_i,ni_c,co_c,ni_p,co_p):
     nv=ni_i*(ni_c/100)*ni_p; cv=co_i*(co_c/100)*co_p; t=nv+cv
     return nv,cv,t,t/1000
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+def _valid_date_str(s):
+    """'YYYY-MM-DD' 형식이면서 실제 유효한 날짜(연도 1990~2100)인지 검증.
+    Python datetime은 연도 1~9999를 다 허용하지만, pandas Timestamp는
+    대략 1677~2262년만 지원해 화면에서 표/차트로 변환할 때 범위를 벗어나면
+    OutOfBoundsDatetime으로 앱 전체가 죽는다. 업무상 있을 수 없는 연도(오타 등)를
+    미리 걸러 이 크래시를 막는다."""
+    if not s or not _DATE_RE.match(s):
+        return False
+    try:
+        _d = datetime.strptime(s, "%Y-%m-%d")
+        return 1990 <= _d.year <= 2100
+    except ValueError:
+        return False
+
 # ── 처리 이력 헬퍼 (모듈 레벨 — t_proc / t_pnl 공용) ──────────────────────────
 from collections import defaultdict
 
@@ -1041,6 +1056,19 @@ if not READ_ONLY:
             _mrec["scrap_sale_per_kg"] = 3.2
             _mig_changed = True
     if _mig_changed:
+        save_cfg(cfg)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── 선적건 날짜 필드 정합성 정리 (오타 등으로 깨진 값 → 공란 처리) ─────────
+if not READ_ONLY:
+    _dmig_changed = False
+    for _dship in cfg.get("shipments", []):
+        for _dfield in ("loading_date", "etd", "eta"):
+            _dval = _dship.get(_dfield, "")
+            if _dval and not _valid_date_str(_dval):
+                _dship[_dfield] = ""
+                _dmig_changed = True
+    if _dmig_changed:
         save_cfg(cfg)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1762,9 +1790,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     if st.button("💾 저장",key=f"sh_save_{real_i}"):
                         _save_err = []
                         # 선적일 형식·정합성 검사
-                        if new_ld:
-                            try: datetime.strptime(new_ld, "%Y-%m-%d")
-                            except ValueError: _save_err.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD)")
+                        if new_ld and not _valid_date_str(new_ld):
+                            _save_err.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD, 연도 1990~2100)")
                         # ETA > 선적일 검사
                         if new_ld and new_eta and new_eta < new_ld:
                             _save_err.append(f"ETA({new_eta})가 선적일({new_ld})보다 앞섭니다")
@@ -3576,9 +3603,8 @@ with t_proc:
                 if st.form_submit_button("➕ 선적건 추가"):
                     _ns_errs = []
                     if not _ns_ld:  _ns_errs.append("선적일을 입력하세요.")
-                    else:
-                        try: datetime.strptime(_ns_ld, "%Y-%m-%d")
-                        except ValueError: _ns_errs.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD)")
+                    elif not _valid_date_str(_ns_ld):
+                        _ns_errs.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD, 연도 1990~2100)")
                     if _ns_hbl and any(s.get("hbl","").strip()==_ns_hbl.strip() for s in ship_list_ph):
                         _ns_errs.append(f"HBL '{_ns_hbl}' 이(가) 이미 존재합니다.")
                     if not _ns_hbl.strip() and _ns_ld and _ns_wkg:
@@ -4621,17 +4647,6 @@ def _to_float(s):
     if not s:
         return 0.0
     return float(str(s).replace(",", "").strip())
-
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-def _valid_date_str(s):
-    """'YYYY-MM-DD' 형식이면서 실제 유효한 날짜인지 검증."""
-    if not s or not _DATE_RE.match(s):
-        return False
-    try:
-        datetime.strptime(s, "%Y-%m-%d")
-        return True
-    except ValueError:
-        return False
 
 def _sync_from_gsheets(cfg_ref):
     """Google Sheets 3개 탭 → config 동기화 (덮어쓰기).
