@@ -4536,7 +4536,11 @@ def _sync_from_gsheets(cfg_ref):
                 }
                 if hbl and hbl in hbl_idx:
                     # HBL 있고 기존 항목 존재 → 업데이트
-                    cfg_ref["shipments"][hbl_idx[hbl]].update(entry)
+                    _sync_idx = hbl_idx[hbl]
+                    # provisional로 되돌아가면 확정 스냅샷 제거 (수동 폼과 동일 로직)
+                    if entry.get("status") == "provisional" and cfg_ref["shipments"][_sync_idx].get("status","provisional") != "provisional":
+                        entry["final_amount_usd"] = None
+                    cfg_ref["shipments"][_sync_idx].update(entry)
                     updated += 1
                 else:
                     # HBL 공란이거나, HBL이 새로 채워졌는데 기존엔 공란이었던 경우
@@ -4551,6 +4555,9 @@ def _sync_from_gsheets(cfg_ref):
                             _match_idx = _ci
                             break
                     if _match_idx is not None:
+                        # provisional로 되돌아가면 확정 스냅샷 제거 (수동 폼과 동일 로직)
+                        if entry.get("status") == "provisional" and cfg_ref["shipments"][_match_idx].get("status","provisional") != "provisional":
+                            entry["final_amount_usd"] = None
                         cfg_ref["shipments"][_match_idx].update(entry)
                         if hbl:
                             hbl_idx[hbl] = _match_idx
