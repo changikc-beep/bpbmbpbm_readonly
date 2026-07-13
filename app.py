@@ -1772,7 +1772,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     _prov_paid_a = float(_as.get("invoice_usd",0)) * (_ast["prov_pct"] / 100.0)
                     _aging_rows.append({
                         "Aging":        _aging_band,
-                        "경과일":        _days if _days >= 0 else "—",
+                        "경과일":        _days if _days >= 0 else None,
                         "HBL":          _as.get("hbl","—"),
                         "매입사":        _ab.get("name","?"),
                         "선적일":        _ald or "—",
@@ -1794,7 +1794,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     + f"  |  Invoice 합계: **\\${_tot_inv:,.0f}**  |  가정산 지급 합계: **\\${_tot_prov:,.0f}**"
                 )
                 st.dataframe(
-                    _df_aging.style.format({"Invoice(USD)": "${:,.2f}", "가정산 지급액": "${:,.2f}", "중량(MT)": "{:,.2f}"}),
+                    _df_aging.style.format({"Invoice(USD)": "${:,.2f}", "가정산 지급액": "${:,.2f}", "중량(MT)": "{:,.2f}",
+                                             "경과일": lambda v: f"{v:.0f}일" if pd.notna(v) else "—"}),
                     use_container_width=True, hide_index=True,
                 )
 
