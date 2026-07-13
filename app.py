@@ -1,5 +1,5 @@
 import streamlit as st
-import json, os, uuid
+import json, os, re, uuid
 import pandas as pd
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -4622,6 +4622,17 @@ def _to_float(s):
         return 0.0
     return float(str(s).replace(",", "").strip())
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+def _valid_date_str(s):
+    """'YYYY-MM-DD' 형식이면서 실제 유효한 날짜인지 검증."""
+    if not s or not _DATE_RE.match(s):
+        return False
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
 def _sync_from_gsheets(cfg_ref):
     """Google Sheets 3개 탭 → config 동기화 (덮어쓰기).
     반환: (성공 여부, 메시지 문자열)
@@ -4652,9 +4663,14 @@ def _sync_from_gsheets(cfg_ref):
                 # Provisional월/Final월/상태/ETD/ETA/수출비 (12열)
                 row = [c.strip().replace("\r","") for c in row] + [""] * 12
                 hbl, inv_no, ld, buyer_str, wkg, iusd, pm, fm, status, etd, eta, eu_cost = row[:12]
-                # HBL 공란(발급 전) 행도 처리 — 출하일+매입사+중량 복합키로 매핑
-                if not ld:   # 출하일도 없으면 의미없는 빈 행
-                    continue
+                # 날짜 형식 검증(YYYY-MM-DD) — 형식이 깨진 값이 그대로 저장되면
+                # 이후 화면에서 날짜로 자동 변환하다 OutOfBoundsDatetime 등으로 크래시함
+                if not _valid_date_str(ld):
+                    continue  # 출하일이 없거나 형식이 이상한 행은 건너뜀
+                if not _valid_date_str(etd):
+                    etd = ""
+                if not _valid_date_str(eta):
+                    eta = ""
                 buyer_id = _match_buyer_id(buyer_str, buyers)
                 entry = {
                     "hbl":         hbl,
