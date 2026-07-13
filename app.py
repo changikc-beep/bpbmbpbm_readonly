@@ -844,6 +844,49 @@ def _resolve_idx_month(basis, loading_date, prov_month, final_month):
     return prov_month  # fallback
 
 
+def _recompute_final_settlement(cfg, s, hm_all=None):
+    """저장된 선적건 데이터 기준으로 '지금 저장하면 나올' 최종정산액을 재계산.
+    final_amount_usd 스냅샷과 비교해 재계산 필요 여부를 판단할 때 사용.
+    반환: 계산 불가(계약/INDEX월 미비) 시 None, 가능하면 확정산 금액(float).
+    """
+    if hm_all is None:
+        hm_all = {h["month"]: h for h in cfg.get("index_history", [])}
+    final_month = s.get("final_month", "—")
+    if not final_month or final_month == "—" or final_month not in hm_all:
+        return None
+    buyers = {b["id"]: b for b in cfg.get("buyers", [])}
+    b = buyers.get(s.get("buyer_id", ""), {})
+    ct = _get_contract_for_shipment(cfg, s.get("id", ""))
+    st_terms = _settle_terms(ct, b)
+    ld = s.get("loading_date", "")
+    prov_month = s.get("prov_month", "—")
+    final_idx_month = _resolve_idx_month(st_terms["final_idx"], ld, prov_month, final_month)
+    if final_idx_month not in hm_all:
+        final_idx_month = final_month
+    fm_data = hm_all[final_idx_month]
+
+    default_ni = float(b.get("ni_content", 0) or 0)
+    default_co = float(b.get("co_content", 0) or 0)
+    buyer_ni = float(s.get("buyer_ni_content") or default_ni)
+    buyer_co = float(s.get("buyer_co_content") or default_co)
+    ni_src = s.get("ni_content_src", "매입사값")
+    co_src = s.get("co_content_src", "매입사값")
+    eff_ni = {"매입사값": buyer_ni, "당사값": default_ni,
+              "평균": round((buyer_ni + default_ni) / 2, 2)}.get(ni_src, buyer_ni)
+    eff_co = {"매입사값": buyer_co, "당사값": default_co,
+              "평균": round((buyer_co + default_co) / 2, 2)}.get(co_src, buyer_co)
+
+    _, _, _, final_pkg_raw = bp_price(fm_data["ni_index"], fm_data["co_index"],
+                                       eff_ni, eff_co,
+                                       st_terms["ni_payable"], st_terms["co_payable"])
+    weight_kg = float(s.get("weight_kg", 0) or 0)
+    moisture  = float(s.get("moisture_pct") or 0)
+    final_w   = weight_kg * (1 - moisture / 100)
+    rbm = b.get("round_price_before_moisture", False)
+    price = round(final_pkg_raw, 2) if rbm else final_pkg_raw
+    return round(price * final_w, 2)
+
+
 def status_badge(s):
     m={"provisional":("Provisional 정산","b-wn"),"final":("최종정산","b-ok"),"paid":("입금완료","b-bp")}
     lbl,cls=m.get(s,("—","b-ng"))
@@ -1034,6 +1077,18 @@ with st.sidebar:
         st.warning(f"ETA 14일 이내  {len(_sb_eta_soon)}건")
         for _se in sorted(_sb_eta_soon, key=lambda x: x.get("eta","")):
             st.caption(f"· {_se.get('hbl','HBL미정')}  {_se.get('eta','')}")
+    # ── 확정산 가능 알림: Final월 INDEX가 새로 등록되어 확정산 가능해진 건 ──
+    _sb_hm_all = {h["month"]: h for h in cfg.get("index_history", [])}
+    _sb_ready_final = [
+        s for s in _sb_ships
+        if s.get("status") == "provisional"
+        and s.get("final_month", "—") not in ("—", "")
+        and s.get("final_month") in _sb_hm_all
+    ]
+    if _sb_ready_final:
+        st.success(f"✅ 확정산 가능 {len(_sb_ready_final)}건 (INDEX 등록됨)")
+        for _rf in sorted(_sb_ready_final, key=lambda x: x.get("final_month", "")):
+            st.caption(f"· {_rf.get('hbl','HBL미정')}  Final {_rf.get('final_month','')}")
     st.divider()
 
     # ── 재고 현황 ────────────────────────────────────────────────────────────
@@ -1230,6 +1285,79 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _st_lbl = "🟡 Provisional" if _ps.get("status")=="provisional" else "🟢 최종(미입금)"
                 _pend_msgs.append(f"{_st_lbl} **{_ps.get('hbl','—')}** ({_pb.get('name','?')}, {_ps.get('loading_date','?')})")
             st.warning("⚠️ **정산 미완료 건이 있습니다.**\n\n" + "  \n".join(_pend_msgs))
+
+        # ── 매입사별 정산 현황 요약 (입금완료 제외) ──────────────────────────
+        _by_buyer_settle = {}
+        for _bs in shipments:
+            if _bs.get("status") == "paid":
+                continue
+            _bb = buyer_map.get(_bs.get("buyer_id",""), {})
+            _bkey = _bb.get("name","미지정")
+            _bst = _settle_terms(_get_contract_for_shipment(cfg, _bs.get("id","")), _bb)
+            _b_prov_paid = float(_bs.get("invoice_usd") or 0) * (_bst["prov_pct"] / 100.0)
+            _b_snapshot  = _bs.get("final_amount_usd")
+            _b_confirmed = float(_b_snapshot) if _b_snapshot else _recompute_final_settlement(cfg, _bs, hm_all)
+            _b_rec = _by_buyer_settle.setdefault(_bkey, {"건수":0,"가정산 수령액":0.0,"확정산 예상액":0.0,"잔액":0.0,"확정_건수":0})
+            _b_rec["건수"] += 1
+            _b_rec["가정산 수령액"] += _b_prov_paid
+            if _b_confirmed is not None:
+                _b_net = _b_confirmed - _b_prov_paid + float(_bs.get("other_adj_usd") or 0)
+                _b_rec["확정산 예상액"] += _b_confirmed
+                _b_rec["잔액"] += _b_net
+                _b_rec["확정_건수"] += 1
+
+        if _by_buyer_settle:
+            with st.expander("💰 매입사별 정산 현황 (입금완료 제외)", expanded=False):
+                _tot_balance = sum(v["잔액"] for v in _by_buyer_settle.values())
+                st.markdown(_kpi_card("미확정 정산 잔액 합계",
+                                       f"${_tot_balance:+,.0f}",
+                                       "양수: 추가 청구 예정 · 음수: 반환 예정 · 확정산액 없는 건은 미포함"),
+                            unsafe_allow_html=True)
+                _bb_rows = []
+                for _bn, _v in sorted(_by_buyer_settle.items(), key=lambda x: -abs(x[1]["잔액"])):
+                    _bb_rows.append({
+                        "매입사":       _bn,
+                        "미완료 건수":  _v["건수"],
+                        "가정산 수령액": round(_v["가정산 수령액"], 2),
+                        "확정산 예상액": round(_v["확정산 예상액"], 2) if _v["확정_건수"] else None,
+                        "잔액":         round(_v["잔액"], 2) if _v["확정_건수"] else None,
+                    })
+                st.dataframe(
+                    pd.DataFrame(_bb_rows).style.format(na_rep="—", formatter={
+                        "가정산 수령액": "${:,.2f}",
+                        "확정산 예상액": "${:,.2f}",
+                        "잔액":         "${:+,.2f}",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+
+        # ── 확정 스냅샷 재계산 필요 목록 ──────────────────────────────────────
+        _recalc_candidates = []
+        for _rs in shipments:
+            if _rs.get("status") in ("final", "paid") and _rs.get("final_amount_usd"):
+                _live = _recompute_final_settlement(cfg, _rs, hm_all)
+                if _live is not None and abs(_live - float(_rs["final_amount_usd"])) >= 0.01:
+                    _recalc_candidates.append((_rs, _live))
+        if _recalc_candidates:
+            with st.expander(f"🔄 재계산 필요 — {len(_recalc_candidates)}건 (저장된 확정액이 현재 계산식과 다름)",
+                              expanded=False):
+                st.caption("계산식 개선(반올림 순서, 수분공제 방식 등) 이후 저장된 확정 스냅샷이 최신 결과와 어긋난 건입니다.")
+                for _rs, _live in _recalc_candidates:
+                    _rb = buyer_map.get(_rs.get("buyer_id", ""), {})
+                    _diff = _live - float(_rs["final_amount_usd"])
+                    _rc1, _rc2 = st.columns([5, 1])
+                    _rc1.write(f"**{_rs.get('hbl', '—')}** · {_rb.get('name', '?')}  "
+                               f"저장 \\${float(_rs['final_amount_usd']):,.2f} → 현재 \\${_live:,.2f}  "
+                               f"(차이 \\${_diff:+,.2f})")
+                    if _rc2.button("재계산", key=f"bulk_recalc_{_rs['id']}"):
+                        _rs["final_amount_usd"] = _live
+                        save_cfg(cfg); st.toast("✅ 재계산 완료"); st.rerun()
+                if st.button(f"🔄 전체 {len(_recalc_candidates)}건 일괄 재계산", key="bulk_recalc_all"):
+                    for _rs, _live in _recalc_candidates:
+                        _rs["final_amount_usd"] = _live
+                    save_cfg(cfg)
+                    st.toast(f"✅ {len(_recalc_candidates)}건 일괄 재계산 완료")
+                    st.rerun()
         st.divider()
 
     # ── 필터 ──
@@ -2647,6 +2775,7 @@ with t_pnl:
                 "매입사":     _h["매입사"],
                 "임가공사":   "·".join(sorted(_h["procs"])) or "—",
                 "BP생산(kg)": round(_h["out"], 0),
+                "임가공비":   round(_h["pf"], 2),
                 "거래 마진":  round(_htrade, 2),
                 "원료비":     round(_h["raw"], 2),
                 "보관비":     round(_h["stor"], 2) if _h["stor"] else None,
@@ -2667,6 +2796,7 @@ with t_pnl:
         st.dataframe(
             pd.DataFrame(_sum_rows).style.apply(_hl_sum_tbl, axis=1).format(na_rep="—", formatter={
                 "BP생산(kg)": "{:,.0f}",
+                "임가공비":   "${:,.2f}",
                 "거래 마진":  "${:+,.2f}",
                 "원료비":     "${:,.2f}",
                 "보관비":     lambda v: f"${v:,.2f}" if v else "—",
@@ -2703,7 +2833,8 @@ with t_pnl:
             with st.expander(
                 f"{_pnl_color}  {_h['hbl']}  ·  {_h['매입사']}"
                 f"  │  {_h['load_date']}"
-                f"  │  실질손익 ${_hreal:+,.0f}  ({_hmgr:+.1f}%)",
+                f"  │  임가공비 \\${_h['pf']:,.0f}"
+                f"  │  실질손익 \\${_hreal:+,.0f}  ({_hmgr:+.1f}%)",
                 expanded=False,
             ):
                 _cl, _cr = st.columns([5, 7])
@@ -4514,6 +4645,8 @@ def _sync_from_gsheets(cfg_ref):
             hbl_idx = {s["hbl"].strip(): i for i, s in enumerate(cfg_ref.get("shipments", []))
                        if s.get("hbl","").strip()}
             added, updated = 0, 0
+            _status_trans  = {}   # "provisional→final" 같은 전이 건수
+            _snap_reset_cnt = 0
             for row in rows[1:]:
                 # 열 수 보정
                 row = [c.strip().replace("\r","") for c in row] + [""] * 10
@@ -4537,9 +4670,14 @@ def _sync_from_gsheets(cfg_ref):
                 if hbl and hbl in hbl_idx:
                     # HBL 있고 기존 항목 존재 → 업데이트
                     _sync_idx = hbl_idx[hbl]
+                    _prev_status = cfg_ref["shipments"][_sync_idx].get("status","provisional")
                     # provisional로 되돌아가면 확정 스냅샷 제거 (수동 폼과 동일 로직)
-                    if entry.get("status") == "provisional" and cfg_ref["shipments"][_sync_idx].get("status","provisional") != "provisional":
+                    if entry.get("status") == "provisional" and _prev_status != "provisional":
                         entry["final_amount_usd"] = None
+                        _snap_reset_cnt += 1
+                    if entry.get("status") != _prev_status:
+                        _tk = f"{_prev_status}→{entry.get('status')}"
+                        _status_trans[_tk] = _status_trans.get(_tk, 0) + 1
                     cfg_ref["shipments"][_sync_idx].update(entry)
                     updated += 1
                 else:
@@ -4555,9 +4693,14 @@ def _sync_from_gsheets(cfg_ref):
                             _match_idx = _ci
                             break
                     if _match_idx is not None:
+                        _prev_status = cfg_ref["shipments"][_match_idx].get("status","provisional")
                         # provisional로 되돌아가면 확정 스냅샷 제거 (수동 폼과 동일 로직)
-                        if entry.get("status") == "provisional" and cfg_ref["shipments"][_match_idx].get("status","provisional") != "provisional":
+                        if entry.get("status") == "provisional" and _prev_status != "provisional":
                             entry["final_amount_usd"] = None
+                            _snap_reset_cnt += 1
+                        if entry.get("status") != _prev_status:
+                            _tk = f"{_prev_status}→{entry.get('status')}"
+                            _status_trans[_tk] = _status_trans.get(_tk, 0) + 1
                         cfg_ref["shipments"][_match_idx].update(entry)
                         if hbl:
                             hbl_idx[hbl] = _match_idx
@@ -4575,6 +4718,11 @@ def _sync_from_gsheets(cfg_ref):
                             hbl_idx[hbl] = len(cfg_ref["shipments"]) - 1
                         added += 1
             log.append(f"선적: 추가 {added}건 / 업데이트 {updated}건")
+            if _status_trans:
+                _trans_str = ", ".join(f"{k} {v}건" for k, v in sorted(_status_trans.items()))
+                log.append(f"상태 전이: {_trans_str}")
+            if _snap_reset_cnt:
+                log.append(f"확정 스냅샷 초기화: {_snap_reset_cnt}건 (재계산 필요 — 선적 정산 탭에서 확인)")
     except Exception as e:
         log.append(f"선적 탭 오류: {e}")
 
