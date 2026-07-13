@@ -4648,11 +4648,12 @@ def _sync_from_gsheets(cfg_ref):
             _status_trans  = {}   # "provisional→final" 같은 전이 건수
             _snap_reset_cnt = 0
             for row in rows[1:]:
-                # 열 수 보정
-                row = [c.strip().replace("\r","") for c in row] + [""] * 10
-                hbl, inv_no, ld, buyer_str, wkg, iusd, pm, fm, status, etd = row[:10]
-                # HBL 공란(발급 전) 행도 처리 — 선적일+매입사+중량 복합키로 매핑
-                if not ld:   # 선적일도 없으면 의미없는 빈 행
+                # 열 수 보정 — HBL/Invoice No/출하일/매입사/중량/Invoice금액/
+                # Provisional월/Final월/상태/ETD/ETA/수출비 (12열)
+                row = [c.strip().replace("\r","") for c in row] + [""] * 12
+                hbl, inv_no, ld, buyer_str, wkg, iusd, pm, fm, status, etd, eta, eu_cost = row[:12]
+                # HBL 공란(발급 전) 행도 처리 — 출하일+매입사+중량 복합키로 매핑
+                if not ld:   # 출하일도 없으면 의미없는 빈 행
                     continue
                 buyer_id = _match_buyer_id(buyer_str, buyers)
                 entry = {
@@ -4660,6 +4661,8 @@ def _sync_from_gsheets(cfg_ref):
                     "invoice_no":  inv_no,
                     "loading_date": ld,
                     "etd":         etd,
+                    "eta":         eta,
+                    "export_cost_usd": _to_float(eu_cost) if eu_cost else None,
                     "buyer_id":    buyer_id or "",
                     "weight_kg":   _to_float(wkg),
                     "invoice_usd": _to_float(iusd),
@@ -4708,7 +4711,7 @@ def _sync_from_gsheets(cfg_ref):
                     else:
                         entry.update({
                             "id": str(uuid.uuid4())[:8],
-                            "eta": "", "notes": "",
+                            "notes": "",
                             "moisture_pct": None, "buyer_ni_content": None,
                             "buyer_co_content": None,
                             "other_adj_usd": None, "other_adj_desc": "",
@@ -4908,6 +4911,10 @@ with t_idx:
             "- 선적: HBL 기준 upsert (정산 상세·수분 등은 보존)  \n"
             "- 입고: 스크랩 유형별 구매 이력 전체 교체 (기초재고 보존)  \n"
             "- 출고: (출고유형, 스크랩유형) 조합 단위 교체  \n"
+            "  \n"
+            "**선적 탭 열 순서 (12열)**  \n"
+            "HBL / Invoice No / 출하일 / 매입사 / 중량 / Invoice금액 / "
+            "Provisional월 / Final월 / 상태 / ETD / ETA / 수출비  \n"
             "  \n"
             "ℹ️ **미리보기** 후 실제 동기화 버튼이 활성화됩니다."
         )
