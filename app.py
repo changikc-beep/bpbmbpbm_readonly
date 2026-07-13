@@ -297,9 +297,11 @@ def _get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _load_cfg_drive():
-    """Google Drive에서 config.json 내용을 읽어 dict 반환 (30초 캐시)."""
+    """Google Drive에서 config.json 내용을 읽어 dict 반환 (120초 캐시).
+    앱 내 저장(save_cfg)은 즉시 캐시를 비우므로 본인 작업엔 항상 최신이 보임.
+    다른 기기에서 저장한 직후엔 사이드바 '데이터 새로고침' 버튼 사용."""
     from googleapiclient.http import MediaIoBaseDownload
     import io
     svc     = _get_drive_service()
@@ -326,9 +328,11 @@ def _save_cfg_drive(c):
 
 _DOCS_DRIVE_FILE_ID = "1lZd2EVs9T9OJL21AcPA49_to2Bhkdeup"
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def _load_docs_drive():
-    """Google Drive에서 bp_documents.json 내용을 읽어 list 반환 (30초 캐시)."""
+    """Google Drive에서 bp_documents.json 내용을 읽어 list 반환 (600초 캐시).
+    문서는 앱 내 업로드/삭제로만 바뀌며 그때 캐시가 즉시 비워지므로 긴 TTL이 안전함.
+    base64 파일이 담겨 용량이 커서 재다운로드 빈도를 최소화."""
     from googleapiclient.http import MediaIoBaseDownload
     import io
     svc = _get_drive_service()
@@ -1141,6 +1145,17 @@ with st.sidebar:
 
     if _latest_idx:
         st.caption(f"INDEX 기준: {_latest_idx[0]['month']}  Ni \\${NI:,.0f} / Co \\${CO:,.0f}")
+
+    # ── 수동 새로고침 ────────────────────────────────────────────────────────
+    # 캐시 TTL(config 120초/문서 600초) 내에 다른 기기에서 저장된 변경을
+    # 즉시 반영해야 할 때 사용. 본인 저장은 자동으로 캐시가 비워지므로 불필요.
+    st.divider()
+    if st.button("🔄 데이터 새로고침", use_container_width=True,
+                 help="Google Drive에서 최신 데이터를 다시 불러옵니다"):
+        _load_cfg_drive.clear()
+        _load_docs_drive.clear()
+        _fifo_lot_trace.clear()
+        st.rerun()
 
 st.title("BP / BM 재고·손익 관리")
 
@@ -6221,105 +6236,121 @@ with t_docs:
     _DOC_CATS  = ["계약서", "CoA", "인보이스", "포워더 서류", "기타"]
     _DOC_LIMIT = 10 * 1024 * 1024  # 10 MB
 
-    try:
-        _docs_list = _load_docs_drive()
-    except Exception as _docs_err:
-        st.error(f"문서 파일 로드 실패: {_docs_err}")
-        _docs_list = []
-
-    # ── 업로드 ────────────────────────────────────────────────────────────────
-    with st.expander("➕ 파일 저장", expanded=not _docs_list):
-        _dup_file  = st.file_uploader("파일 선택 (최대 10 MB)", key="docs_uploader",
-                                       help="PDF, Excel, 이미지 등 모든 파일 형식 지원")
-        _dup_cat   = st.selectbox("카테고리", _DOC_CATS, key="docs_cat")
-        _dup_tag   = st.text_input("태그 (선택)", placeholder="예: TGLHUS26060003, ECOPRO", key="docs_tag")
-        _dup_notes = st.text_input("메모 (선택)", placeholder="간단한 설명", key="docs_notes")
-
-        if st.button("💾 저장", key="docs_upload_btn", disabled=_dup_file is None):
-            if _dup_file:
-                _file_bytes = _dup_file.read()
-                if len(_file_bytes) > _DOC_LIMIT:
-                    st.error(f"파일 크기 {len(_file_bytes)/1024/1024:.1f} MB — 10 MB 이하만 저장 가능합니다.")
-                else:
-                    with st.spinner("저장 중..."):
-                        _new_doc = {
-                            "id":          str(uuid.uuid4())[:8],
-                            "filename":    _dup_file.name,
-                            "mime":        _dup_file.type or "application/octet-stream",
-                            "category":    _dup_cat,
-                            "tag":         _dup_tag.strip(),
-                            "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "notes":       _dup_notes.strip(),
-                            "size_bytes":  len(_file_bytes),
-                            "content_b64": _b64.b64encode(_file_bytes).decode(),
-                        }
-                        try:
-                            _save_docs_drive(_docs_list + [_new_doc])
-                            st.success(f"✅ **{_dup_file.name}** 저장 완료")
-                            st.rerun()
-                        except Exception as _e:
-                            st.error(f"저장 실패: {_e}")
-
-    # ── 문서 목록 ─────────────────────────────────────────────────────────────
-    if not _docs_list:
-        st.info("저장된 문서가 없습니다.")
+    # ── 지연 로딩 게이트 ─────────────────────────────────────────────────────
+    # Streamlit은 보이지 않는 탭 코드도 매 조작마다 전부 실행한다. base64 파일이
+    # 담긴 대용량 문서 JSON을 매번 불러오면 앱 전체가 느려지므로, 사용자가
+    # 열람 버튼을 누른 세션에서만 로드한다. (업로드/삭제도 목록 로드가 전제 —
+    # 목록 없이 저장하면 기존 문서가 유실되므로 반드시 게이트 안쪽에 둘 것)
+    if not st.session_state.get("docs_tab_open"):
+        st.info("문서 목록은 열람할 때만 불러옵니다 — 아래 버튼으로 여세요. "
+                "(대용량 문서 파일을 매번 읽지 않아 앱이 빨라집니다)")
+        if st.button("📂 문서 보관함 열기", key="docs_open_btn"):
+            st.session_state["docs_tab_open"] = True
+            st.rerun()
     else:
-        _total_sz = sum(d.get("size_bytes", 0) for d in _docs_list)
-        _sz_total_str = f"{_total_sz/1024:.0f} KB" if _total_sz < 1024*1024 else f"{_total_sz/1024/1024:.1f} MB"
-        st.caption(f"총 {len(_docs_list)}건 · {_sz_total_str} 저장됨")
+        if st.button("📁 보관함 접기", key="docs_close_btn",
+                     help="접어두면 다른 탭 조작이 빨라집니다"):
+            st.session_state["docs_tab_open"] = False
+            st.rerun()
+        try:
+            _docs_list = _load_docs_drive()
+        except Exception as _docs_err:
+            st.error(f"문서 파일 로드 실패: {_docs_err}")
+            _docs_list = []
 
-        _df_cat_opts = ["전체"] + sorted({d.get("category","기타") for d in _docs_list})
-        _df_cat_f = st.selectbox("카테고리 필터", _df_cat_opts, key="docs_cat_filter")
-        _df_tag_f = st.text_input("태그 검색", placeholder="HBL번호, 회사명 등", key="docs_tag_filter").strip().lower()
+        # ── 업로드 ────────────────────────────────────────────────────────────
+        with st.expander("➕ 파일 저장", expanded=not _docs_list):
+            _dup_file  = st.file_uploader("파일 선택 (최대 10 MB)", key="docs_uploader",
+                                           help="PDF, Excel, 이미지 등 모든 파일 형식 지원")
+            _dup_cat   = st.selectbox("카테고리", _DOC_CATS, key="docs_cat")
+            _dup_tag   = st.text_input("태그 (선택)", placeholder="예: TGLHUS26060003, ECOPRO", key="docs_tag")
+            _dup_notes = st.text_input("메모 (선택)", placeholder="간단한 설명", key="docs_notes")
 
-        _filtered_docs = [
-            d for d in sorted(_docs_list, key=lambda x: x.get("uploaded_at",""), reverse=True)
-            if (_df_cat_f == "전체" or d.get("category") == _df_cat_f)
-            and (_df_tag_f == "" or _df_tag_f in d.get("tag","").lower() or _df_tag_f in d.get("filename","").lower())
-        ]
+            if st.button("💾 저장", key="docs_upload_btn", disabled=_dup_file is None):
+                if _dup_file:
+                    _file_bytes = _dup_file.read()
+                    if len(_file_bytes) > _DOC_LIMIT:
+                        st.error(f"파일 크기 {len(_file_bytes)/1024/1024:.1f} MB — 10 MB 이하만 저장 가능합니다.")
+                    else:
+                        with st.spinner("저장 중..."):
+                            _new_doc = {
+                                "id":          str(uuid.uuid4())[:8],
+                                "filename":    _dup_file.name,
+                                "mime":        _dup_file.type or "application/octet-stream",
+                                "category":    _dup_cat,
+                                "tag":         _dup_tag.strip(),
+                                "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "notes":       _dup_notes.strip(),
+                                "size_bytes":  len(_file_bytes),
+                                "content_b64": _b64.b64encode(_file_bytes).decode(),
+                            }
+                            try:
+                                _save_docs_drive(_docs_list + [_new_doc])
+                                st.success(f"✅ **{_dup_file.name}** 저장 완료")
+                                st.rerun()
+                            except Exception as _e:
+                                st.error(f"저장 실패: {_e}")
 
-        st.markdown(f"**{len(_filtered_docs)}건**")
+        # ── 문서 목록 ─────────────────────────────────────────────────────────
+        if not _docs_list:
+            st.info("저장된 문서가 없습니다.")
+        else:
+            _total_sz = sum(d.get("size_bytes", 0) for d in _docs_list)
+            _sz_total_str = f"{_total_sz/1024:.0f} KB" if _total_sz < 1024*1024 else f"{_total_sz/1024/1024:.1f} MB"
+            st.caption(f"총 {len(_docs_list)}건 · {_sz_total_str} 저장됨")
 
-        for _doc in _filtered_docs:
-            _doc_id = _doc.get("id","")
-            _fname  = _doc.get("filename","(파일명 없음)")
-            _dcat   = _doc.get("category","기타")
-            _dtag   = _doc.get("tag","")
-            _dnotes = _doc.get("notes","")
-            _dup_at = _doc.get("uploaded_at","")
-            _dsz    = _doc.get("size_bytes", 0)
-            _sz_str = f"{_dsz/1024:.1f} KB" if _dsz < 1024*1024 else f"{_dsz/1024/1024:.1f} MB"
+            _df_cat_opts = ["전체"] + sorted({d.get("category","기타") for d in _docs_list})
+            _df_cat_f = st.selectbox("카테고리 필터", _df_cat_opts, key="docs_cat_filter")
+            _df_tag_f = st.text_input("태그 검색", placeholder="HBL번호, 회사명 등", key="docs_tag_filter").strip().lower()
 
-            with st.container(border=True):
-                _dc1, _dc2, _dc3 = st.columns([6, 2, 2])
-                with _dc1:
-                    st.markdown(f"**{_fname}**")
-                    _meta_parts = [f"`{_dcat}`"]
-                    if _dtag:   _meta_parts.append(f"🏷️ {_dtag}")
-                    if _dnotes: _meta_parts.append(f"📝 {_dnotes}")
-                    _meta_parts.append(f"🕐 {_dup_at}")
-                    if _dsz:    _meta_parts.append(f"({_sz_str})")
-                    st.caption("  ·  ".join(_meta_parts))
-                with _dc2:
-                    _b64_data = _doc.get("content_b64", "")
-                    if _b64_data:
-                        st.download_button(
-                            label="⬇️ 다운로드",
-                            data=_b64.b64decode(_b64_data),
-                            file_name=_fname,
-                            mime=_doc.get("mime", "application/octet-stream"),
-                            key=f"docs_dl_{_doc_id}",
-                        )
-                with _dc3:
-                    with st.popover("🗑️ 삭제"):
-                        st.warning(f"**{_fname}** 을(를) 삭제합니다.")
-                        if st.button("확인 삭제", key=f"docs_del_ok_{_doc_id}"):
-                            with st.spinner("삭제 중..."):
-                                try:
-                                    _save_docs_drive([d for d in _docs_list if d.get("id") != _doc_id])
-                                    st.rerun()
-                                except Exception as _e:
-                                    st.error(f"삭제 실패: {_e}")
+            _filtered_docs = [
+                d for d in sorted(_docs_list, key=lambda x: x.get("uploaded_at",""), reverse=True)
+                if (_df_cat_f == "전체" or d.get("category") == _df_cat_f)
+                and (_df_tag_f == "" or _df_tag_f in d.get("tag","").lower() or _df_tag_f in d.get("filename","").lower())
+            ]
+
+            st.markdown(f"**{len(_filtered_docs)}건**")
+
+            for _doc in _filtered_docs:
+                _doc_id = _doc.get("id","")
+                _fname  = _doc.get("filename","(파일명 없음)")
+                _dcat   = _doc.get("category","기타")
+                _dtag   = _doc.get("tag","")
+                _dnotes = _doc.get("notes","")
+                _dup_at = _doc.get("uploaded_at","")
+                _dsz    = _doc.get("size_bytes", 0)
+                _sz_str = f"{_dsz/1024:.1f} KB" if _dsz < 1024*1024 else f"{_dsz/1024/1024:.1f} MB"
+
+                with st.container(border=True):
+                    _dc1, _dc2, _dc3 = st.columns([6, 2, 2])
+                    with _dc1:
+                        st.markdown(f"**{_fname}**")
+                        _meta_parts = [f"`{_dcat}`"]
+                        if _dtag:   _meta_parts.append(f"🏷️ {_dtag}")
+                        if _dnotes: _meta_parts.append(f"📝 {_dnotes}")
+                        _meta_parts.append(f"🕐 {_dup_at}")
+                        if _dsz:    _meta_parts.append(f"({_sz_str})")
+                        st.caption("  ·  ".join(_meta_parts))
+                    with _dc2:
+                        _b64_data = _doc.get("content_b64", "")
+                        if _b64_data:
+                            st.download_button(
+                                label="⬇️ 다운로드",
+                                data=_b64.b64decode(_b64_data),
+                                file_name=_fname,
+                                mime=_doc.get("mime", "application/octet-stream"),
+                                key=f"docs_dl_{_doc_id}",
+                            )
+                    with _dc3:
+                        with st.popover("🗑️ 삭제"):
+                            st.warning(f"**{_fname}** 을(를) 삭제합니다.")
+                            if st.button("확인 삭제", key=f"docs_del_ok_{_doc_id}"):
+                                with st.spinner("삭제 중..."):
+                                    try:
+                                        _save_docs_drive([d for d in _docs_list if d.get("id") != _doc_id])
+                                        st.rerun()
+                                    except Exception as _e:
+                                        st.error(f"삭제 실패: {_e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 계약 이행
