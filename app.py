@@ -1369,10 +1369,11 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             eta_disp  = _eta_raw[5:] if _eta_raw and len(_eta_raw) >= 7 else (_eta_raw or "TBD")
             _inv_hdr    = f"  ·  \\${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
             _settle_hdr = f"  ·  {settle_preview}" if settle_preview else ""
+            _eu_hdr     = "  ·  수출비 미입력" if not s.get("export_cost_usd") else ""
             hdr = (f"#{i+1}  ·  {stat_txt}"
                    f"  │  {s.get('hbl','—')}  ·  {buyer_lbl}"
                    f"  │  {ld_disp} → ETA {eta_disp}"
-                   f"  │  {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{_settle_hdr}")
+                   f"  │  {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{_settle_hdr}{_eu_hdr}")
             with st.expander(hdr,expanded=False):
                 # ── 기본 정보 입력 ──
                 e1,e2,e3,e4=st.columns(4)
