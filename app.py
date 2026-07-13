@@ -2402,47 +2402,100 @@ with t_pnl:
         return 0.0, "—"
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 섹션 1 — 핵심 실적 지표
+    # 섹션 1 — 관리회계 손익 요약 (상계 기준)
+    # 세금계산서상 총액 흐름(스크랩 매각·BP 재매입)은 상계 처리하고,
+    # 매출 − 원료비 − 임가공비(순) − 판관비 구조로 먼저 보여준다.
+    # 총액(그로스) 흐름은 아래 '세금계산서 기준 총액 흐름' expander에 유지.
     # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("#### 💰 핵심 실적 지표")
+    st.markdown("#### 💰 관리회계 손익 요약")
     if not _ph_all:
         st.info("처리 이력(임가공사 관리 > 세부 내역)을 입력하면 실적 기반 손익이 표시됩니다.")
     else:
         _tot_out  = sum(r.get("output_kg",0) or 0 for r in _ph_all)
         _tot_inp  = sum(_ph_input_kg(r) for r in _ph_all)
-        # 전체 흐름 집계 (스크랩 매각수익 · BP 재매입원가 모두 기재)
+        # 전체 흐름 집계 (스크랩 매각수익 · BP 재매입원가 — 상계 전 총액)
         _tot_sc_rev  = sum((r.get("scrap_sale_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 스크랩 매각수익
         _tot_pf      = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 임가공비
         _tot_repr    = _tot_sc_rev + _tot_pf   # BP 재매입 원가 합계 (= 스크랩 + 임가공비)
         _tot_eu      = sum(_ph_export_usd(r, cfg) for r in _ph_all)
         _tot_bp      = sum((r.get("bp_sale_per_kg",0) or 0) * (r.get("output_kg",0) or 0) for r in _ph_all)
-        # 순이익 = BP매각 + 스크랩매각 - BP재매입 - 수출비  (스크랩 상계 → 임가공비+수출비만 남음)
+        # 거래 마진 = BP매각 + 스크랩매각 - BP재매입 - 수출비  (스크랩 상계 → 임가공비+수출비만 남음)
         _tot_net  = _tot_bp + _tot_sc_rev - _tot_repr - _tot_eu
         _avg_mg   = _tot_net / _tot_bp * 100 if _tot_bp > 0 else 0
         _repr_per_kg = _tot_repr / _tot_out if _tot_out > 0 else 0
         _pf_per_kg   = _tot_pf   / _tot_out if _tot_out > 0 else 0
         _epk_all     = _tot_eu   / _tot_out if _tot_out > 0 else 0
 
-        _km1,_km2,_km3,_km4 = st.columns(4)
-        _net_col = "#4ade80" if _tot_net >= 0 else "#f87171"
-        _km1.markdown(_kpi_card("⚗️ 총 BP 생산",    f"{_tot_out/1000:,.2f} t"), unsafe_allow_html=True)
-        _km2.markdown(_kpi_card("💰 BP 매각 수익",  f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
-        _km3.markdown(_kpi_card("📦 BP 재매입 원가", f"${_tot_repr:,.0f}",
-                                sub="스크랩단가 × 투입량 + 임가공비"), unsafe_allow_html=True)
-        _km4.markdown(_kpi_card("📈 거래 마진",      f"${_tot_net:+,.0f}", val_color=_net_col), unsafe_allow_html=True)
+        # 원료비·보관비 (waterfall·단가 분해와 공용 — FIFO 기준)
+        _default_rmc_s1 = float(st.session_state.get("pnl_rmc_default", 0.0))
+        if _tot_out > 0:
+            _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
+            _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
+            _stor_s1     = sum(
+                _ph_storage_cost(r, cfg) if r.get("storage_days") else _auto_storage_for_batch(r)
+                for r in _ph_all
+            )
+        else:
+            _raw_fifo_s1 = _raw_mavg_s1 = _stor_s1 = 0.0
+        _tot_real_fifo = _tot_net - _raw_fifo_s1 - _stor_s1
 
-        # 원가 구성 상세
-        st.markdown("---")
-        st.caption("💡 스크랩 매각수익과 BP 재매입원가의 스크랩 부분은 상계 — 순 차감원가 = 임가공비 + 수출비")
-        _kd1,_kd2,_kd3,_kd4 = st.columns(4)
-        _kd1.markdown(_kpi_card("📤 스크랩 매각수익", f"${_tot_sc_rev:,.0f}",
-                                sub=f"${_tot_sc_rev/_tot_out:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
-        _kd2.markdown(_kpi_card("🔄 BP 재매입 원가",  f"${_tot_repr:,.0f}",
-                                sub=f"${_repr_per_kg:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
-        _kd3.markdown(_kpi_card("🏭 임가공비 (순)",   f"${_tot_pf:,.0f}",
-                                sub=f"${_pf_per_kg:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
-        _kd4.markdown(_kpi_card("✈️ 수출비",           f"${_tot_eu:,.0f}",
-                                sub=f"${_epk_all:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
+        # 간접 판관비·기타 — 섹션 3의 입력값을 공유 (최초 실행 시 0)
+        _sga_s1   = float(st.session_state.get("pnl_sga", 0.0) or 0.0)
+        _other_s1 = float(st.session_state.get("pnl_other", 0.0) or 0.0)
+        _tot_gp_s1 = _tot_bp - _raw_fifo_s1 - _tot_pf                # 매출총이익
+        _tot_op_s1 = _tot_real_fifo - _sga_s1 - _other_s1            # 영업이익(실질 손익)
+        _op_pct_s1 = _tot_op_s1 / _tot_bp * 100 if _tot_bp > 0 else 0
+        _gp_pct_s1 = _tot_gp_s1 / _tot_bp * 100 if _tot_bp > 0 else 0
+
+        _km1,_km2,_km3,_km4 = st.columns(4)
+        _op_col = "#4ade80" if _tot_op_s1 >= 0 else "#f87171"
+        _gp_col = "#4ade80" if _tot_gp_s1 >= 0 else "#f87171"
+        _km1.markdown(_kpi_card("⚗️ 총 BP 생산",   f"{_tot_out/1000:,.2f} t",
+                                f"투입 {_tot_inp/1000:,.2f} t"), unsafe_allow_html=True)
+        _km2.markdown(_kpi_card("💰 매출 (BP 매각)", f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
+        _km3.markdown(_kpi_card("📊 매출총이익",     f"${_tot_gp_s1:+,.0f}",
+                                f"매출 대비 {_gp_pct_s1:+.1f}%", val_color=_gp_col), unsafe_allow_html=True)
+        _km4.markdown(_kpi_card("💎 영업이익 (실질)", f"${_tot_op_s1:+,.0f}",
+                                f"영업이익률 {_op_pct_s1:+.1f}%", val_color=_op_col), unsafe_allow_html=True)
+
+        # ── 단계식 손익계산서 (상계 기준) ─────────────────────────────────────
+        def _pl_pct(v):
+            return f"{v/_tot_bp*100:+.1f}%" if _tot_bp > 0 else "—"
+        _pl_rows = [
+            f"| 매출 — BP 매각 | **\\${_tot_bp:,.0f}** | 100.0% |",
+            f"| (−) 원료 매입비 (FIFO) | −\\${_raw_fifo_s1:,.0f} | {_pl_pct(-_raw_fifo_s1)} |",
+            f"| (−) 임가공비 (순 — 스크랩 매각·재매입 상계) | −\\${_tot_pf:,.0f} | {_pl_pct(-_tot_pf)} |",
+            f"| **= 매출총이익** | **\\${_tot_gp_s1:+,.0f}** | **{_pl_pct(_tot_gp_s1)}** |",
+            f"| (−) 수출비 | −\\${_tot_eu:,.0f} | {_pl_pct(-_tot_eu)} |",
+            f"| (−) 보관비 | −\\${_stor_s1:,.0f} | {_pl_pct(-_stor_s1)} |",
+            f"| (−) 간접 판관비·기타 | −\\${_sga_s1 + _other_s1:,.0f} | {_pl_pct(-(_sga_s1 + _other_s1))} |",
+            f"| **= 영업이익 (실질 손익)** | **\\${_tot_op_s1:+,.0f}** | **{_pl_pct(_tot_op_s1)}** |",
+        ]
+        st.markdown("| 구분 | 금액 | 매출 대비 |\n|------|-----:|-----:|\n" + "\n".join(_pl_rows))
+        st.caption("스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
+                   "원료 매입비는 FIFO 기준, 간접 판관비·기타는 아래 '실질 손익 분석' 섹션의 입력값을 사용합니다.")
+
+        # ── 세금계산서 기준 총액 흐름 (상계 전 — 백데이터 검증용) ─────────────
+        with st.expander("🧾 세금계산서 기준 총액 흐름 (스크랩 매각·BP 재매입 상계 전)", expanded=False):
+            st.caption("장부·세금계산서 대사용 총액입니다. 스크랩 매각수익과 BP 재매입원가의 "
+                       "스크랩 부분은 상계 — 순 차감원가 = 임가공비 + 수출비")
+            _kg1,_kg2,_kg3,_kg4 = st.columns(4)
+            _net_col = "#4ade80" if _tot_net >= 0 else "#f87171"
+            _kg1.markdown(_kpi_card("💰 BP 매각 수익",  f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
+            _kg2.markdown(_kpi_card("📤 스크랩 매각수익", f"${_tot_sc_rev:,.0f}",
+                                    sub=f"${_tot_sc_rev/_tot_out:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
+            _kg3.markdown(_kpi_card("🔄 BP 재매입 원가",  f"${_tot_repr:,.0f}",
+                                    sub="스크랩단가 × 투입량 + 임가공비"), unsafe_allow_html=True)
+            _kg4.markdown(_kpi_card("📈 거래 마진",      f"${_tot_net:+,.0f}",
+                                    f"마진율 {_avg_mg:+.1f}%", val_color=_net_col), unsafe_allow_html=True)
+            _kd1,_kd2,_kd3,_kd4 = st.columns(4)
+            _kd1.markdown(_kpi_card("🏭 임가공비 (순)",   f"${_tot_pf:,.0f}",
+                                    sub=f"${_pf_per_kg:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
+            _kd2.markdown(_kpi_card("🔄 재매입/kg BP",    f"${_repr_per_kg:.4f}" if _tot_out>0 else "—"), unsafe_allow_html=True)
+            _kd3.markdown(_kpi_card("✈️ 수출비",           f"${_tot_eu:,.0f}",
+                                    sub=f"${_epk_all:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
+            _kd4.markdown(_kpi_card("⚖️ 순 차감원가",     f"${_tot_pf + _tot_eu:,.0f}",
+                                    sub="임가공비 + 수출비 (상계 후)"), unsafe_allow_html=True)
 
         # ── 임가공비 상세 검증 ─────────────────────────────────────────────────
         with st.expander("🔍 임가공비 배치별 상세 검증", expanded=False):
@@ -2497,34 +2550,24 @@ with t_pnl:
                 )
                 st.caption("💡 '단가($/kg투입)' = 계약서 기준 단가. '임가공비/kg BP' = 전환율 반영 후 BP 생산량 기준 환산값")
 
-        # 원료비·보관비 사전 계산 (waterfall + 단가 분해 공용)
-        _default_rmc_s1 = float(st.session_state.get("pnl_rmc_default", 0.0))
-        if _tot_out > 0:
-            _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
-            _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
-            _stor_s1     = sum(
-                _ph_storage_cost(r, cfg) if r.get("storage_days") else _auto_storage_for_batch(r)
-                for r in _ph_all
-            )
-        else:
-            _raw_fifo_s1 = _raw_mavg_s1 = _stor_s1 = 0.0
-        _tot_real_fifo = _tot_net - _raw_fifo_s1 - _stor_s1
+        # (원료비·보관비는 섹션 상단에서 이미 계산 — _raw_fifo_s1/_raw_mavg_s1/_stor_s1)
 
-        # P&L Waterfall 차트 (거래 마진 → 실질 손익까지 확장)
+        # P&L Waterfall 차트 (관리회계 기준: 매출 → 영업이익)
         try:
             import plotly.graph_objects as go
-            _real_sign  = "▲" if _tot_real_fifo >= 0 else "▼"
+            _op_sign  = "▲" if _tot_op_s1 >= 0 else "▼"
             _wf = go.Figure(go.Waterfall(
                 orientation="v",
-                measure=["absolute", "relative", "relative", "relative", "total",
-                         "relative", "relative", "total"],
-                x=["BP 매각수익", "스크랩 매각수익", "BP 재매입원가", "수출비", "거래 마진",
-                   "원료비", "보관비", "실질 손익"],
-                y=[_tot_bp, _tot_sc_rev, -_tot_repr, -_tot_eu, 0,
-                   -_raw_fifo_s1, -_stor_s1, 0],
-                text=[f"${_tot_bp:,.0f}", f"+${_tot_sc_rev:,.0f}", f"-${_tot_repr:,.0f}",
-                      f"-${_tot_eu:,.0f}", f"${_tot_net:+,.0f}",
-                      f"-${abs(_raw_fifo_s1):,.0f}", f"-${abs(_stor_s1):,.0f}", f"${_tot_real_fifo:+,.0f}"],
+                measure=["absolute", "relative", "relative", "total",
+                         "relative", "relative", "relative", "total"],
+                x=["매출 (BP 매각)", "원료 매입비", "임가공비 (순)", "매출총이익",
+                   "수출비", "보관비", "판관비·기타", "영업이익 (실질)"],
+                y=[_tot_bp, -_raw_fifo_s1, -_tot_pf, 0,
+                   -_tot_eu, -_stor_s1, -(_sga_s1 + _other_s1), 0],
+                text=[f"${_tot_bp:,.0f}", f"-${abs(_raw_fifo_s1):,.0f}", f"-${_tot_pf:,.0f}",
+                      f"${_tot_gp_s1:+,.0f}",
+                      f"-${_tot_eu:,.0f}", f"-${abs(_stor_s1):,.0f}",
+                      f"-${_sga_s1 + _other_s1:,.0f}", f"${_tot_op_s1:+,.0f}"],
                 textposition="outside",
                 increasing=dict(marker=dict(color="#2383e2")),
                 decreasing=dict(marker=dict(color="#ef4444")),
@@ -2534,7 +2577,7 @@ with t_pnl:
             ))
             _wf.update_layout(
                 title=dict(
-                    text=f"거래 마진 ${_tot_net:+,.0f}  →  실질 손익 {_real_sign} ${_tot_real_fifo:+,.0f}  (원료비 FIFO 기준)",
+                    text=f"매출 ${_tot_bp:,.0f}  →  영업이익 {_op_sign} ${_tot_op_s1:+,.0f}  (원료비 FIFO 기준)",
                     font=dict(size=13)),
                 height=380, margin=dict(l=10, r=10, t=55, b=10),
                 yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.07)"),
