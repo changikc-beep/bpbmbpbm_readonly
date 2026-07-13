@@ -1,5 +1,6 @@
 streamlit>=1.50,<1.60
 pandas>=2.2,<3.0
+pyarrow>=14,<18
 openpyxl
 gspread
 google-auth
