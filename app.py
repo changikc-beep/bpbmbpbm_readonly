@@ -2667,24 +2667,22 @@ with t_pnl:
                 + "  \n원료단가 기본값 변경·FIFO↔이동평균 전환은 아래 HBL별 손익 요약 섹션에서 가능합니다."
             )
 
-        # ── 월별 손익 집계 ────────────────────────────────────────────────────
-        _mon_agg2 = defaultdict(lambda: {"bp":0,"sc":0,"repr":0,"eu":0,"raw":0,"stor":0,"cnt":0,"out":0})
+        # ── 월별 손익 집계 (관리회계 기준 — 스크랩 매각·재매입 상계) ──────────
+        _mon_agg2 = defaultdict(lambda: {"bp":0,"pf":0,"eu":0,"raw":0,"stor":0,"cnt":0,"out":0})
         for _mr in _ph_all:
             _msid  = _mr.get("shipment_id","")
             _ms    = _sm_pnl.get(_msid, {})
             _mld   = (_ms.get("loading_date") or "")[:7] or "미상"
             _mo    = _mr.get("output_kg",0) or 0
             _mi    = _ph_input_kg(_mr)
-            _msc   = (_mr.get("scrap_sale_per_kg",0) or 0) * _mi
-            _mpf   = (_mr.get("processing_fee_per_kg",0) or 0) * _mi
+            _mpf   = (_mr.get("processing_fee_per_kg",0) or 0) * _mi   # 임가공비(순) — 스크랩 상계 후
             _meu   = _ph_export_usd(_mr, cfg)
             _mbp   = (_mr.get("bp_sale_per_kg",0) or 0) * _mo
             _mrc, _ = _get_rmc_fifo(_mr, _default_rmc_s1)
             # 보관비: 수동 storage_days 우선, 없으면 FIFO 자동 fallback
             _mstor = _ph_storage_cost(_mr, cfg) or _auto_storage_for_batch(_mr)
             _mon_agg2[_mld]["bp"]   += _mbp
-            _mon_agg2[_mld]["sc"]   += _msc
-            _mon_agg2[_mld]["repr"] += _msc + _mpf
+            _mon_agg2[_mld]["pf"]   += _mpf
             _mon_agg2[_mld]["eu"]   += _meu
             _mon_agg2[_mld]["raw"]  += _mrc * _mi
             _mon_agg2[_mld]["stor"] += _mstor
@@ -2695,37 +2693,39 @@ with t_pnl:
                 _mon_rows2 = []
                 for _mkey in sorted(_mon_agg2.keys()):
                     _mv2  = _mon_agg2[_mkey]
-                    _mn2  = _mv2["bp"] + _mv2["sc"] - _mv2["repr"] - _mv2["eu"]
-                    _mr2  = _mn2 - _mv2["raw"] - _mv2["stor"]
+                    _mgp2 = _mv2["bp"] - _mv2["raw"] - _mv2["pf"]          # 매출총이익
+                    _mr2  = _mgp2 - _mv2["eu"] - _mv2["stor"]              # 실질 손익
                     _mon_rows2.append({
-                        "월":       _mkey,
-                        "HBL수":    _mv2["cnt"],
-                        "생산(kg)": round(_mv2["out"], 0),
-                        "BP 매각":  round(_mv2["bp"], 2),
-                        "BP 재매입": round(_mv2["repr"], 2),
-                        "수출비":   round(_mv2["eu"], 2),
-                        "거래 마진": round(_mn2, 2),
-                        "실질 손익": round(_mr2, 2),
+                        "월":         _mkey,
+                        "HBL수":      _mv2["cnt"],
+                        "생산(kg)":   round(_mv2["out"], 0),
+                        "매출(BP)":   round(_mv2["bp"], 2),
+                        "원료 매입비": round(_mv2["raw"], 2),
+                        "임가공비(순)": round(_mv2["pf"], 2),
+                        "매출총이익": round(_mgp2, 2),
+                        "수출비":     round(_mv2["eu"], 2),
+                        "보관비":     round(_mv2["stor"], 2),
+                        "실질 손익":  round(_mr2, 2),
                     })
                 _df_mon2 = pd.DataFrame(_mon_rows2)
                 def _hl_mon2(row):
                     styles = [""] * len(row)
                     _cols2 = list(row.index)
-                    v_net  = row.get("거래 마진", 0) or 0
+                    v_gp   = row.get("매출총이익", 0) or 0
                     v_real = row.get("실질 손익", 0) or 0
-                    c_net  = ("color:#155724;font-weight:600" if v_net  >= 0 else "color:#721c24;font-weight:600")
+                    c_gp   = ("color:#155724;font-weight:600" if v_gp   >= 0 else "color:#721c24;font-weight:600")
                     c_real = ("color:#155724;font-weight:600" if v_real >= 0 else "color:#721c24;font-weight:600")
-                    if "거래 마진"  in _cols2: styles[_cols2.index("거래 마진")]  = c_net
-                    if "실질 손익" in _cols2: styles[_cols2.index("실질 손익")] = c_real
+                    if "매출총이익" in _cols2: styles[_cols2.index("매출총이익")] = c_gp
+                    if "실질 손익"  in _cols2: styles[_cols2.index("실질 손익")]  = c_real
                     return styles
                 # ── 트렌드 차트 ──────────────────────────────────────────────
                 try:
                     _mx   = [r["월"] for r in _mon_rows2]
-                    _mgm  = [r["거래 마진"] for r in _mon_rows2]
+                    _mgm  = [r["매출총이익"] for r in _mon_rows2]
                     _mrl  = [r["실질 손익"] for r in _mon_rows2]
                     _fig_mon = go.Figure()
                     _fig_mon.add_trace(go.Bar(
-                        x=_mx, y=_mgm, name="거래 마진",
+                        x=_mx, y=_mgm, name="매출총이익",
                         marker_color=["#2383e2" if v >= 0 else "#ef4444" for v in _mgm],
                         text=[f"${v:+,.0f}" for v in _mgm],
                         textposition="outside", textfont=dict(size=9),
@@ -2754,15 +2754,19 @@ with t_pnl:
                     pass
 
                 st.dataframe(_df_mon2.style.apply(_hl_mon2, axis=1).format({
-                    "생산(kg)":  "{:,.0f}",
-                    "BP 매각":   "${:,.2f}",
-                    "BP 재매입": "${:,.2f}",
-                    "수출비":    "${:,.2f}",
-                    "거래 마진":  "${:+,.2f}",
-                    "실질 손익": "${:+,.2f}",
+                    "생산(kg)":    "{:,.0f}",
+                    "매출(BP)":    "${:,.2f}",
+                    "원료 매입비":  "${:,.2f}",
+                    "임가공비(순)": "${:,.2f}",
+                    "매출총이익":  "${:+,.2f}",
+                    "수출비":      "${:,.2f}",
+                    "보관비":      "${:,.2f}",
+                    "실질 손익":   "${:+,.2f}",
                 }), use_container_width=True, hide_index=True)
-                st.caption("실질 손익 = 거래 마진 − 원료비(FIFO 우선) − 보관비  "
-                           "| 원료단가 수동 기본값은 아래 '실질 손익 분석' 섹션에서 조정 가능합니다.")
+                st.caption("매출총이익 = 매출 − 원료 매입비(FIFO 우선) − 임가공비(순)  |  "
+                           "실질 손익 = 매출총이익 − 수출비 − 보관비  |  "
+                           "스크랩 매각·BP 재매입은 상계, 간접 판관비·기타(기간 합계)는 월별 배분에서 제외. "
+                           "원료단가 수동 기본값은 아래 '실질 손익 분석' 섹션에서 조정 가능합니다.")
 
     st.divider()
 
