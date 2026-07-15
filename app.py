@@ -3068,6 +3068,91 @@ with t_pnl:
         _fm2.markdown(_kpi_card_badge("🔗 미연결 배치", f"{_unlinked}건", "#fb923c" if _unlinked else "#4ade80",
                                       f"{_unlinked}건", "임가공사 탭에서 HBL 연결"), unsafe_allow_html=True)
 
+        # ── 매입사별 수익성 비교 ─────────────────────────────────────────────
+        # HBL 집계(_hbl_agg)를 매입사 단위로 재집계 — 원료단가 기준(FIFO/이동평균)
+        # 토글이 이미 반영된 값이므로 위 HBL 요약과 항상 일치한다.
+        st.markdown("---")
+        st.markdown("#### 🏆 매입사별 수익성 비교")
+        st.caption("HBL 연결 배치 기준. kg당 수치는 BP 생산량 기준이며, 판관비는 제외됩니다.")
+
+        _by_agg = defaultdict(lambda: {"hbl": 0, "out": 0.0, "bp": 0.0, "pf": 0.0,
+                                       "eu": 0.0, "raw": 0.0, "stor": 0.0})
+        for _h in _hbl_agg.values():
+            _ba = _by_agg[_h["매입사"]]
+            _ba["hbl"]  += 1
+            _ba["out"]  += _h["out"]
+            _ba["bp"]   += _h["bp_rev"]
+            _ba["pf"]   += _h["pf"]
+            _ba["eu"]   += _h["eu"]
+            _ba["raw"]  += _h["raw"]
+            _ba["stor"] += _h["stor"]
+
+        _by_rows = []
+        for _bn, _bv in _by_agg.items():
+            _bgp   = _bv["bp"] - _bv["raw"] - _bv["pf"]
+            _breal = _bgp - _bv["eu"] - _bv["stor"]
+            _by_rows.append({
+                "매입사":       _bn,
+                "HBL":          _bv["hbl"],
+                "BP생산(kg)":   round(_bv["out"], 0),
+                "매출(BP)":     round(_bv["bp"], 2),
+                "매출총이익":   round(_bgp, 2),
+                "실질 손익":    round(_breal, 2),
+                "매출단가/kg":  round(_bv["bp"] / _bv["out"], 4) if _bv["out"] > 0 else None,
+                "실질손익/kg":  round(_breal / _bv["out"], 4) if _bv["out"] > 0 else None,
+                "마진율(%)":    round(_breal / _bv["bp"] * 100, 2) if _bv["bp"] > 0 else None,
+            })
+        _by_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
+
+        def _hl_by_tbl(row):
+            styles = [""] * len(row)
+            _ci = list(row.index)
+            v = row.get("실질 손익", 0) or 0
+            _c = ("color:#1E8449;font-weight:600" if v >= 0
+                  else "color:#922b21;font-weight:600")
+            for _col in ("실질 손익", "실질손익/kg", "마진율(%)"):
+                if _col in _ci:
+                    styles[_ci.index(_col)] = _c
+            return styles
+
+        st.dataframe(
+            pd.DataFrame(_by_rows).style.apply(_hl_by_tbl, axis=1).format(na_rep="—", formatter={
+                "BP생산(kg)":  "{:,.0f}",
+                "매출(BP)":    "${:,.2f}",
+                "매출총이익":  "${:+,.2f}",
+                "실질 손익":   "${:+,.2f}",
+                "매출단가/kg": lambda v: f"${v:.4f}" if v is not None else "—",
+                "실질손익/kg": lambda v: f"${v:+.4f}" if v is not None else "—",
+                "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
+            }),
+            use_container_width=True, hide_index=True,
+        )
+
+        # 실질손익/kg 막대 차트 — 매입사 간 단위 수익성 비교
+        try:
+            import plotly.graph_objects as go
+            _bc_names = [r["매입사"] for r in _by_rows if r["실질손익/kg"] is not None]
+            _bc_vals  = [r["실질손익/kg"] for r in _by_rows if r["실질손익/kg"] is not None]
+            if len(_bc_names) >= 2:
+                _fig_by = go.Figure(go.Bar(
+                    x=_bc_names, y=_bc_vals,
+                    marker_color=["#2383e2" if v >= 0 else "#ef4444" for v in _bc_vals],
+                    text=[f"${v:+.4f}" for v in _bc_vals],
+                    textposition="outside", textfont=dict(size=10),
+                ))
+                _fig_by.add_hline(y=0, line_dash="dot",
+                                  line_color="rgba(255,255,255,0.20)", line_width=1)
+                _fig_by.update_layout(
+                    title=dict(text="실질 손익 ($/kg BP) — 매입사별", font=dict(size=13)),
+                    height=280, margin=dict(l=10, r=10, t=45, b=10),
+                    yaxis=dict(tickformat="$,.2f", gridcolor="rgba(255,255,255,0.07)"),
+                    plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
+                    font=dict(color="#c5c5c5"), showlegend=False,
+                )
+                st.plotly_chart(_fig_by, use_container_width=True)
+        except ImportError:
+            pass
+
     st.divider()
 
     # ══════════════════════════════════════════════════════════════════════════
