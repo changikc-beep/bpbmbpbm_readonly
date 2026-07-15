@@ -2598,19 +2598,20 @@ with t_pnl:
             _bp_pk   = _tot_bp  / _tot_out
             _pf_pk   = _tot_pf  / _tot_out
             _eu_pk   = _tot_eu  / _tot_out
-            _gm_pk   = _bp_pk - _pf_pk - _eu_pk
             _rf_pk   = _raw_fifo_s1 / _tot_out
             _rm_pk   = _raw_mavg_s1 / _tot_out
             _st_pk   = _stor_s1     / _tot_out
-            _rlf_pk  = _gm_pk - _rf_pk - _st_pk   # 실질손익 FIFO
-            _rlm_pk  = _gm_pk - _rm_pk - _st_pk   # 실질손익 이동평균
+            _gpf_pk  = _bp_pk - _rf_pk - _pf_pk   # 매출총이익 FIFO
+            _gpm_pk  = _bp_pk - _rm_pk - _pf_pk   # 매출총이익 이동평균
+            _rlf_pk  = _gpf_pk - _eu_pk - _st_pk  # 실질손익 FIFO
+            _rlm_pk  = _gpm_pk - _eu_pk - _st_pk  # 실질손익 이동평균
 
             _bpkg_rows = [
-                ("BP 매각가",           _bp_pk,  _bp_pk,  0.0),
-                ("  (−) 임가공비",      _pf_pk,  _pf_pk,  0.0),
+                ("BP 매각가 (매출)",    _bp_pk,  _bp_pk,  0.0),
+                ("  (−) 원료 매입비",   _rf_pk,  _rm_pk,  _rf_pk - _rm_pk),
+                ("  (−) 임가공비 (순)", _pf_pk,  _pf_pk,  0.0),
+                ("= 매출총이익",        _gpf_pk, _gpm_pk, _gpf_pk - _gpm_pk),
                 ("  (−) 수출비",        _eu_pk,  _eu_pk,  0.0),
-                ("= 거래 마진",         _gm_pk,  _gm_pk,  0.0),
-                ("  (−) 원료 취득원가", _rf_pk,  _rm_pk,  _rf_pk - _rm_pk),
                 ("  (−) 보관비",        _st_pk,  _st_pk,  0.0),
                 ("= 실질 손익",         _rlf_pk, _rlm_pk, _rlf_pk - _rlm_pk),
             ]
@@ -2817,8 +2818,8 @@ with t_pnl:
             _sc_r   = float(_rr.get("scrap_sale_per_kg") or 0) * _ip_r
             _eu_r   = _ph_export_usd(_rr, cfg)
             _bp_r   = float(_rr.get("bp_sale_per_kg") or 0) * _op_r
-            # 거래 마진: BP매각 + 스크랩매각수익 − 재매입원가(sc+pf) − 수출비
-            # sc 상계 후 → bp − pf − eu (임가공비와 수출비만 남음)
+            # 스크랩 매각수익 ↔ 재매입원가의 스크랩 부분은 상계 →
+            # 배치 손익 요소 = bp(매출) − pf(임가공비 순) − eu(수출비) − raw − stor
             _trade_r  = _bp_r - _pf_r - _eu_r
             if _rmc_mode == "이동평균 우선":
                 _ermc_r, _rmc_src = _get_rmc_mavg(_rr, _default_rmc)
@@ -2866,21 +2867,23 @@ with t_pnl:
         _sum_rows = []
         for _hid, _h in sorted(_hbl_agg.items(),
                                 key=lambda x: x[1]["load_date"], reverse=True):
-            _htrade = _h["bp_rev"] - _h["pf"] - _h["eu"]
-            _hreal  = _htrade - _h["raw"] - _h["stor"]
+            _hgp    = _h["bp_rev"] - _h["raw"] - _h["pf"]          # 매출총이익
+            _hreal  = _hgp - _h["eu"] - _h["stor"]                 # 실질 손익
             _hmgr   = _hreal / _h["bp_rev"] * 100 if _h["bp_rev"] > 0 else None
             _sum_rows.append({
-                "HBL":        _h["hbl"],
-                "선적일":     _h["load_date"],
-                "매입사":     _h["매입사"],
-                "임가공사":   "·".join(sorted(_h["procs"])) or "—",
-                "BP생산(kg)": round(_h["out"], 0),
-                "임가공비":   round(_h["pf"], 2),
-                "거래 마진":  round(_htrade, 2),
-                "원료비":     round(_h["raw"], 2),
-                "보관비":     round(_h["stor"], 2) if _h["stor"] else None,
-                "실질 손익":  round(_hreal, 2),
-                "마진율(%)":  round(_hmgr, 2) if _hmgr is not None else None,
+                "HBL":         _h["hbl"],
+                "선적일":      _h["load_date"],
+                "매입사":      _h["매입사"],
+                "임가공사":    "·".join(sorted(_h["procs"])) or "—",
+                "BP생산(kg)":  round(_h["out"], 0),
+                "매출(BP)":    round(_h["bp_rev"], 2),
+                "원료 매입비":  round(_h["raw"], 2),
+                "임가공비(순)": round(_h["pf"], 2),
+                "매출총이익":  round(_hgp, 2),
+                "수출비":      round(_h["eu"], 2),
+                "보관비":      round(_h["stor"], 2) if _h["stor"] else None,
+                "실질 손익":   round(_hreal, 2),
+                "마진율(%)":   round(_hmgr, 2) if _hmgr is not None else None,
             })
 
         def _hl_sum_tbl(row):
@@ -2895,13 +2898,15 @@ with t_pnl:
 
         st.dataframe(
             pd.DataFrame(_sum_rows).style.apply(_hl_sum_tbl, axis=1).format(na_rep="—", formatter={
-                "BP생산(kg)": "{:,.0f}",
-                "임가공비":   "${:,.2f}",
-                "거래 마진":  "${:+,.2f}",
-                "원료비":     "${:,.2f}",
-                "보관비":     lambda v: f"${v:,.2f}" if v else "—",
-                "실질 손익":  "${:+,.2f}",
-                "마진율(%)":  lambda v: f"{v:+.2f}%" if v is not None else "—",
+                "BP생산(kg)":  "{:,.0f}",
+                "매출(BP)":    "${:,.2f}",
+                "원료 매입비":  "${:,.2f}",
+                "임가공비(순)": "${:,.2f}",
+                "매출총이익":  "${:+,.2f}",
+                "수출비":      "${:,.2f}",
+                "보관비":      lambda v: f"${v:,.2f}" if v else "—",
+                "실질 손익":   "${:+,.2f}",
+                "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
             }),
             use_container_width=True, hide_index=True,
         )
@@ -2925,8 +2930,8 @@ with t_pnl:
         st.markdown("---")
         for _hid, _h in sorted(_hbl_agg.items(),
                                 key=lambda x: x[1]["load_date"], reverse=True):
-            _htrade = _h["bp_rev"] - _h["pf"] - _h["eu"]
-            _hreal  = _htrade - _h["raw"] - _h["stor"]
+            _hgp    = _h["bp_rev"] - _h["raw"] - _h["pf"]   # 매출총이익
+            _hreal  = _hgp - _h["eu"] - _h["stor"]          # 실질 손익
             _hmgr   = _hreal / _h["bp_rev"] * 100 if _h["bp_rev"] > 0 else 0
             _icon   = "🟢" if _hreal >= 0 else "🔴"
             _pnl_color = "🟢" if _hreal >= 0 else "🔴"
@@ -2941,11 +2946,11 @@ with t_pnl:
                 with _cl:
                     st.markdown("**손익 분해**")
                     _wf_df = pd.DataFrame([
-                        ("BP 매각",              _h["bp_rev"]),
-                        ("  (−) 임가공비",       -_h["pf"]),
+                        ("BP 매각 (매출)",       _h["bp_rev"]),
+                        ("  (−) 원료 매입비",    -_h["raw"]),
+                        ("  (−) 임가공비 (순)",  -_h["pf"]),
+                        ("= 매출총이익",          _hgp),
                         ("  (−) 수출비",         -_h["eu"]),
-                        ("= 거래 마진",           _htrade),
-                        ("  (−) 원료 취득원가",  -_h["raw"]),
                         ("  (−) 보관비",         -_h["stor"]),
                         ("= 실질 손익",           _hreal),
                     ], columns=["항목", "금액 (USD)"])
@@ -3063,8 +3068,8 @@ with t_pnl:
     # 섹션 3 — 실질 손익 분석 (전체)
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown("#### 🔬 실질 손익 분석 (전체)")
-    st.caption("전체 배치의 거래 마진에서 원료 취득원가·판관비를 차감한 실질 수익성입니다. "
-               "원료단가 기준은 위 HBL 요약과 동기화됩니다.")
+    st.caption("매출총이익(매출 − 원료 취득원가 − 임가공비 순)에서 수출비·보관비·판관비를 차감한 "
+               "영업이익(실질 손익)입니다. 원료단가 기준은 위 HBL 요약과 동기화됩니다.")
 
     if not _ph_all:
         st.info("처리 이력을 입력하면 실질 손익 분석이 가능합니다.")
@@ -3129,10 +3134,11 @@ with t_pnl:
                               )[0] is not None)
         _rmc_dflt_cnt   = len(_ph_all) - _rmc_fifo_cnt - _rmc_stored_cnt - _rmc_auto_cnt
 
-        # 거래 마진 (섹션1과 동일 기준)
-        _trade_net_r = _tot_bp + _tot_sc_rev - _tot_repr - _tot_eu
-        _real_net_r  = _trade_net_r - _tot_raw - _tot_storage - _sga_total - _other_cost
+        # 관리회계 단계 (섹션1과 동일 기준 — 스크랩 매각·재매입 상계)
+        _gp_r        = _tot_bp - _tot_raw - _tot_pf                       # 매출총이익
+        _real_net_r  = _gp_r - _tot_eu - _tot_storage - _sga_total - _other_cost   # 영업이익(실질)
         _real_pct_r  = _real_net_r / _tot_bp * 100 if _tot_bp > 0 else 0
+        _gp_pct_r    = _gp_r / _tot_bp * 100 if _tot_bp > 0 else 0
 
         # 원료비 적용 현황 안내
         _rmc_parts = []
@@ -3150,18 +3156,20 @@ with t_pnl:
 
         st.markdown("---")
         _ra1, _ra2, _ra3, _ra4, _ra5, _ra6 = st.columns(6)
-        _tr_sub  = f"{_trade_net_r/_tot_bp*100:+.1f}% 마진율" if _tot_bp > 0 else ""
-        _raw_sub = f"${_tot_raw/_tot_inp:.4f}/kg" if _tot_inp > 0 else ""
+        _gp_sub  = f"매출 대비 {_gp_pct_r:+.1f}%" if _tot_bp > 0 else ""
         _stor_sub = f"{_auto_stor_cnt}건 FIFO 자동" if _auto_stor_cnt else "미입력"
         _rn_col  = "#4ade80" if _real_net_r >= 0 else "#f87171"
-        _tn_col  = "#4ade80" if _trade_net_r >= 0 else "#f87171"
-        _ra1.markdown(_kpi_card("📈 거래 마진",          f"${_trade_net_r:+,.0f}", _tr_sub,  val_color=_tn_col), unsafe_allow_html=True)
-        _ra2.markdown(_kpi_card("🧱 원료 취득원가",      f"−${_tot_raw:,.0f}",     _raw_sub), unsafe_allow_html=True)
-        _ra3.markdown(_kpi_card("🏬 직접 판관비 (보관)", f"−${_tot_storage:,.0f}", _stor_sub), unsafe_allow_html=True)
+        _gp_col  = "#4ade80" if _gp_r >= 0 else "#f87171"
+        _ra1.markdown(_kpi_card("📊 매출총이익",         f"${_gp_r:+,.0f}", _gp_sub,
+                                val_color=_gp_col), unsafe_allow_html=True)
+        _ra2.markdown(_kpi_card("✈️ 수출비",             f"−${_tot_eu:,.0f}"),      unsafe_allow_html=True)
+        _ra3.markdown(_kpi_card("🏬 보관비",             f"−${_tot_storage:,.0f}", _stor_sub), unsafe_allow_html=True)
         _ra4.markdown(_kpi_card("📊 간접 판관비",        f"−${_sga_total:,.0f}"),  unsafe_allow_html=True)
         _ra5.markdown(_kpi_card("📋 기타 원가",          f"−${_other_cost:,.0f}"), unsafe_allow_html=True)
-        _ra6.markdown(_kpi_card("💎 실질 손익",          f"${_real_net_r:+,.0f}",
-                                f"실질 수익률 {_real_pct_r:+.1f}%", val_color=_rn_col), unsafe_allow_html=True)
+        _ra6.markdown(_kpi_card("💎 영업이익 (실질)",    f"${_real_net_r:+,.0f}",
+                                f"영업이익률 {_real_pct_r:+.1f}%", val_color=_rn_col), unsafe_allow_html=True)
+        st.caption("매출총이익 = 매출 − 원료 취득원가 − 임가공비(순). "
+                   "원료 취득원가 상세는 위 HBL별 손익 요약의 원료단가 기준(FIFO/이동평균)을 따릅니다.")
 
     st.divider()
 
@@ -3981,8 +3989,9 @@ with t_proc:
                 _hm1.markdown(_kpi_card("💰 BP 매각",  f"${_h2_bp:,.0f}"), unsafe_allow_html=True)
                 _hm2.markdown(_kpi_card("🏭 임가공비", f"${_h2_pf:,.0f}", "계약값 자동 적용"), unsafe_allow_html=True)
                 _hm3.markdown(_kpi_card("✈️ 수출비",   f"${_h2_eu:,.0f}"), unsafe_allow_html=True)
-                _hm4.markdown(_kpi_card("📈 거래 마진",f"${_h2_net:+,.0f}",
-                                        f"마진율 {_h2_mg:+.1f}%", val_color=_h2_col), unsafe_allow_html=True)
+                _hm4.markdown(_kpi_card("📈 마진 (원료비·보관비 차감 전)",f"${_h2_net:+,.0f}",
+                                        f"마진율 {_h2_mg:+.1f}% · 실질 손익은 손익 분석 탭 참조",
+                                        val_color=_h2_col), unsafe_allow_html=True)
 
 
 
@@ -5319,25 +5328,48 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id):
                 ws.row_dimensions[ROW].height = 22
             ROW += 2
 
-    # ════ SECTION 4: 월별 손익 요약 ════
+    # ════ SECTION 4: 월별 손익 요약 (관리회계 기준 — 스크랩 매각·재매입 상계) ════
     ph_all_xl = cfg.get("processing_history", [])
     ship_map_xl = {s["id"]: s for s in cfg.get("shipments", [])}
-    pnl_mo = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"out":0.0,"cnt":0})
+
+    # 원료비·보관비 — 손익 분석 탭의 헬퍼 재사용 (같은 rerun에서 먼저 정의됨).
+    # 예외적으로 미정의 시(NameError) 이동평균/0 으로 fallback해 보고서 생성은 유지.
+    def _xl_raw(r):
+        try:
+            return _get_rmc_fifo(r)[0] * _ph_input_kg(r)
+        except NameError:
+            return (_inv_moving_avg(cfg, r.get("scrap_type_id",""),
+                                    _rec_ref_date(r, cfg))[0] or 0) * _ph_input_kg(r)
+
+    def _xl_stor(r):
+        man = _ph_storage_cost(r, cfg)
+        if man:
+            return man
+        try:
+            return _auto_storage_for_batch(r)
+        except NameError:
+            return 0.0
+
+    pnl_mo = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"cnt":0})
     for r in ph_all_xl:
         sh = ship_map_xl.get(r.get("shipment_id",""), {})
         mo = (sh.get("loading_date") or "미연결")[:7]
         out = float(r.get("output_kg",0) or 0)
         inp = _ph_input_kg(r)   # 일관성: 역산 로직 통일
-        pnl_mo[mo]["bp"]  += float(r.get("bp_sale_per_kg",0) or 0) * out
-        pnl_mo[mo]["pf"]  += float(r.get("processing_fee_per_kg",0) or 0) * inp
-        pnl_mo[mo]["eu"]  += _ph_export_usd(r, cfg)   # BUG FIX: HBL 레벨 수출비 포함
-        pnl_mo[mo]["out"] += out
-        pnl_mo[mo]["cnt"] += 1
+        pnl_mo[mo]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * out
+        pnl_mo[mo]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * inp
+        pnl_mo[mo]["eu"]   += _ph_export_usd(r, cfg)   # BUG FIX: HBL 레벨 수출비 포함
+        pnl_mo[mo]["raw"]  += _xl_raw(r)
+        pnl_mo[mo]["stor"] += _xl_stor(r)
+        pnl_mo[mo]["out"]  += out
+        pnl_mo[mo]["cnt"]  += 1
 
     if pnl_mo:
-        merge_cell(ROW, 1, 8, "  ④ 월별 손익 요약  (거래 마진 = BP 매각 − 임가공비 − 수출비, 원료비·보관비 제외)", bg="2E75B6")
+        merge_cell(ROW, 1, 11, "  ④ 월별 손익 요약  (매출총이익 = 매출 − 원료비(FIFO) − 임가공비(순) · "
+                               "실질 손익 = 매출총이익 − 수출비 − 보관비, 판관비 제외)", bg="2E75B6")
         ROW += 1
-        pnl_hdrs = ["월","배치수","생산(kg)","BP 매각(USD)","임가공비(USD)","수출비(USD)","거래 마진(USD)","누적 거래 마진(USD)"]
+        pnl_hdrs = ["월","배치수","생산(kg)","매출 BP(USD)","원료비(USD)","임가공비(USD)",
+                    "매출총이익(USD)","수출비(USD)","보관비(USD)","실질 손익(USD)","누적 실질 손익(USD)"]
         for ci, h in enumerate(pnl_hdrs, 1):
             cell(ROW, ci, h, bold=True, color="FFFFFF", bg="4472C4", size=9)
         ws.row_dimensions[ROW].height = 18
@@ -5345,72 +5377,90 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id):
         cum = 0.0
         for mo in sorted(pnl_mo.keys()):
             v = pnl_mo[mo]
-            net = v["bp"] - v["pf"] - v["eu"]
-            cum += net
-            net_bg = "D5F5E3" if net >= 0 else "FADBD8"
-            cum_bg = "D5F5E3" if cum >= 0 else "FADBD8"
+            gp   = v["bp"] - v["raw"] - v["pf"]
+            real = gp - v["eu"] - v["stor"]
+            cum += real
+            gp_bg  = "D6E4F0" if gp   >= 0 else "FADBD8"
+            net_bg = "D5F5E3" if real >= 0 else "FADBD8"
+            cum_bg = "D5F5E3" if cum  >= 0 else "FADBD8"
             cell(ROW, 1, mo, align="left")
             cell(ROW, 2, v["cnt"])
-            cell(ROW, 3, round(v["out"],0), fmt="#,##0")
-            cell(ROW, 4, round(v["bp"],2),  fmt='"$"#,##0.00')
-            cell(ROW, 5, round(v["pf"],2),  fmt='"$"#,##0.00')
-            cell(ROW, 6, round(v["eu"],2),  fmt='"$"#,##0.00')
-            cell(ROW, 7, round(net,2),       fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=net_bg, bold=True)
-            cell(ROW, 8, round(cum,2),       fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=cum_bg, bold=True)
+            cell(ROW, 3, round(v["out"],0),  fmt="#,##0")
+            cell(ROW, 4, round(v["bp"],2),   fmt='"$"#,##0.00')
+            cell(ROW, 5, round(v["raw"],2),  fmt='"$"#,##0.00')
+            cell(ROW, 6, round(v["pf"],2),   fmt='"$"#,##0.00')
+            cell(ROW, 7, round(gp,2),        fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=gp_bg, bold=True)
+            cell(ROW, 8, round(v["eu"],2),   fmt='"$"#,##0.00')
+            cell(ROW, 9, round(v["stor"],2), fmt='"$"#,##0.00')
+            cell(ROW,10, round(real,2),      fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=net_bg, bold=True)
+            cell(ROW,11, round(cum,2),       fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=cum_bg, bold=True)
             ROW += 1
         # 합계행
-        tot_bp  = sum(v["bp"]  for v in pnl_mo.values())
-        tot_pf  = sum(v["pf"]  for v in pnl_mo.values())
-        tot_eu  = sum(v["eu"]  for v in pnl_mo.values())
-        tot_net = tot_bp - tot_pf - tot_eu
-        tot_bg  = "D5F5E3" if tot_net >= 0 else "FADBD8"
-        for ci, val in enumerate(["합계","","",round(tot_bp,2),round(tot_pf,2),round(tot_eu,2),round(tot_net,2),""], 1):
+        tot_bp   = sum(v["bp"]   for v in pnl_mo.values())
+        tot_pf   = sum(v["pf"]   for v in pnl_mo.values())
+        tot_eu   = sum(v["eu"]   for v in pnl_mo.values())
+        tot_raw  = sum(v["raw"]  for v in pnl_mo.values())
+        tot_stor = sum(v["stor"] for v in pnl_mo.values())
+        tot_gp   = tot_bp - tot_raw - tot_pf
+        tot_real = tot_gp - tot_eu - tot_stor
+        tot_gp_bg = "D6E4F0" if tot_gp   >= 0 else "FADBD8"
+        tot_bg    = "D5F5E3" if tot_real >= 0 else "FADBD8"
+        for ci, val in enumerate(["합계","","",round(tot_bp,2),round(tot_raw,2),round(tot_pf,2),
+                                  round(tot_gp,2),round(tot_eu,2),round(tot_stor,2),round(tot_real,2),""], 1):
             kw = {"bold":True, "bg":"F0F2F6"}
-            if ci==4: kw["fmt"]='"$"#,##0.00'
-            elif ci==5: kw["fmt"]='"$"#,##0.00'
-            elif ci==6: kw["fmt"]='"$"#,##0.00'
-            elif ci==7: kw["bg"]=tot_bg; kw["fmt"]='"$"#,##0.00;[Red]"-$"#,##0.00'
+            if ci in (4,5,6,8,9): kw["fmt"]='"$"#,##0.00'
+            elif ci==7:  kw["bg"]=tot_gp_bg; kw["fmt"]='"$"#,##0.00;[Red]"-$"#,##0.00'
+            elif ci==10: kw["bg"]=tot_bg;    kw["fmt"]='"$"#,##0.00;[Red]"-$"#,##0.00'
             cell(ROW, ci, val, **kw)
         ROW += 2
 
-    # ════ SECTION 5: HBL별 손익 상세 ════
+    # ════ SECTION 5: HBL별 손익 상세 (관리회계 기준) ════
     if ph_all_xl:
-        merge_cell(ROW, 1, 9, "  ⑤ HBL별 손익 상세", bg="2E75B6")
+        merge_cell(ROW, 1, 13, "  ⑤ HBL별 손익 상세  (매출총이익 = 매출 − 원료비 − 임가공비(순), "
+                               "실질 손익 = 매출총이익 − 수출비 − 보관비)", bg="2E75B6")
         ROW += 1
-        hbl_hdrs = ["HBL","매입사","선적일","투입(kg)","생산(kg)","전환율(%)","BP 매각","임가공비","수출비","거래 마진"]
+        hbl_hdrs = ["HBL","매입사","선적일","투입(kg)","생산(kg)","전환율(%)","매출 BP",
+                    "원료비","임가공비(순)","매출총이익","수출비","보관비","실질 손익"]
         for ci, h in enumerate(hbl_hdrs, 1):
             cell(ROW, ci, h, bold=True, color="FFFFFF", bg="4472C4", size=9)
         ws.row_dimensions[ROW].height = 18
         ROW += 1
         buyer_map_xl = {b["id"]:b for b in cfg["buyers"]}
-        hagg = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"out":0.0,"inp":0.0,"cnt":0})
+        hagg = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"inp":0.0,"cnt":0})
         for r in ph_all_xl:
             sid = r.get("shipment_id","")
             if not sid: continue
             out = float(r.get("output_kg",0) or 0)
             inp_v = _ph_input_kg(r)   # 일관성: 역산 로직 통일
-            hagg[sid]["bp"]  += float(r.get("bp_sale_per_kg",0) or 0)*out
-            hagg[sid]["pf"]  += float(r.get("processing_fee_per_kg",0) or 0)*inp_v
-            hagg[sid]["eu"]  += _ph_export_usd(r, cfg)   # BUG FIX: HBL 레벨 수출비 포함
-            hagg[sid]["out"] += out
-            hagg[sid]["inp"] += float(inp_v or 0)
+            hagg[sid]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0)*out
+            hagg[sid]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0)*inp_v
+            hagg[sid]["eu"]   += _ph_export_usd(r, cfg)   # BUG FIX: HBL 레벨 수출비 포함
+            hagg[sid]["raw"]  += _xl_raw(r)
+            hagg[sid]["stor"] += _xl_stor(r)
+            hagg[sid]["out"]  += out
+            hagg[sid]["inp"]  += float(inp_v or 0)
         for sid in sorted(hagg, key=lambda x: ship_map_xl.get(x,{}).get("loading_date","")):
             v = hagg[sid]
             sh = ship_map_xl.get(sid,{})
             byr = buyer_map_xl.get(sh.get("buyer_id",""),{})
-            net = v["bp"]-v["pf"]-v["eu"]
-            net_bg = "D5F5E3" if net>=0 else "FADBD8"
+            gp   = v["bp"] - v["raw"] - v["pf"]
+            real = gp - v["eu"] - v["stor"]
+            gp_bg  = "D6E4F0" if gp   >= 0 else "FADBD8"
+            net_bg = "D5F5E3" if real >= 0 else "FADBD8"
             conv = round(v["out"]/v["inp"]*100,2) if v["inp"]>0 else None
             cell(ROW,1, sh.get("hbl","—"),                                     align="left")
             cell(ROW,2, f"{byr.get('name','?')} ({byr.get('product','?')})",   align="left")
             cell(ROW,3, sh.get("loading_date","—"))
-            cell(ROW,4, round(v["inp"],0), fmt="#,##0")
-            cell(ROW,5, round(v["out"],0), fmt="#,##0")
-            cell(ROW,6, conv,              fmt='#,##0.00"%"' if conv else None)
-            cell(ROW,7, round(v["bp"],2),  fmt='"$"#,##0.00')
-            cell(ROW,8, round(v["pf"],2),  fmt='"$"#,##0.00')
-            cell(ROW,9, round(v["eu"],2),  fmt='"$"#,##0.00')
-            cell(ROW,10,round(net,2),      fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=net_bg, bold=True)
+            cell(ROW,4, round(v["inp"],0),  fmt="#,##0")
+            cell(ROW,5, round(v["out"],0),  fmt="#,##0")
+            cell(ROW,6, conv,               fmt='#,##0.00"%"' if conv else None)
+            cell(ROW,7, round(v["bp"],2),   fmt='"$"#,##0.00')
+            cell(ROW,8, round(v["raw"],2),  fmt='"$"#,##0.00')
+            cell(ROW,9, round(v["pf"],2),   fmt='"$"#,##0.00')
+            cell(ROW,10,round(gp,2),        fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=gp_bg, bold=True)
+            cell(ROW,11,round(v["eu"],2),   fmt='"$"#,##0.00')
+            cell(ROW,12,round(v["stor"],2), fmt='"$"#,##0.00')
+            cell(ROW,13,round(real,2),      fmt='"$"#,##0.00;[Red]"-$"#,##0.00', bg=net_bg, bold=True)
             ROW += 1
         ROW += 1
 
@@ -5652,25 +5702,29 @@ with t_report:
     _yr_eu    = sum(_ph_export_usd(r, cfg) for r in _yr_ph)
     _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
     _yr_inv   = sum(float(s.get("invoice_usd",0) or 0) for s in _yr_ships)
-    _yr_net   = _yr_bp - _yr_pf - _yr_eu
+    # 관리회계 기준: 원료비(FIFO 우선)·보관비까지 차감한 실질 손익 (판관비 제외)
+    # _get_rmc_fifo/_auto_storage_for_batch 는 손익 분석 탭에서 정의됨 (탭 코드가 먼저 실행)
+    _yr_raw   = sum(_get_rmc_fifo(r)[0] * _ph_input_kg(r) for r in _yr_ph)
+    _yr_stor  = sum(_ph_storage_cost(r, cfg) or _auto_storage_for_batch(r) for r in _yr_ph)
+    _yr_real  = _yr_bp - _yr_raw - _yr_pf - _yr_eu - _yr_stor
 
     _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
     _yoy_sub      = f"전년 동기 {len(_yr_ships) - len(_yr_ships_ly):+d}건"
     _yr_input_kg  = sum(float(r.get("input_kg",0) or 0) for r in _yr_ph) or 1
     _conv_sub     = f"투입 대비 전환율 {_yr_out / _yr_input_kg * 100:.1f}%"
     _inv_sub      = f"평균 ${(_yr_inv / len(_yr_ships) / 1000):.0f}k / 건" if _yr_ships else "선적 없음"
-    _margin_pct   = (_yr_net / _yr_inv * 100) if _yr_inv else 0
-    _margin_sub   = f"마진율 {_margin_pct:.1f}%"
-    _margin_col   = "#4ade80" if _yr_net >= 0 else "#f87171"
-    _margin_fmt   = (f"${_yr_net/1_000_000:+.1f}M" if abs(_yr_net) >= 1_000_000
-                     else f"${_yr_net/1000:+.0f}k")
+    _margin_pct   = (_yr_real / _yr_bp * 100) if _yr_bp else 0
+    _margin_sub   = f"매출 대비 {_margin_pct:+.1f}% · 판관비 제외"
+    _margin_col   = "#4ade80" if _yr_real >= 0 else "#f87171"
+    _margin_fmt   = (f"${_yr_real/1_000_000:+.1f}M" if abs(_yr_real) >= 1_000_000
+                     else f"${_yr_real/1000:+.0f}k")
 
     st.markdown(f"#### 📅 {_cur_year}년 누계")
     _ya1, _ya2, _ya3, _ya4 = st.columns(4)
     _ya1.markdown(_kpi_card("🚢 선적 건수",    f"{len(_yr_ships)}건",  _yoy_sub),                         unsafe_allow_html=True)
     _ya2.markdown(_kpi_card("⚗️ BP 생산",      f"{_yr_out/1000:.1f} t", _conv_sub),                       unsafe_allow_html=True)
     _ya3.markdown(_kpi_card("💵 Invoice 합계", f"${_yr_inv/1_000_000:.1f}M", _inv_sub),                   unsafe_allow_html=True)
-    _ya4.markdown(_kpi_card("📈 거래 마진",    _margin_fmt, _margin_sub, val_color=_margin_col),           unsafe_allow_html=True)
+    _ya4.markdown(_kpi_card("💎 실질 손익",    _margin_fmt, _margin_sub, val_color=_margin_col),           unsafe_allow_html=True)
 
     st.divider()
     st.markdown("#### 🔔 현재 운영 현황")
@@ -5681,20 +5735,9 @@ with t_report:
     _today_rpt   = date.today()
     _eta14_end   = (_today_rpt + timedelta(days=14)).isoformat()
 
-    _ar_total = 0.0
-    _ar_cnt   = 0
-    for _ars in _all_ships:
-        if _ars.get("status","provisional") not in ("provisional","final"):
-            continue
-        _arb  = _buyer_m_rpt.get(_ars.get("buyer_id",""), {})
-        _arst = _settle_terms(_get_contract_for_shipment(cfg, _ars.get("id","")), _arb)
-        _ar_prov  = float(_ars.get("invoice_usd",0) or 0) * (_arst["prov_pct"] / 100.0)
-        _ar_final = float(_ars.get("final_amount_usd",0) or 0)
-        if _ar_final:
-            _ar_total += _ar_final - _ar_prov + float(_ars.get("other_adj_usd",0) or 0)
-        else:
-            _ar_total += float(_ars.get("invoice_usd",0) or 0) - _ar_prov
-        _ar_cnt += 1
+    # 미수금: 상단 '미수 현금 전망' 패널과 동일 기준 (_cf_rows 재사용 — 확정/계산/추정 통합)
+    _ar_total = sum(r["확정산 잔액"] for r in _cf_rows)
+    _ar_cnt   = len(_cf_rows)
 
     _eta_soon = [s for s in _all_ships
                  if s.get("eta","") and _today_rpt.isoformat() <= s.get("eta","") <= _eta14_end
@@ -5717,7 +5760,7 @@ with t_report:
 
     _yb1, _yb2, _yb3, _yb4 = st.columns(4)
     _yb1.markdown(_kpi_card_badge("⏳ 미수금 추정", f"{_ar_cnt}건 미정산", "#fb923c",
-                                  _ar_fmt, "Provisional/Final 잔액 기준"),
+                                  _ar_fmt, "미수 현금 전망 패널과 동일 기준 (확정산 잔액)"),
                   unsafe_allow_html=True)
     _yb2.markdown(_kpi_card_badge("✈️ ETA 14일 이내", f"{len(_eta_soon)}건", "#60a5fa",
                                   f"{len(_eta_soon)}건", _eta_hbls),
@@ -5732,27 +5775,29 @@ with t_report:
                              f"provisional {_prov_cnt} · final {_final_cnt}"),
                   unsafe_allow_html=True)
 
-    # ── 월별 거래 마진 추이 ──────────────────────────────────────────────────
-    _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0})
+    # ── 월별 실질 손익 추이 (관리회계 기준 — 원료비·보관비 차감, 판관비 제외) ──
+    _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0, "raw": 0.0, "stor": 0.0})
     for r in _yr_ph:
         _mo_key = (_rpt_ship_m0.get(r.get("shipment_id",""), {}).get("loading_date","") or "")[:7]
         if not _mo_key:
             continue
-        _mo_agg[_mo_key]["bp"] += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
-        _mo_agg[_mo_key]["pf"] += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
-        _mo_agg[_mo_key]["eu"] += _ph_export_usd(r, cfg)
+        _mo_agg[_mo_key]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
+        _mo_agg[_mo_key]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
+        _mo_agg[_mo_key]["eu"]   += _ph_export_usd(r, cfg)
+        _mo_agg[_mo_key]["raw"]  += _get_rmc_fifo(r)[0] * _ph_input_kg(r)
+        _mo_agg[_mo_key]["stor"] += _ph_storage_cost(r, cfg) or _auto_storage_for_batch(r)
     if _mo_agg:
         _mo_rows = []
         for _mk in sorted(_mo_agg.keys()):
             _mv = _mo_agg[_mk]
-            _mo_net = _mv["bp"] - _mv["pf"] - _mv["eu"]
-            _mo_rows.append({"월": _mk, "거래 마진": round(_mo_net, 2),
-                              "구분": "흑자" if _mo_net >= 0 else "적자"})
+            _mo_real = _mv["bp"] - _mv["raw"] - _mv["pf"] - _mv["eu"] - _mv["stor"]
+            _mo_rows.append({"월": _mk, "실질 손익": round(_mo_real, 2),
+                              "구분": "흑자" if _mo_real >= 0 else "적자"})
         try:
             import plotly.express as px
             _df_mo = pd.DataFrame(_mo_rows)
             _fig_mo = px.bar(
-                _df_mo, x="월", y="거래 마진", color="구분", text="거래 마진",
+                _df_mo, x="월", y="실질 손익", color="구분", text="실질 손익",
                 color_discrete_map={"흑자": "#4ade80", "적자": "#ef4444"},
             )
             _fig_mo.update_traces(texttemplate="$%{y:,.0f}", textposition="outside")
@@ -5765,7 +5810,8 @@ with t_report:
                 xaxis_title="", yaxis_title="",
             )
             _fig_mo.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
-            st.markdown(f"#### 📈 {_cur_year}년 월별 거래 마진 추이")
+            st.markdown(f"#### 📈 {_cur_year}년 월별 실질 손익 추이")
+            st.caption("원료비(FIFO 우선)·보관비 차감, 간접 판관비 제외 — 손익 분석 탭 월별 추이와 동일 기준")
             st.plotly_chart(_fig_mo, use_container_width=True)
         except ImportError:
             pass
@@ -5983,7 +6029,8 @@ with t_report:
 
     # ── Section 3: 손익 요약 ─────────────────────────────────────────────────
     st.markdown("#### ① 손익 요약")
-    st.caption("**거래 마진** = BP 매각 − 임가공비 − 수출비  |  **실질 손익** = 거래 마진 − 원료 취득원가 − 보관비  (원료: FIFO 우선 → 이동평균)")
+    st.caption("**매출총이익** = 매출(BP) − 원료 매입비 − 임가공비(순)  |  "
+               "**실질 손익** = 매출총이익 − 수출비 − 보관비  (원료: FIFO 우선 → 이동평균, 판관비 제외)")
 
     _pnl_by_month = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"inp":0.0,"cnt":0})
     for _r in _rpt_ph_all:
@@ -6002,39 +6049,40 @@ with t_report:
 
     if _pnl_by_month:
         _pnl_rows = []
-        _cum_net=0.0; _cum_real=0.0
+        _cum_real=0.0
         _tot_bp_r=0.0; _tot_pf_r=0.0; _tot_eu_r=0.0
         _tot_raw_r=0.0; _tot_stor_r=0.0; _tot_out_r=0.0; _tot_inp_r=0.0
         for _mo in sorted(_pnl_by_month.keys()):
             _v    = _pnl_by_month[_mo]
-            _net  = _v["bp"] - _v["pf"] - _v["eu"]
-            _real = _net - _v["raw"] - _v["stor"]
-            _cum_net  += _net;  _cum_real += _real
+            _gp   = _v["bp"] - _v["raw"] - _v["pf"]          # 매출총이익
+            _real = _gp - _v["eu"] - _v["stor"]              # 실질 손익
+            _cum_real += _real
             _tot_bp_r += _v["bp"];  _tot_pf_r  += _v["pf"];  _tot_eu_r  += _v["eu"]
             _tot_raw_r+= _v["raw"]; _tot_stor_r+= _v["stor"]
             _tot_out_r+= _v["out"]; _tot_inp_r += _v["inp"]
             _pnl_rows.append({
-                "월":             _mo,
-                "배치수":         _v["cnt"],
-                "생산(kg)":       round(_v["out"],0),
-                "BP 매각(USD)":   round(_v["bp"],2),
-                "임가공비(USD)":  round(_v["pf"],2),
-                "수출비(USD)":    round(_v["eu"],2),
-                "거래 마진(USD)":  round(_net,2),
-                "원료비(USD)":    round(_v["raw"],2),
-                "보관비(USD)":    round(_v["stor"],2) if _v["stor"] else None,
-                "실질 손익(USD)": round(_real,2),
-                "누적 실질 손익": round(_cum_real,2),
+                "월":              _mo,
+                "배치수":          _v["cnt"],
+                "생산(kg)":        round(_v["out"],0),
+                "매출 BP(USD)":    round(_v["bp"],2),
+                "원료비(USD)":     round(_v["raw"],2),
+                "임가공비(USD)":   round(_v["pf"],2),
+                "매출총이익(USD)": round(_gp,2),
+                "수출비(USD)":     round(_v["eu"],2),
+                "보관비(USD)":     round(_v["stor"],2) if _v["stor"] else None,
+                "실질 손익(USD)":  round(_real,2),
+                "누적 실질 손익":  round(_cum_real,2),
             })
 
         # 요약 메트릭
+        _tot_gp_r = _tot_bp_r - _tot_raw_r - _tot_pf_r
         _pm1,_pm2,_pm3,_pm4,_pm5 = st.columns(5)
-        _cm_col = "#4ade80" if _cum_net  >= 0 else "#f87171"
+        _gp_col_r = "#4ade80" if _tot_gp_r >= 0 else "#f87171"
         _cr_col = "#4ade80" if _cum_real >= 0 else "#f87171"
-        _pm1.markdown(_kpi_card("💰 총 BP 매각",      f"${_tot_bp_r:,.0f}"), unsafe_allow_html=True)
-        _pm2.markdown(_kpi_card("🏭 총 임가공비",     f"${_tot_pf_r:,.0f}"), unsafe_allow_html=True)
-        _pm3.markdown(_kpi_card("✈️ 총 수출비",        f"${_tot_eu_r:,.0f}"), unsafe_allow_html=True)
-        _pm4.markdown(_kpi_card("📈 누적 거래 마진",  f"${_cum_net:+,.0f}",  val_color=_cm_col), unsafe_allow_html=True)
+        _pm1.markdown(_kpi_card("💰 총 매출 (BP)",    f"${_tot_bp_r:,.0f}"), unsafe_allow_html=True)
+        _pm2.markdown(_kpi_card("🧱 총 원료 매입비",  f"${_tot_raw_r:,.0f}"), unsafe_allow_html=True)
+        _pm3.markdown(_kpi_card("🏭 총 임가공비 (순)", f"${_tot_pf_r:,.0f}"), unsafe_allow_html=True)
+        _pm4.markdown(_kpi_card("📊 매출총이익",      f"${_tot_gp_r:+,.0f}", val_color=_gp_col_r), unsafe_allow_html=True)
         _pm5.markdown(_kpi_card("💎 누적 실질 손익",  f"${_cum_real:+,.0f}", val_color=_cr_col), unsafe_allow_html=True)
 
         # 원료 원가 기준 안내
@@ -6052,27 +6100,27 @@ with t_report:
         def _hl_pnl(row):
             styles = [""] * len(row)
             _ci = list(row.index)
-            v_net  = row.get("거래 마진(USD)",0) or 0
+            v_gp   = row.get("매출총이익(USD)",0) or 0
             v_real = row.get("실질 손익(USD)",0) or 0
-            c_net  = ("background-color:#2E75B6;color:white;font-weight:600" if v_net>=0
+            c_gp   = ("background-color:#2E75B6;color:white;font-weight:600" if v_gp>=0
                       else "background-color:#922b21;color:white;font-weight:600")
             c_real = ("background-color:#1E8449;color:white;font-weight:600" if v_real>=0
                       else "background-color:#C0392B;color:white;font-weight:600")
-            if "거래 마진(USD)"  in _ci: styles[_ci.index("거래 마진(USD)")]  = c_net
-            if "실질 손익(USD)" in _ci: styles[_ci.index("실질 손익(USD)")] = c_real
+            if "매출총이익(USD)" in _ci: styles[_ci.index("매출총이익(USD)")] = c_gp
+            if "실질 손익(USD)"  in _ci: styles[_ci.index("실질 손익(USD)")]  = c_real
             return styles
 
         st.dataframe(
             pd.DataFrame(_pnl_rows).style.apply(_hl_pnl, axis=1).format(na_rep="—", formatter={
-                "생산(kg)":       "{:,.0f}",
-                "BP 매각(USD)":   "${:,.2f}",
-                "임가공비(USD)":  "${:,.2f}",
-                "수출비(USD)":    "${:,.2f}",
-                "거래 마진(USD)":  "${:+,.2f}",
-                "원료비(USD)":    "${:,.2f}",
-                "보관비(USD)":    lambda v: f"${v:,.2f}" if v else "—",
-                "실질 손익(USD)": "${:+,.2f}",
-                "누적 실질 손익": "${:+,.2f}",
+                "생산(kg)":        "{:,.0f}",
+                "매출 BP(USD)":    "${:,.2f}",
+                "원료비(USD)":     "${:,.2f}",
+                "임가공비(USD)":   "${:,.2f}",
+                "매출총이익(USD)": "${:+,.2f}",
+                "수출비(USD)":     "${:,.2f}",
+                "보관비(USD)":     lambda v: f"${v:,.2f}" if v else "—",
+                "실질 손익(USD)":  "${:+,.2f}",
+                "누적 실질 손익":  "${:+,.2f}",
             }),
             use_container_width=True, hide_index=True,
         )
@@ -6087,19 +6135,20 @@ with t_report:
             _bp_pk_r  = _tot_bp_r  / _tot_out_r
             _pf_pk_r  = _tot_pf_r  / _tot_out_r
             _eu_pk_r  = _tot_eu_r  / _tot_out_r
-            _gm_pk_r  = _bp_pk_r - _pf_pk_r - _eu_pk_r
             _rf_pk_r  = _tot_raw_r  / _tot_out_r
             _rm_pk_r  = _raw_mavg_r / _tot_out_r
             _st_pk_r  = _tot_stor_r / _tot_out_r
+            _gpf_pk_r = _bp_pk_r - _rf_pk_r - _pf_pk_r   # 매출총이익 FIFO
+            _gpm_pk_r = _bp_pk_r - _rm_pk_r - _pf_pk_r   # 매출총이익 이동평균
             _bpkg_r = [
-                ("BP 매각가",            _bp_pk_r, _bp_pk_r),
-                ("  (−) 임가공비",       _pf_pk_r, _pf_pk_r),
+                ("BP 매각가 (매출)",     _bp_pk_r, _bp_pk_r),
+                ("  (−) 원료 매입비",    _rf_pk_r, _rm_pk_r),
+                ("  (−) 임가공비 (순)",  _pf_pk_r, _pf_pk_r),
+                ("= 매출총이익",         _gpf_pk_r, _gpm_pk_r),
                 ("  (−) 수출비",         _eu_pk_r, _eu_pk_r),
-                ("= 거래 마진",          _gm_pk_r, _gm_pk_r),
-                ("  (−) 원료 취득원가",  _rf_pk_r, _rm_pk_r),
                 ("  (−) 보관비",         _st_pk_r, _st_pk_r),
-                ("= 실질 손익",          _gm_pk_r - _rf_pk_r - _st_pk_r,
-                                         _gm_pk_r - _rm_pk_r - _st_pk_r),
+                ("= 실질 손익",          _gpf_pk_r - _eu_pk_r - _st_pk_r,
+                                         _gpm_pk_r - _eu_pk_r - _st_pk_r),
             ]
             with st.expander(f"📐 BP 1kg당 비용 분해  (전환율 가중평균 {_conv_r:.1f}%)", expanded=False):
                 _df_bpkg_r = pd.DataFrame(_bpkg_r, columns=["항목","FIFO ($/kg BP)","이동평균 ($/kg BP)"])
@@ -6205,19 +6254,22 @@ with t_report:
             ):
                 _hs4    = _rpt_ship_m.get(_hid4, {})
                 _hb4    = _rpt_buyer_m.get(_hs4.get("buyer_id",""), {})
-                _trade4 = _hv4["bp"] - _hv4["pf"] - _hv4["eu"]
-                _real4  = _trade4 - _hv4["raw"] - _hv4["stor"]
+                _gp4    = _hv4["bp"] - _hv4["raw"] - _hv4["pf"]      # 매출총이익
+                _real4  = _gp4 - _hv4["eu"] - _hv4["stor"]           # 실질 손익
                 _mgr4   = _real4 / _hv4["bp"] * 100 if _hv4["bp"] > 0 else None
                 _hbl4_rows.append({
-                    "HBL":        _hs4.get("hbl","—"),
-                    "선적일":     _hs4.get("loading_date",""),
-                    "매입사":     f"{_hb4.get('name','?')} ({_hb4.get('product','?')})",
-                    "BP(kg)":     round(_hv4["out"],0),
-                    "거래 마진":  round(_trade4,2),
-                    "원료비":     round(_hv4["raw"],2),
-                    "보관비":     round(_hv4["stor"],2) if _hv4["stor"] else None,
-                    "실질 손익":  round(_real4,2),
-                    "마진율(%)":  round(_mgr4,2) if _mgr4 is not None else None,
+                    "HBL":         _hs4.get("hbl","—"),
+                    "선적일":      _hs4.get("loading_date",""),
+                    "매입사":      f"{_hb4.get('name','?')} ({_hb4.get('product','?')})",
+                    "BP(kg)":      round(_hv4["out"],0),
+                    "매출(BP)":    round(_hv4["bp"],2),
+                    "원료비":      round(_hv4["raw"],2),
+                    "임가공비(순)": round(_hv4["pf"],2),
+                    "매출총이익":  round(_gp4,2),
+                    "수출비":      round(_hv4["eu"],2),
+                    "보관비":      round(_hv4["stor"],2) if _hv4["stor"] else None,
+                    "실질 손익":   round(_real4,2),
+                    "마진율(%)":   round(_mgr4,2) if _mgr4 is not None else None,
                 })
 
             def _hl_hbl4(row):
@@ -6232,12 +6284,15 @@ with t_report:
 
             st.dataframe(
                 pd.DataFrame(_hbl4_rows).style.apply(_hl_hbl4, axis=1).format(na_rep="—", formatter={
-                    "BP(kg)":    "{:,.0f}",
-                    "거래 마진": "${:+,.2f}",
-                    "원료비":    "${:,.2f}",
-                    "보관비":    lambda v: f"${v:,.2f}" if v else "—",
-                    "실질 손익": "${:+,.2f}",
-                    "마진율(%)": lambda v: f"{v:+.2f}%" if v is not None else "—",
+                    "BP(kg)":      "{:,.0f}",
+                    "매출(BP)":    "${:,.2f}",
+                    "원료비":      "${:,.2f}",
+                    "임가공비(순)": "${:,.2f}",
+                    "매출총이익":  "${:+,.2f}",
+                    "수출비":      "${:,.2f}",
+                    "보관비":      lambda v: f"${v:,.2f}" if v else "—",
+                    "실질 손익":   "${:+,.2f}",
+                    "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
                 }),
                 use_container_width=True, hide_index=True,
             )
