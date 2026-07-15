@@ -1008,11 +1008,16 @@ def _contract_metrics(cfg, contract):
         a for a in all_allocs
         if a.get("contract_id") in _buyer_scrap_contract_ids
     )
+    oop_alloc_kg = 0.0   # 계약 기간 밖 선적일의 명시적 배분량 (안내용)
     if ct_allocs:
-        shipped_kg = sum(
+        # 명시적 배분은 사용자가 계약 귀속을 직접 지정한 것 — 선적일이 계약
+        # 기간 밖이어도 집계에 포함한다 (협의 물량). 기간 필터는 자동 매칭
+        # fallback에만 적용. 기간 밖 물량은 oop_alloc_mt로 반환해 UI에서 안내.
+        shipped_kg = sum(float(a.get("allocated_kg") or 0) for a in ct_allocs)
+        oop_alloc_kg = sum(
             float(a.get("allocated_kg") or 0)
             for a in ct_allocs
-            if _ship_in_period(ship_map.get(a.get("shipment_id",""), {}), start, end)
+            if not _ship_in_period(ship_map.get(a.get("shipment_id",""), {}), start, end)
         )
     elif _buyer_has_any_alloc:
         shipped_kg = 0.0
@@ -1048,6 +1053,7 @@ def _contract_metrics(cfg, contract):
         "warehouse_raw_kg": warehouse_raw_kg, "warehouse_bp_mt": warehouse_bp_mt,
         "at_proc_raw_kg": at_proc_raw_kg, "at_proc_bp_mt": at_proc_bp_mt,
         "total_avail_mt": total_avail_mt, "status": status,
+        "oop_alloc_mt": oop_alloc_kg / 1000,
     }
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -6818,6 +6824,9 @@ with t_contract:
                 elif _m["min_mt"] > 0 and _m["shipped_mt"] > 0 and _m["shipped_mt"] < _m["min_mt"] and _ct_cstatus == "closed":
                     st.warning(f"⚠️ 선적량({_m['shipped_mt']:.2f} MT)이 계약 하한({_m['min_mt']:.2f} MT)에 "
                                f"{_m['min_mt']-_m['shipped_mt']:.2f} MT 미달합니다.")
+                if _m.get("oop_alloc_mt", 0) > 0:
+                    st.info(f"ℹ️ 계약 기간 밖 선적일의 배분 {_m['oop_alloc_mt']:.2f} MT가 "
+                            f"이행량에 포함되어 있습니다 (수동 배분 = 협의 물량으로 간주).")
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
                 _rem_val = f"{_m['remaining_mt']:,.2f} MT" if _m["remaining_mt"] > 0 else "충족"
