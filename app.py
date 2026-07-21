@@ -1563,6 +1563,13 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                    f"  │  {ld_disp} → ETA {eta_disp}"
                    f"  │  {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{_settle_hdr}{_eu_hdr}")
             with st.expander(hdr,expanded=False):
+                # 컨테이너 가중평균 계산기의 '적용' 값 반영 — 위젯이 생성되기 전에
+                # session_state에 넣어야 하므로 expander 최상단에서 처리
+                _ctr_pend = st.session_state.pop(f"ctr_apply_{real_i}", None)
+                if _ctr_pend:
+                    st.session_state[f"sh_bni_{real_i}"]   = _ctr_pend["ni"]
+                    st.session_state[f"sh_bco_{real_i}"]   = _ctr_pend["co"]
+                    st.session_state[f"sh_moist_{real_i}"] = _ctr_pend["moist"]
                 # ── 기본 정보 입력 ──
                 e1,e2,e3,e4=st.columns(4)
                 with e1:
@@ -1683,6 +1690,52 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     new_other_desc=st.text_input("조정 사유",
                         s.get("other_adj_desc",""),
                         key=f"sh_adjd_{real_i}")
+
+                # ── 컨테이너별 가중평균 계산기 (계산 전용 — 저장되지 않음) ──────
+                with st.popover("🧮 컨테이너별 가중평균 계산기"):
+                    st.caption("매입사가 컨테이너 단위로 성분분석·정산한 경우: 컨테이너별 값을 "
+                               "입력하면 HBL 하나로 반영할 가중평균을 계산합니다. "
+                               "여기 입력값은 저장되지 않으며, '적용'을 누르면 위 "
+                               "분석값·수분율 필드에 채워집니다. 잔여 반올림 차이는 "
+                               "기타 조정에 기재하세요.")
+                    _ctr_n = int(st.number_input("컨테이너 수", min_value=2, max_value=8,
+                                                 value=2, step=1, key=f"ctr_n_{real_i}"))
+                    _ctr_rows = []
+                    for _cj in range(_ctr_n):
+                        _cc1, _cc2, _cc3, _cc4 = st.columns(4)
+                        _cw = _cc1.number_input(f"#{_cj+1} 중량(kg)", min_value=0.0, step=1.0,
+                                                format="%.0f", key=f"ctr_w_{real_i}_{_cj}")
+                        _cn = _cc2.number_input(f"#{_cj+1} Ni(%)", min_value=0.0, step=0.01,
+                                                format="%.2f", key=f"ctr_ni_{real_i}_{_cj}")
+                        _cc = _cc3.number_input(f"#{_cj+1} Co(%)", min_value=0.0, step=0.01,
+                                                format="%.2f", key=f"ctr_co_{real_i}_{_cj}")
+                        _cm = _cc4.number_input(f"#{_cj+1} 수분(%)", min_value=0.0, max_value=20.0,
+                                                step=0.01, format="%.2f", key=f"ctr_m_{real_i}_{_cj}")
+                        _ctr_rows.append((_cw, _cn, _cc, _cm))
+                    _ctr_gw = sum(r[0] for r in _ctr_rows)                    # 총 중량
+                    _ctr_sw = sum(r[0] * (1 - r[3]/100) for r in _ctr_rows)   # 정산중량 합
+                    if _ctr_gw > 0 and _ctr_sw > 0:
+                        # Ni/Co는 '정산중량' 가중평균 — 정산액이 함유량에 선형이라
+                        # 컨테이너별 합계가 정확히 재현됨 (반올림 차이 제외).
+                        # 수분율은 총중량 대비 정산중량으로 역산.
+                        _ctr_eni = sum(r[1] * r[0] * (1 - r[3]/100) for r in _ctr_rows) / _ctr_sw
+                        _ctr_eco = sum(r[2] * r[0] * (1 - r[3]/100) for r in _ctr_rows) / _ctr_sw
+                        _ctr_em  = (1 - _ctr_sw / _ctr_gw) * 100
+                        st.markdown(f"가중평균 — Ni **{_ctr_eni:.2f}%** · Co **{_ctr_eco:.2f}%** · "
+                                    f"수분 **{_ctr_em:.2f}%**  "
+                                    f"(총 {_ctr_gw:,.0f} kg → 정산 {_ctr_sw:,.1f} kg)")
+                        if abs(_ctr_gw - new_wkg) > 1:
+                            st.caption(f"⚠️ 컨테이너 중량 합({_ctr_gw:,.0f} kg)이 "
+                                       f"선적 중량({new_wkg:,.0f} kg)과 다릅니다.")
+                        if st.button("분석값·수분율에 적용", key=f"ctr_apply_btn_{real_i}"):
+                            st.session_state[f"ctr_apply_{real_i}"] = {
+                                "ni":    round(_ctr_eni, 2),
+                                "co":    round(_ctr_eco, 2),
+                                "moist": round(_ctr_em, 2),
+                            }
+                            st.rerun()
+                    else:
+                        st.caption("컨테이너별 중량을 입력하면 가중평균이 계산됩니다.")
 
                 # ── 정산 요약 계산 ──
                 # 계약 조건 조회 (계약 있으면 ni/co 지불율·가정산비율·INDEX기준 계약 우선)
