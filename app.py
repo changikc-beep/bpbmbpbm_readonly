@@ -1833,14 +1833,16 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _display_final = _snapped_final if _snapped_final else final_amt
                         net_settle=_display_final - prov_paid + new_other_adj
 
-                        # ── 정산 흐름 요약 (4 metrics) ──────────────────────
+                        # ── 정산 흐름 요약 (5 metrics) ──────────────────────
                         st.markdown("**📋 정산 요약**")
-                        rs1,rs2,rs3,rs4=st.columns(4)
+                        rs1,rs2,rs3,rs4,rs5=st.columns(5)
                         _inv_per_kg   = new_iusd / new_wkg if new_wkg else 0
                         _final_per_kg = _display_final / final_w if final_w else 0
                         _inv_vs_final = _display_final - new_iusd
+                        _inv_vs_final_adj = _inv_vs_final + new_other_adj
                         _net_col  = "#4ade80" if net_settle >= 0 else "#f87171"
                         _diff_col = "#4ade80" if _inv_vs_final >= 0 else "#f87171"
+                        _diff_adj_col = "#4ade80" if _inv_vs_final_adj >= 0 else "#f87171"
                         _final_lbl = "③ 최종정산액 (확정)" if _snapped_final else "③ 최종정산액 (계산)"
                         _net_lbl   = "④ 확정산 청구액" if net_settle >= 0 else "④ 확정산 반환액"
                         rs1.markdown(_kpi_card("① Invoice 총액",
@@ -1857,6 +1859,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                                f"${_inv_vs_final:+,.2f}",
                                                f"최종단가 ${_final_per_kg:.2f}/kg",
                                                val_color=_diff_col), unsafe_allow_html=True)
+                        rs5.markdown(_kpi_card("Invoice ↔ 최종 차이 (기타조정 반영)",
+                                               f"${_inv_vs_final_adj:+,.2f}",
+                                               f"기타조정 ${new_other_adj:+,.2f} 포함 · 추가 인보이스 발급액",
+                                               val_color=_diff_adj_col), unsafe_allow_html=True)
                         if new_other_adj:
                             st.caption(f"기타 조정: ${new_other_adj:+,.2f}  {new_other_desc or ''}")
 
@@ -1914,9 +1920,12 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _display_final = float(_snapped_final)
                         net_settle = _display_final - prov_paid + new_other_adj
                         st.markdown("**📋 정산 요약 (확정)**")
-                        rs1, rs2, rs3 = st.columns(3)
+                        rs1, rs2, rs3, rs4 = st.columns(4)
                         _inv_per_kg = new_iusd / new_wkg if new_wkg else 0
                         _net_col = "#4ade80" if net_settle >= 0 else "#f87171"
+                        _inv_vs_final = _display_final - new_iusd
+                        _inv_vs_final_adj = _inv_vs_final + new_other_adj
+                        _diff_adj_col = "#4ade80" if _inv_vs_final_adj >= 0 else "#f87171"
                         rs1.markdown(_kpi_card("① Invoice 총액", f"${new_iusd:,.2f}",
                                                f"단가 ${_inv_per_kg:.2f}/kg  ·  {new_wkg:,.0f} kg"), unsafe_allow_html=True)
                         rs2.markdown(_kpi_card("③ 최종정산액 (확정)", f"${_display_final:,.2f}",
@@ -1924,6 +1933,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _net_lbl = "④ 확정산 청구액" if net_settle >= 0 else "④ 확정산 반환액"
                         rs3.markdown(_kpi_card(_net_lbl, f"${abs(net_settle):,.2f}",
                                                f"KRW ₩{net_settle*XR:+,.0f}", val_color=_net_col), unsafe_allow_html=True)
+                        rs4.markdown(_kpi_card("Invoice ↔ 최종 차이 (기타조정 반영)",
+                                               f"${_inv_vs_final_adj:+,.2f}",
+                                               f"기타조정 ${new_other_adj:+,.2f} 포함 · 추가 인보이스 발급액",
+                                               val_color=_diff_adj_col), unsafe_allow_html=True)
                         if new_other_adj:
                             st.caption(f"기타 조정: ${new_other_adj:+,.2f}  {new_other_desc or ''}")
                         st.caption(f"ℹ️ {b.get('name','')} 전용 INDEX 이력에 {_final_idx_month}월 값이 없어 "
