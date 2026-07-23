@@ -863,6 +863,18 @@ def _resolve_idx_month(basis, loading_date, prov_month, final_month):
     return prov_month  # fallback
 
 
+def _hm_for(cfg, buyer):
+    """매입사별 INDEX 이력 {월: row} 딕셔너리 반환.
+    매입사가 '자체 INDEX' 사용으로 설정된 경우 index_history_alt[buyer_id]만 참조
+    (표준 INDEX와 섞지 않음 — 해당 월이 없으면 미등록으로 취급).
+    그 외에는 표준 index_history 사용."""
+    b = buyer or {}
+    if b.get("custom_index") and b.get("id"):
+        alt = cfg.get("index_history_alt", {}).get(b["id"], [])
+        return {h["month"]: h for h in alt}
+    return {h["month"]: h for h in cfg.get("index_history", [])}
+
+
 def _recompute_final_settlement(cfg, s, hm_all=None, fallback_index=None):
     """저장된 선적건 데이터 기준으로 '지금 저장하면 나올' 최종정산액을 재계산.
     final_amount_usd 스냅샷과 비교해 재계산 필요 여부를 판단할 때 사용.
@@ -871,16 +883,17 @@ def _recompute_final_settlement(cfg, s, hm_all=None, fallback_index=None):
     fallback_index=(ni, co): Final월 INDEX가 아직 없을 때 이 값으로 대신 계산
     (현금흐름 전망의 '추정치' 용도 — 확정 계산에는 절대 사용하지 말 것).
     """
-    if hm_all is None:
-        hm_all = {h["month"]: h for h in cfg.get("index_history", [])}
+    buyers = {b["id"]: b for b in cfg.get("buyers", [])}
+    b = buyers.get(s.get("buyer_id", ""), {})
+    # 매입사별 INDEX 예외(custom_index)를 항상 정확히 반영하기 위해
+    # 전달받은 hm_all은 무시하고 매입사 기준으로 다시 조회한다.
+    hm_all = _hm_for(cfg, b)
     final_month = s.get("final_month", "—")
     if not final_month or final_month == "—" or final_month not in hm_all:
         if fallback_index is None:
             return None
         # Final월 INDEX 미등록 → 추정 INDEX로 대체해 계속 진행
         final_month = None
-    buyers = {b["id"]: b for b in cfg.get("buyers", [])}
-    b = buyers.get(s.get("buyer_id", ""), {})
     ct = _get_contract_for_shipment(cfg, s.get("id", ""))
     st_terms = _settle_terms(ct, b)
     if final_month is None:
@@ -1127,12 +1140,12 @@ with st.sidebar:
         for _se in sorted(_sb_eta_soon, key=lambda x: x.get("eta","")):
             st.caption(f"· {_se.get('hbl','HBL미정')}  {_se.get('eta','')}")
     # ── 확정산 가능 알림: Final월 INDEX가 새로 등록되어 확정산 가능해진 건 ──
-    _sb_hm_all = {h["month"]: h for h in cfg.get("index_history", [])}
+    _sb_buyers = {b["id"]: b for b in cfg.get("buyers", [])}
     _sb_ready_final = [
         s for s in _sb_ships
         if s.get("status") == "provisional"
         and s.get("final_month", "—") not in ("—", "")
-        and s.get("final_month") in _sb_hm_all
+        and s.get("final_month") in _hm_for(cfg, _sb_buyers.get(s.get("buyer_id",""), {}))
     ]
     if _sb_ready_final:
         st.success(f"✅ 확정산 가능 {len(_sb_ready_final)}건 (INDEX 등록됨)")
@@ -1541,6 +1554,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         for i,s in enumerate(show_ships):
             real_i=_ship_id_idx[s["id"]]
             b=buyer_map.get(s.get("buyer_id"),{})
+            hm_all_b=_hm_for(cfg, b)  # 매입사별 INDEX 예외 반영
             buyer_lbl=f"{b.get('name','?')} ({b.get('product','?')})"
             # 상태 텍스트 (expander는 HTML 미지원 → 이모지 사용)
             stat_txt={"provisional":"🟡 Provisional 정산","final":"🟢 최종정산","paid":"🔵 입금완료"}.get(s.get("status","provisional"),"—")
@@ -1748,11 +1762,11 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _final_idx_b = _st["final_idx"]
                 _ld_for_idx  = s.get("loading_date","")
 
-                if b and new_pm!="—" and new_pm in hm_all:
+                if b and new_pm!="—" and new_pm in hm_all_b:
                     _prov_idx_month = _resolve_idx_month(_prov_idx_b, _ld_for_idx, new_pm, new_pm)
-                    if _prov_idx_month not in hm_all:
+                    if _prov_idx_month not in hm_all_b:
                         _prov_idx_month = new_pm
-                    pm_data=hm_all[_prov_idx_month]
+                    pm_data=hm_all_b[_prov_idx_month]
                     _,_,_,_prov_pkg_raw=bp_price(pm_data["ni_index"],pm_data["co_index"],
                         b.get("ni_content",0),b.get("co_content",0),
                         _ni_pay, _co_pay)
@@ -1771,12 +1785,12 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if _ct_hint:
                             st.caption(f"📋 계약 조건 적용: {', '.join(_ct_hint)}")
 
-                    if new_fm!="—" and new_fm in hm_all:
+                    if new_fm!="—" and new_fm in hm_all_b:
                         # 확정산 계산
                         _final_idx_month = _resolve_idx_month(_final_idx_b, _ld_for_idx, new_pm, new_fm)
-                        if _final_idx_month not in hm_all:
+                        if _final_idx_month not in hm_all_b:
                             _final_idx_month = new_fm
-                        fm_data=hm_all[_final_idx_month]
+                        fm_data=hm_all_b[_final_idx_month]
                         _,_,_,_final_pkg_raw=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             _eff_ni,_eff_co,
                             _ni_pay, _co_pay)
@@ -1906,10 +1920,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 # 현재 계산값으로 스냅샷 저장
                                 _snap_ct  = _get_contract_for_shipment(cfg, s.get("id",""))
                                 _snap_st  = _settle_terms(_snap_ct, b)
-                                if new_fm != "—" and new_fm in hm_all:
+                                if new_fm != "—" and new_fm in hm_all_b:
                                     _snap_fidx = _resolve_idx_month(_snap_st["final_idx"], new_ld, new_pm, new_fm)
-                                    if _snap_fidx not in hm_all: _snap_fidx = new_fm
-                                    _sfmd = hm_all[_snap_fidx]
+                                    if _snap_fidx not in hm_all_b: _snap_fidx = new_fm
+                                    _sfmd = hm_all_b[_snap_fidx]
                                     _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
                                                             _eff_ni, _eff_co,
                                                             _snap_st["ni_payable"], _snap_st["co_payable"])
@@ -1947,24 +1961,25 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             tbl_rows=[]
             for s in show_ships:
                 bx=buyer_map.get(s.get("buyer_id",""),{})
+                hm_all_x=_hm_for(cfg, bx)  # 매입사별 INDEX 예외 반영
                 # 추가정산 계산 (가능한 경우)
                 net_disp="—"
                 pm2=s.get("prov_month","—"); fm2=s.get("final_month","—")
-                if (bx and pm2!="—" and pm2 in hm_all):
+                if (bx and pm2!="—" and pm2 in hm_all_x):
                     _tst = _settle_terms(_get_contract_for_shipment(cfg, s.get("id","")), bx)
                     _tprov = float(s.get("invoice_usd",0)) * (_tst["prov_pct"] / 100.0)
                     _snapped2 = s.get("final_amount_usd")
                     if _snapped2:
                         net_v = float(_snapped2) - _tprov + (s.get("other_adj_usd") or 0)
                         net_disp = f"${net_v:+,.2f}"
-                    elif fm2!="—" and fm2 in hm_all:
+                    elif fm2!="—" and fm2 in hm_all_x:
                         _src_ni2 = s.get("ni_content_src","매입사값")
                         _src_co2 = s.get("co_content_src","매입사값")
                         _bni2 = s.get("buyer_ni_content") or bx.get("ni_content",0)
                         _bco2 = s.get("buyer_co_content") or bx.get("co_content",0)
                         _eni2 = {"매입사값":_bni2,"당사값":bx.get("ni_content",0),"평균":(_bni2+bx.get("ni_content",0))/2}.get(_src_ni2,_bni2)
                         _eco2 = {"매입사값":_bco2,"당사값":bx.get("co_content",0),"평균":(_bco2+bx.get("co_content",0))/2}.get(_src_co2,_bco2)
-                        _,_,_,fpkg2=bp_price(hm_all[fm2]["ni_index"],hm_all[fm2]["co_index"],
+                        _,_,_,fpkg2=bp_price(hm_all_x[fm2]["ni_index"],hm_all_x[fm2]["co_index"],
                             _eni2, _eco2, _tst["ni_payable"], _tst["co_payable"])
                         mst=s.get("moisture_pct") or 0
                         fw2=s.get("weight_kg",0)*(1-mst/100)
@@ -3619,6 +3634,12 @@ with t_buy:
                     b.get("round_price_before_moisture", False),key=f"brbm_{i}",
                     help="켜면 단가를 소수 2자리로 반올림한 뒤 수분공제 중량과 곱해 정산액을 계산합니다. "
                          "매입사 계산서가 이 방식(예: EcoPro)이면 켜세요. 기본은 꺼짐(반올림 전 원단가 사용).")
+                ncix=st.checkbox("자체 INDEX 사용 (표준 LME/MB Mid와 다름)",
+                    b.get("custom_index", False),key=f"bcix_{i}",
+                    help="켜면 정산 계산 시 표준 INDEX 대신 '설정·관리 > INDEX 이력'에서 "
+                         "이 매입사 전용으로 입력한 월별 Ni/Co INDEX만 사용합니다 "
+                         "(예: POSCO의 low 기준, 성일의 Co pound 기준). "
+                         "해당 월이 매입사 전용 이력에 없으면 미등록으로 처리됩니다.")
             with bb:
                 s1,s2,s3,s4=st.columns(4)
                 with s1:
@@ -3631,7 +3652,7 @@ with t_buy:
                         save_cfg(cfg); st.rerun()
                 with s3:
                     if st.button("💾 저장",key=f"bsave_{i}",use_container_width=True):
-                        cfg["buyers"][i].update({"name":nn,"product":np_,"ni_payable":nnp,"co_payable":ncp,"ni_content":nnc,"co_content":ncc,"active":na,"round_price_before_moisture":nrbm})
+                        cfg["buyers"][i].update({"name":nn,"product":np_,"ni_payable":nnp,"co_payable":ncp,"ni_content":nnc,"co_content":ncc,"active":na,"round_price_before_moisture":nrbm,"custom_index":ncix})
                         save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with s4:
                     with st.popover("🗑️", use_container_width=True):
@@ -5213,6 +5234,53 @@ with t_idx:
                 cfg["index_history"]=sorted(rest,key=lambda x:x["month"])
                 save_cfg(cfg); st.success(f"{im} 저장 — Ni \\${ini:,.2f} / Co \\${ico:,.2f}"); st.rerun()
 
+    # ── 매입사별 자체 INDEX (예외) ─────────────────────────────────────────────
+    st.divider()
+    st.subheader("🏢 매입사별 자체 INDEX")
+    _cix_buyers = [b for b in cfg.get("buyers", []) if b.get("custom_index")]
+    if not _cix_buyers:
+        st.caption("'자체 INDEX 사용'으로 설정된 매입사가 없습니다. "
+                   "매입사 관리 탭에서 해당 매입사의 옵션을 켜면 여기에 표시됩니다.")
+    else:
+        cfg.setdefault("index_history_alt", {})
+        _cix_names = {b["id"]: f"{b['name']} ({b['product']})" for b in _cix_buyers}
+        _cix_sel_lbl = st.selectbox("매입사 선택", list(_cix_names.values()), key="idx_alt_buyer_sel")
+        _cix_bid = next(bid for bid, lbl in _cix_names.items() if lbl == _cix_sel_lbl)
+        _cix_hist = cfg["index_history_alt"].get(_cix_bid, [])
+        if _cix_hist:
+            _df_cix = pd.DataFrame(sorted(_cix_hist, key=lambda x: x["month"], reverse=True))
+            _df_cix.columns = ["기준월", "Ni INDEX($/ton)", "Co INDEX($/ton)"]
+            st.dataframe(_df_cix.style.format({"Ni INDEX($/ton)": "${:,.2f}", "Co INDEX($/ton)": "${:,.2f}"}),
+                         use_container_width=True, hide_index=True)
+            _cix_del_c1, _cix_del_c2 = st.columns([4, 1])
+            with _cix_del_c1:
+                _cix_dm = st.selectbox("삭제할 월", [h["month"] for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)], key="idx_alt_del_m")
+            with _cix_del_c2:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                with st.popover("🗑️", use_container_width=True):
+                    st.warning(f"{_cix_sel_lbl} 전용 INDEX **{_cix_dm}** 삭제")
+                    if st.button("삭제 확인", key="idx_alt_del_cfm", type="primary", use_container_width=True):
+                        cfg["index_history_alt"][_cix_bid] = [h for h in _cix_hist if h["month"] != _cix_dm]
+                        save_cfg(cfg); st.toast(f"✅ {_cix_dm} 삭제"); st.rerun()
+        else:
+            st.caption(f"{_cix_sel_lbl} 전용 INDEX 이력이 없습니다 — 아래에서 등록하세요.")
+        _cix_dflt_ni = _cix_hist[-1]["ni_index"] if _cix_hist else _idx_dflt_ni
+        _cix_dflt_co = _cix_hist[-1]["co_index"] if _cix_hist else _idx_dflt_co
+        with st.form("add_idx_alt"):
+            st.caption(f"대상: {_cix_sel_lbl}  ·  표준 INDEX와 동일한 월이어도 반드시 이 매입사 값을 별도로 입력하세요.")
+            j1, j2, j3 = st.columns(3)
+            with j1: jm = st.text_input("기준월 (YYYY-MM)", placeholder="2026-04", key="idx_alt_m")
+            with j2: jni = st.number_input("Ni INDEX($/ton)", value=_cix_dflt_ni, step=10.0, format="%.2f", key="idx_alt_ni")
+            with j3: jco = st.number_input("Co INDEX($/ton)", value=_cix_dflt_co, step=10.0, format="%.2f", key="idx_alt_co")
+            if st.form_submit_button("💾 저장"):
+                try: datetime.strptime(jm, "%Y-%m")
+                except: st.error("YYYY-MM 형식으로 입력하세요.")
+                else:
+                    _jrest = [h for h in cfg["index_history_alt"].get(_cix_bid, []) if h["month"] != jm]
+                    _jrest.append({"month": jm, "ni_index": jni, "co_index": jco})
+                    cfg["index_history_alt"][_cix_bid] = sorted(_jrest, key=lambda x: x["month"])
+                    save_cfg(cfg); st.success(f"{_cix_sel_lbl}  {jm} 저장 — Ni \\${jni:,.2f} / Co \\${jco:,.2f}"); st.rerun()
+
     # ── EUR/USD 환율 관리 ─────────────────────────────────────────────────────
     st.divider()
     st.subheader("💱 월별 EUR/USD 환율")
@@ -5726,7 +5794,7 @@ with t_report:
     _td_ready = [s for s in _td_ships
                  if s.get("status") == "provisional"
                  and s.get("final_month", "—") not in ("—", "")
-                 and s.get("final_month") in _td_hm]
+                 and s.get("final_month") in _hm_for(cfg, _td_buyers.get(s.get("buyer_id",""), {}))]
     if _td_ready:
         _todo.append(("🟡", f"확정산 진행 가능 {len(_td_ready)}건",
                       _td_hbls(_td_ready), "선적 정산 추적"))
