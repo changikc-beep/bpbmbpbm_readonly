@@ -1746,17 +1746,17 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _ctr_eni = sum(r[1] * r[0] * (1 - r[3]/100) for r in _ctr_rows) / _ctr_sw
                         _ctr_eco = sum(r[2] * r[0] * (1 - r[3]/100) for r in _ctr_rows) / _ctr_sw
                         _ctr_em  = (1 - _ctr_sw / _ctr_gw) * 100
-                        st.markdown(f"가중평균 — Ni **{_ctr_eni:.2f}%** · Co **{_ctr_eco:.2f}%** · "
-                                    f"수분 **{_ctr_em:.2f}%**  "
+                        st.markdown(f"가중평균 — Ni **{_ctr_eni:.4f}%** · Co **{_ctr_eco:.4f}%** · "
+                                    f"수분 **{_ctr_em:.4f}%**  "
                                     f"(총 {_ctr_gw:,.0f} kg → 정산 {_ctr_sw:,.1f} kg)")
                         if abs(_ctr_gw - new_wkg) > 1:
                             st.caption(f"⚠️ 컨테이너 중량 합({_ctr_gw:,.0f} kg)이 "
                                        f"선적 중량({new_wkg:,.0f} kg)과 다릅니다.")
                         if st.button("분석값·수분율에 적용 + 저장", key=f"ctr_apply_btn_{real_i}"):
                             st.session_state[f"ctr_apply_{real_i}"] = {
-                                "ni":    round(_ctr_eni, 2),
-                                "co":    round(_ctr_eco, 2),
-                                "moist": round(_ctr_em, 2),
+                                "ni":    round(_ctr_eni, 4),
+                                "co":    round(_ctr_eco, 4),
+                                "moist": round(_ctr_em, 4),
                             }
                             cfg["shipments"][real_i]["container_calc"] = {
                                 "containers": [{"w": r[0], "ni": r[1], "co": r[2], "moist": r[3]}
