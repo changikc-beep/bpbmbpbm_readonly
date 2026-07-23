@@ -1675,6 +1675,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         ni_diff=new_buyer_ni-b.get("ni_content",0)
                         co_diff=new_buyer_co-b.get("co_content",0)
                         st.caption(f"매입사 대비 당사: Ni {ni_diff:+.2f}%p / Co {co_diff:+.2f}%p")
+                    if s.get("container_calc"):
+                        _ctr_saved_cnt = len(s["container_calc"].get("containers", []))
+                        st.caption(f"🧮 컨테이너별 가중평균 계산기로 산출된 값 ({_ctr_saved_cnt}개 컨테이너) — "
+                                   f"아래 팝오버에서 원본 입력값 확인 가능")
                     # 최종정산 기준값 선택 (Ni / Co 각각)
                     _src_opts = ["매입사값", "당사값", "평균"]
                     _ni_src = st.selectbox("Ni 정산 기준",  _src_opts,
@@ -1705,26 +1709,33 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         s.get("other_adj_desc",""),
                         key=f"sh_adjd_{real_i}")
 
-                # ── 컨테이너별 가중평균 계산기 (계산 전용 — 저장되지 않음) ──────
+                # ── 컨테이너별 가중평균 계산기 ──────────────────────────────
                 with st.popover("🧮 컨테이너별 가중평균 계산기"):
                     st.caption("매입사가 컨테이너 단위로 성분분석·정산한 경우: 컨테이너별 값을 "
                                "입력하면 HBL 하나로 반영할 가중평균을 계산합니다. "
-                               "여기 입력값은 저장되지 않으며, '적용'을 누르면 위 "
-                               "분석값·수분율 필드에 채워집니다. 잔여 반올림 차이는 "
-                               "기타 조정에 기재하세요.")
+                               "'적용'을 누르면 위 분석값·수분율 필드에 채워지고, "
+                               "여기 입력한 컨테이너별 원본값도 이 선적건에 함께 저장됩니다. "
+                               "잔여 반올림 차이는 기타 조정에 기재하세요.")
+                    _ctr_saved = s.get("container_calc", {}).get("containers", [])
                     _ctr_n = int(st.number_input("컨테이너 수", min_value=2, max_value=8,
-                                                 value=2, step=1, key=f"ctr_n_{real_i}"))
+                                                 value=len(_ctr_saved) if _ctr_saved else 2,
+                                                 step=1, key=f"ctr_n_{real_i}"))
                     _ctr_rows = []
                     for _cj in range(_ctr_n):
+                        _cr_saved = _ctr_saved[_cj] if _cj < len(_ctr_saved) else {}
                         _cc1, _cc2, _cc3, _cc4 = st.columns(4)
                         _cw = _cc1.number_input(f"#{_cj+1} 중량(kg)", min_value=0.0, step=1.0,
-                                                format="%.0f", key=f"ctr_w_{real_i}_{_cj}")
+                                                format="%.0f", value=float(_cr_saved.get("w", 0.0)),
+                                                key=f"ctr_w_{real_i}_{_cj}")
                         _cn = _cc2.number_input(f"#{_cj+1} Ni(%)", min_value=0.0, step=0.01,
-                                                format="%.2f", key=f"ctr_ni_{real_i}_{_cj}")
+                                                format="%.2f", value=float(_cr_saved.get("ni", 0.0)),
+                                                key=f"ctr_ni_{real_i}_{_cj}")
                         _cc = _cc3.number_input(f"#{_cj+1} Co(%)", min_value=0.0, step=0.01,
-                                                format="%.2f", key=f"ctr_co_{real_i}_{_cj}")
+                                                format="%.2f", value=float(_cr_saved.get("co", 0.0)),
+                                                key=f"ctr_co_{real_i}_{_cj}")
                         _cm = _cc4.number_input(f"#{_cj+1} 수분(%)", min_value=0.0, max_value=20.0,
-                                                step=0.01, format="%.2f", key=f"ctr_m_{real_i}_{_cj}")
+                                                step=0.01, format="%.2f", value=float(_cr_saved.get("moist", 0.0)),
+                                                key=f"ctr_m_{real_i}_{_cj}")
                         _ctr_rows.append((_cw, _cn, _cc, _cm))
                     _ctr_gw = sum(r[0] for r in _ctr_rows)                    # 총 중량
                     _ctr_sw = sum(r[0] * (1 - r[3]/100) for r in _ctr_rows)   # 정산중량 합
@@ -1741,12 +1752,17 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if abs(_ctr_gw - new_wkg) > 1:
                             st.caption(f"⚠️ 컨테이너 중량 합({_ctr_gw:,.0f} kg)이 "
                                        f"선적 중량({new_wkg:,.0f} kg)과 다릅니다.")
-                        if st.button("분석값·수분율에 적용", key=f"ctr_apply_btn_{real_i}"):
+                        if st.button("분석값·수분율에 적용 + 저장", key=f"ctr_apply_btn_{real_i}"):
                             st.session_state[f"ctr_apply_{real_i}"] = {
                                 "ni":    round(_ctr_eni, 2),
                                 "co":    round(_ctr_eco, 2),
                                 "moist": round(_ctr_em, 2),
                             }
+                            cfg["shipments"][real_i]["container_calc"] = {
+                                "containers": [{"w": r[0], "ni": r[1], "co": r[2], "moist": r[3]}
+                                               for r in _ctr_rows]
+                            }
+                            save_cfg(cfg)
                             st.rerun()
                     else:
                         st.caption("컨테이너별 중량을 입력하면 가중평균이 계산됩니다.")
