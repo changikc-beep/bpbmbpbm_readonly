@@ -1762,15 +1762,20 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _final_idx_b = _st["final_idx"]
                 _ld_for_idx  = s.get("loading_date","")
 
-                if b and new_pm!="—" and new_pm in hm_all_b:
+                _snapped_final = s.get("final_amount_usd")
+
+                if b and new_pm!="—":
                     _prov_idx_month = _resolve_idx_month(_prov_idx_b, _ld_for_idx, new_pm, new_pm)
                     if _prov_idx_month not in hm_all_b:
                         _prov_idx_month = new_pm
-                    pm_data=hm_all_b[_prov_idx_month]
-                    _,_,_,_prov_pkg_raw=bp_price(pm_data["ni_index"],pm_data["co_index"],
-                        b.get("ni_content",0),b.get("co_content",0),
-                        _ni_pay, _co_pay)
-                    prov_pkg = round(_prov_pkg_raw, 2)
+                    pm_data=hm_all_b.get(_prov_idx_month)
+                    if pm_data:
+                        _,_,_,_prov_pkg_raw=bp_price(pm_data["ni_index"],pm_data["co_index"],
+                            b.get("ni_content",0),b.get("co_content",0),
+                            _ni_pay, _co_pay)
+                        prov_pkg = round(_prov_pkg_raw, 2)
+                    else:
+                        prov_pkg = None
                     # Invoice 총액 → Provisional 지급액
                     prov_paid = new_iusd * (_prov_pct_val / 100.0)
                     st.markdown("---")
@@ -1785,12 +1790,20 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if _ct_hint:
                             st.caption(f"📋 계약 조건 적용: {', '.join(_ct_hint)}")
 
-                    if new_fm!="—" and new_fm in hm_all_b:
-                        # 확정산 계산
+                    if not pm_data and b.get("custom_index"):
+                        st.warning(f"⚠️ {b.get('name','')} 전용 INDEX 이력에 {_prov_idx_month}월 값이 없습니다 — "
+                                   f"설정·관리 > INDEX 이력에서 등록하면 아래 단가 계산이 표시됩니다.")
+
+                    _final_idx_month = None
+                    fm_data = None
+                    if new_fm != "—":
                         _final_idx_month = _resolve_idx_month(_final_idx_b, _ld_for_idx, new_pm, new_fm)
                         if _final_idx_month not in hm_all_b:
                             _final_idx_month = new_fm
-                        fm_data=hm_all_b[_final_idx_month]
+                        fm_data = hm_all_b.get(_final_idx_month)
+
+                    if fm_data:
+                        # 확정산 계산 (INDEX 값 조회 가능)
                         _,_,_,_final_pkg_raw=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             _eff_ni,_eff_co,
                             _ni_pay, _co_pay)
@@ -1799,9 +1812,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         # 매입사에 따라 단가 반올림 시점이 다름: 기본은 원단가 사용, 매입사 설정 시 반올림 단가 사용
                         _rbm = b.get("round_price_before_moisture", False) if b else False
                         final_amt=round((final_pkg if _rbm else _final_pkg_raw)*final_w, 2)
-                        index_diff=(final_pkg-prov_pkg)
+                        index_diff=(final_pkg-prov_pkg) if prov_pkg is not None else None
                         # Final 스냅샷 값 (저장된 값 우선)
-                        _snapped_final = s.get("final_amount_usd")
                         _display_final = _snapped_final if _snapped_final else final_amt
                         net_settle=_display_final - prov_paid + new_other_adj
 
@@ -1843,9 +1855,11 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 save_cfg(cfg); st.toast("✅ 재계산 완료"); st.rerun()
 
                         # ── 정산 흐름표 ───────────────────────────────────────
+                        _prov_pkg_disp   = f"{prov_pkg:.2f}" if prov_pkg is not None else "—"
+                        _index_diff_disp = f"{index_diff:+.2f}" if index_diff is not None else "—"
                         _fl_rows = [
                             f"| ① | Invoice 발행 | **\\${new_iusd:,.2f}** | 단가 \\${_inv_per_kg:.2f}/kg · {new_wkg:,.0f} kg |",
-                            f"| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −\\${prov_paid:,.2f} | INDEX {_prov_idx_month} · \\${prov_pkg:.2f}/kg |",
+                            f"| ② | 가정산 수령 ({_prov_pct_val:.0f}%) | −\\${prov_paid:,.2f} | INDEX {_prov_idx_month} · \\${_prov_pkg_disp}/kg |",
                             f"| | **가정산 후 미수잔액** | **\\${new_iusd - prov_paid:,.2f}** | |",
                             f"| ③ | 최종정산액{'(확정)' if _snapped_final else '(계산)'} | \\${_display_final:,.2f} | INDEX {_final_idx_month} · \\${final_pkg:.2f}/kg · {_ni_src}/{_co_src} |",
                         ]
@@ -1856,14 +1870,15 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _fl_rows.append(f"| **④** | **{_fl_net_lbl}** | **\\${net_settle:+,.2f}** | {_fl_net_icon} |")
                         st.markdown("| 단계 | 항목 | 금액 | 비고 |\n|:----:|------|-----:|------|\n" + "\n".join(_fl_rows))
 
-                        # ── Invoice vs 최종 비교표 ────────────────────────────
-                        _ni_diff  = _eff_ni  - b.get("ni_content", 0)
-                        _co_diff  = _eff_co  - b.get("co_content", 0)
-                        _idx_ni_d = fm_data["ni_index"] - pm_data["ni_index"]
-                        _idx_co_d = fm_data["co_index"] - pm_data["co_index"]
-                        _wt_diff  = final_w - new_wkg
-                        with st.expander("🔍 Invoice ↔ 최종정산 변동 분석", expanded=False):
-                            st.markdown(f"""
+                        # ── Invoice vs 최종 비교표 (Prov/Final INDEX가 모두 조회 가능할 때만) ──
+                        if pm_data:
+                            _ni_diff  = _eff_ni  - b.get("ni_content", 0)
+                            _co_diff  = _eff_co  - b.get("co_content", 0)
+                            _idx_ni_d = fm_data["ni_index"] - pm_data["ni_index"]
+                            _idx_co_d = fm_data["co_index"] - pm_data["co_index"]
+                            _wt_diff  = final_w - new_wkg
+                            with st.expander("🔍 Invoice ↔ 최종정산 변동 분석", expanded=False):
+                                st.markdown(f"""
 | 구분 | Invoice 기준 | 최종정산 기준 | 변동 | 비고 |
 |------|:------------:|:------------:|:----:|------|
 | INDEX 기준월 | {_prov_idx_month} | {_final_idx_month} | — | |
@@ -1872,17 +1887,44 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 | Ni 함유량 | {b.get('ni_content',0):.2f}% (당사) | {new_buyer_ni:.2f}% (매입사) · **{round(_eff_ni,2):.2f}%** 적용 | {_ni_diff:+.2f}%p | 기준: {_ni_src} |
 | Co 함유량 | {b.get('co_content',0):.2f}% (당사) | {new_buyer_co:.2f}% (매입사) · **{round(_eff_co,2):.2f}%** 적용 | {_co_diff:+.2f}%p | 기준: {_co_src} |
 | 정산 중량 | {new_wkg:,.0f} kg | {final_w:,.1f} kg | {_wt_diff:+,.1f} kg | 수분 {new_moisture:.1f}% 공제 |
-| 단가 ($/kg) | **\${prov_pkg:.2f}** | **\${final_pkg:.2f}** | **\${index_diff:+.2f}** | |
+| 단가 ($/kg) | **\${_prov_pkg_disp}** | **\${final_pkg:.2f}** | **\${_index_diff_disp}** | |
 | 정산 합계 | \${new_iusd:,.2f} | \${_display_final:,.2f} | **\${_inv_vs_final:+,.2f}** | |
 """)
+                        else:
+                            st.caption(f"ℹ️ Provisional월({_prov_idx_month}) INDEX 이력이 없어 변동 분석은 생략합니다.")
+                    elif _snapped_final:
+                        # Final월 INDEX 이력은 없지만 이미 확정된 스냅샷은 그대로 표시 (매입사 자체 INDEX 미등록 등)
+                        final_w = new_wkg * (1 - new_moisture / 100)
+                        _display_final = float(_snapped_final)
+                        net_settle = _display_final - prov_paid + new_other_adj
+                        st.markdown("**📋 정산 요약 (확정)**")
+                        rs1, rs2, rs3 = st.columns(3)
+                        _inv_per_kg = new_iusd / new_wkg if new_wkg else 0
+                        _net_col = "#4ade80" if net_settle >= 0 else "#f87171"
+                        rs1.markdown(_kpi_card("① Invoice 총액", f"${new_iusd:,.2f}",
+                                               f"단가 ${_inv_per_kg:.2f}/kg  ·  {new_wkg:,.0f} kg"), unsafe_allow_html=True)
+                        rs2.markdown(_kpi_card("③ 최종정산액 (확정)", f"${_display_final:,.2f}",
+                                               f"Final {new_fm}"), unsafe_allow_html=True)
+                        _net_lbl = "④ 확정산 청구액" if net_settle >= 0 else "④ 확정산 반환액"
+                        rs3.markdown(_kpi_card(_net_lbl, f"${abs(net_settle):,.2f}",
+                                               f"KRW ₩{net_settle*XR:+,.0f}", val_color=_net_col), unsafe_allow_html=True)
+                        if new_other_adj:
+                            st.caption(f"기타 조정: ${new_other_adj:+,.2f}  {new_other_desc or ''}")
+                        st.caption(f"ℹ️ {b.get('name','')} 전용 INDEX 이력에 {_final_idx_month}월 값이 없어 "
+                                   f"단가 상세·변동 분석은 표시하지 않습니다 — 확정액 자체는 저장된 값입니다.")
+                    elif new_fm != "—":
+                        st.info(f"Final월({new_fm}) INDEX 이력이 등록되지 않아 확정산을 계산할 수 없습니다.")
                     else:
-                        # Provisional만 있는 경우
-                        _prov_label2 = f"가정산 수령 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
-                        st.info(
-                            f"Prov INDEX {_prov_idx_month}: **\\${prov_pkg:.2f}/kg**  |  "
-                            f"Invoice 총액: **\\${new_iusd:,.2f}**  |  {_prov_label2}: **\\${prov_paid:,.2f}**  "
-                            f"— Final 월을 선택하면 확정산 청구액을 계산합니다."
-                        )
+                        # Provisional만 있는 경우 (Final월 미지정)
+                        if pm_data:
+                            _prov_label2 = f"가정산 수령 ({_prov_pct_val:.0f}%)" if _prov_pct_val < 100 else "Provisional 정산액"
+                            st.info(
+                                f"Prov INDEX {_prov_idx_month}: **\\${prov_pkg:.2f}/kg**  |  "
+                                f"Invoice 총액: **\\${new_iusd:,.2f}**  |  {_prov_label2}: **\\${prov_paid:,.2f}**  "
+                                f"— Final 월을 선택하면 확정산 청구액을 계산합니다."
+                            )
+                        else:
+                            st.caption(f"ℹ️ Provisional월({_prov_idx_month}) INDEX 이력이 없어 가정산 단가를 계산할 수 없습니다.")
 
                 ca,cb=st.columns(2)
                 with ca:
