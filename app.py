@@ -1984,10 +1984,11 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if _save_err:
                             for _e in _save_err: st.error(_e)
                         else:
-                            _prev_stat = s.get("status","provisional")
-                            # Final 스냅샷: provisional → final 전환 시 최종정산액 확정
+                            # Final 스냅샷: final 상태인데 스냅샷이 없으면 저장 시점에 확정
+                            # (앱에서 직접 전환한 경우뿐 아니라, 구글시트 동기화로 이미
+                            #  final 상태가 된 뒤 스냅샷만 비어있는 경우도 포함)
                             _snap_final = s.get("final_amount_usd")
-                            if new_stat == "final" and _prev_stat != "final" and not _snap_final:
+                            if new_stat == "final" and not _snap_final:
                                 # 현재 계산값으로 스냅샷 저장
                                 _snap_ct  = _get_contract_for_shipment(cfg, s.get("id",""))
                                 _snap_st  = _settle_terms(_snap_ct, b)
