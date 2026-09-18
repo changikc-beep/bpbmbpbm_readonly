@@ -5301,10 +5301,12 @@ def _sync_from_gsheets(cfg_ref):
                 # Provisional월/Final월/상태/ETD/ETA/수출비
                 # 확장 12열(선택, 빈칸=기존값 유지): 수분(%)/매입사Ni/매입사Co/Ni기준/Co기준/
                 # 기타조정(USD)/조정사유/가정산입금일/가정산입금액/확정산입금일/확정산입금액/계약ID
-                row = [c.strip().replace("\r","") for c in row] + [""] * 24
+                row = [c.strip().replace("\r","") for c in row] + [""] * 25
                 hbl, inv_no, ld, buyer_str, wkg, iusd, pm, fm, status, etd, eta, eu_cost = row[:12]
                 _x = row[12:24]
                 _extra = {}
+                if row[24].strip():                       # 25열: 비고 (빈칸=기존값 유지)
+                    _extra["notes"] = row[24].strip()
                 try:
                     if _x[0].strip():  _extra["moisture_pct"]     = _xf(_x[0]) or None
                     if _x[1].strip():  _extra["buyer_ni_content"] = _xf(_x[1])
@@ -5596,7 +5598,7 @@ def _sync_from_gsheets(cfg_ref):
                     "scs": _to_float(scs) if scs else None,
                     "notes": notes,
                 })
-            b_add = b_upd = 0
+            b_add = b_upd = b_adopt = 0
             for (sid, pid, scid), srows in _grouped.items():
                 cond     = (_proc_cond.get(pid, {}) or {}).get(scid, {}) or {}
                 existing = [r for r in ph_ref if r.get("shipment_id") == sid
@@ -5618,6 +5620,20 @@ def _sync_from_gsheets(cfg_ref):
                     if sr["notes"]:           upd["notes"]                = sr["notes"]
                     if i < len(existing):
                         existing[i].update(upd); b_upd += 1
+                        continue
+                    # 신규 추가 전: 같은 임가공사·스크랩의 '미연결(또는 고아)' 배치가 생산량 2% 이내로
+                    # 일치하면 새로 만들지 않고 그 배치를 이 HBL에 연결한다 (앱에서 먼저 입력해 둔
+                    # 배치와 시트 행이 중복되는 것을 방지).
+                    _adopt = next((r for r in ph_ref
+                                   if r.get("processor_id") == pid and r.get("scrap_type_id") == scid
+                                   and (not r.get("shipment_id") or r.get("shipment_id") not in _ship_by_id)
+                                   and out_v > 0 and abs(float(r.get("output_kg") or 0) - out_v) / out_v <= 0.02),
+                                  None)
+                    if _adopt is not None:
+                        _adopt.update(upd); _adopt["shipment_id"] = sid
+                        if not _adopt.get("buyer_id"):
+                            _adopt["buyer_id"] = _ship_by_id.get(sid, {}).get("buyer_id", "")
+                        b_adopt += 1
                     else:
                         ph_ref.append({
                             "id": str(uuid.uuid4())[:8], "shipment_id": sid,
@@ -5631,7 +5647,10 @@ def _sync_from_gsheets(cfg_ref):
                             "notes": sr["notes"],
                         })
                         b_add += 1
-            _b_msg = f"배치: 추가 {b_add}건 / 업데이트 {b_upd}건 (시트에 없는 기존 배치는 유지)"
+            _b_msg = f"배치: 추가 {b_add}건 / 업데이트 {b_upd}건"
+            if b_adopt:
+                _b_msg += f" / 미연결 배치 {b_adopt}건을 HBL에 연결"
+            _b_msg += " (시트에 없는 기존 배치는 유지)"
             if _b_skip:
                 _b_msg += f" ⚠️ HBL·임가공사·스크랩명 매핑 실패 {len(_b_skip)}건: {', '.join(_b_skip[:5])}"
             log.append(_b_msg)
@@ -5857,7 +5876,7 @@ with t_idx:
             "**선적 탭 (12열 + 확장 12열, 빈칸=기존값 유지)**  \n"
             "HBL / Invoice No / 출하일 / 매입사 / 중량 / Invoice금액 / Prov월 / Final월 / 상태 / ETD / ETA / 수출비 / "
             "수분(%) / 매입사Ni / 매입사Co / Ni기준 / Co기준 / 기타조정 / 조정사유 / "
-            "가정산입금일 / 가정산입금액 / 확정산입금일 / 확정산입금액 / 계약ID  \n"
+            "가정산입금일 / 가정산입금액 / 확정산입금일 / 확정산입금액 / 계약ID / 비고(25열)  \n"
             "**배치 탭 (9열)** HBL / 임가공사 / 스크랩 유형 / 투입(kg) / 생산(kg) / 임가공비 / BP매각단가 / 스크랩매각단가 / 비고  \n"
             "**컨테이너 탭 (7열)** HBL / 컨테이너번호 / 중량(kg) / Invoice(USD) / Ni(%) / Co(%) / 수분(%)  \n"
             "**INDEX 탭** 기준월 / Ni / Co / 매입사(빈칸=표준) · **환율 탭** 기준월 / EUR-USD / USD-KRW · "
