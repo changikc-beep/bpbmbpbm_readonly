@@ -5292,11 +5292,35 @@ def _sync_from_gsheets(cfg_ref):
             added, updated = 0, 0
             _status_trans  = {}   # "provisional→final" 같은 전이 건수
             _snap_reset_cnt = 0
+            _SRC_OK = ("매입사값", "당사값", "평균")
+            def _xf(v):            # 숫자 셀 → float, 빈칸 → None
+                return _to_float(v) if v.strip() else None
+            _x_bad = 0
             for row in rows[1:]:
-                # 열 수 보정 — HBL/Invoice No/출하일/매입사/중량/Invoice금액/
-                # Provisional월/Final월/상태/ETD/ETA/수출비 (12열)
-                row = [c.strip().replace("\r","") for c in row] + [""] * 12
+                # 열 수 보정 — 기본 12열: HBL/Invoice No/출하일/매입사/중량/Invoice금액/
+                # Provisional월/Final월/상태/ETD/ETA/수출비
+                # 확장 12열(선택, 빈칸=기존값 유지): 수분(%)/매입사Ni/매입사Co/Ni기준/Co기준/
+                # 기타조정(USD)/조정사유/가정산입금일/가정산입금액/확정산입금일/확정산입금액/계약ID
+                row = [c.strip().replace("\r","") for c in row] + [""] * 24
                 hbl, inv_no, ld, buyer_str, wkg, iusd, pm, fm, status, etd, eta, eu_cost = row[:12]
+                _x = row[12:24]
+                _extra = {}
+                try:
+                    if _x[0].strip():  _extra["moisture_pct"]     = _xf(_x[0]) or None
+                    if _x[1].strip():  _extra["buyer_ni_content"] = _xf(_x[1])
+                    if _x[2].strip():  _extra["buyer_co_content"] = _xf(_x[2])
+                    if _x[3].strip() in _SRC_OK: _extra["ni_content_src"] = _x[3].strip()
+                    if _x[4].strip() in _SRC_OK: _extra["co_content_src"] = _x[4].strip()
+                    if _x[5].strip():  _extra["other_adj_usd"]    = _xf(_x[5]) or None
+                    if _x[6].strip():  _extra["other_adj_desc"]   = _x[6].strip()
+                    if _valid_date_str(_x[7].strip()):  _extra["prov_paid_date"]  = _x[7].strip()
+                    if _x[8].strip():  _extra["prov_paid_usd"]    = _xf(_x[8]) or None
+                    if _valid_date_str(_x[9].strip()):  _extra["final_paid_date"] = _x[9].strip()
+                    if _x[10].strip(): _extra["final_paid_usd"]   = _xf(_x[10]) or None
+                    if _x[11].strip(): _extra["linked_contract_id"] = _x[11].strip()
+                except Exception:
+                    _x_bad += 1
+                    _extra = {}
                 # 날짜 형식 검증(YYYY-MM-DD) — 형식이 깨진 값이 그대로 저장되면
                 # 이후 화면에서 날짜로 자동 변환하다 OutOfBoundsDatetime 등으로 크래시함
                 if not _valid_date_str(ld):
@@ -5320,6 +5344,7 @@ def _sync_from_gsheets(cfg_ref):
                     "final_month": fm or "—",
                     "status":      status or "provisional",
                 }
+                entry.update(_extra)          # 확장 열: 채워진 값만 반영
                 if hbl and hbl in hbl_idx:
                     # HBL 있고 기존 항목 존재 → 업데이트
                     _sync_idx = hbl_idx[hbl]
@@ -5359,18 +5384,17 @@ def _sync_from_gsheets(cfg_ref):
                             hbl_idx[hbl] = _match_idx
                         updated += 1
                     else:
-                        entry.update({
-                            "id": str(uuid.uuid4())[:8],
-                            "notes": "",
-                            "moisture_pct": None, "buyer_ni_content": None,
-                            "buyer_co_content": None,
-                            "other_adj_usd": None, "other_adj_desc": "",
-                        })
+                        entry["id"] = str(uuid.uuid4())[:8]
+                        for _dk, _dv in {"notes": "", "moisture_pct": None, "buyer_ni_content": None,
+                                         "buyer_co_content": None, "other_adj_usd": None,
+                                         "other_adj_desc": ""}.items():
+                            entry.setdefault(_dk, _dv)      # 확장 열로 이미 채워진 값은 유지
                         cfg_ref.setdefault("shipments", []).append(entry)
                         if hbl:
                             hbl_idx[hbl] = len(cfg_ref["shipments"]) - 1
                         added += 1
-            log.append(f"선적: 추가 {added}건 / 업데이트 {updated}건")
+            log.append(f"선적: 추가 {added}건 / 업데이트 {updated}건"
+                       + (f" ⚠️ 확장 열 숫자 오류로 무시 {_x_bad}행" if _x_bad else ""))
             if _status_trans:
                 _trans_str = ", ".join(f"{k} {v}건" for k, v in sorted(_status_trans.items()))
                 log.append(f"상태 전이: {_trans_str}")
@@ -5378,6 +5402,65 @@ def _sync_from_gsheets(cfg_ref):
                 log.append(f"확정 스냅샷 초기화: {_snap_reset_cnt}건 (재계산 필요 — 선적 정산 탭에서 확인)")
     except Exception as e:
         log.append(f"선적 탭 오류: {e}")
+
+    # ── ①-b 컨테이너 탭 (선택) ────────────────────────────────────────────────
+    # 열: HBL / 컨테이너번호 / 중량(kg) / Invoice(USD) / Ni(%) / Co(%) / 수분(%)
+    # HBL별로 중량·Invoice 합계, Ni·Co·수분은 '정산중량' 가중평균(컨테이너 계산기와 동일 식,
+    # 소수 4자리)으로 산출해 선적건에 반영하고, 원본 행은 container_calc 에 저장한다.
+    # 이 탭에 있는 HBL은 선적 탭의 중량·Invoice·분석값보다 우선한다.
+    try:
+        rows = sh.worksheet("컨테이너").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _hbl_to_ship = {s.get("hbl","").strip(): s for s in cfg_ref.get("shipments", []) if s.get("hbl","").strip()}
+            _ctr_by_hbl  = {}
+            _ctr_skip    = set()
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 7
+                hbl, cno, w, inv, ni, co, mo = row[:7]
+                if not hbl or not w:
+                    continue
+                if hbl not in _hbl_to_ship:
+                    _ctr_skip.add(hbl)
+                    continue
+                _ctr_by_hbl.setdefault(hbl, []).append({
+                    "no": cno, "w": _to_float(w), "inv": _to_float(inv) if inv else 0.0,
+                    "ni": _to_float(ni) if ni else None, "co": _to_float(co) if co else None,
+                    "moist": _to_float(mo) if mo else 0.0,
+                })
+            _ctr_hbl_cnt = 0
+            for hbl, cl in _ctr_by_hbl.items():
+                s = _hbl_to_ship[hbl]
+                gw = sum(c["w"] for c in cl)
+                if gw <= 0:
+                    continue
+                s["weight_kg"] = round(gw, 3)
+                inv_sum = sum(c["inv"] for c in cl)
+                if inv_sum > 0:
+                    s["invoice_usd"] = round(inv_sum, 2)
+                sw = sum(c["w"] * (1 - c["moist"] / 100) for c in cl)
+                if sw > 0:
+                    s["moisture_pct"] = round((1 - sw / gw) * 100, 4) or None
+                    _ni_rows = [c for c in cl if c["ni"] is not None]
+                    _co_rows = [c for c in cl if c["co"] is not None]
+                    if _ni_rows:
+                        _swn = sum(c["w"] * (1 - c["moist"] / 100) for c in _ni_rows)
+                        s["buyer_ni_content"] = round(sum(c["ni"] * c["w"] * (1 - c["moist"] / 100) for c in _ni_rows) / _swn, 4)
+                    if _co_rows:
+                        _swc = sum(c["w"] * (1 - c["moist"] / 100) for c in _co_rows)
+                        s["buyer_co_content"] = round(sum(c["co"] * c["w"] * (1 - c["moist"] / 100) for c in _co_rows) / _swc, 4)
+                s["container_calc"] = {"containers": [
+                    {"no": c["no"], "w": c["w"], "ni": c["ni"] or 0.0, "co": c["co"] or 0.0, "moist": c["moist"]}
+                    for c in cl]}
+                _ctr_hbl_cnt += 1
+            _ctr_msg = f"컨테이너: {sum(len(v) for v in _ctr_by_hbl.values())}행 → HBL {_ctr_hbl_cnt}건 합산·가중평균 반영"
+            if _ctr_skip:
+                _ctr_msg += f" ⚠️ 선적 탭에 없는 HBL 스킵: {', '.join(sorted(_ctr_skip)[:5])}"
+            log.append(_ctr_msg)
+        except Exception as e:
+            log.append(f"컨테이너 탭 오류: {e}")
 
     # ── ② 입고 탭 ────────────────────────────────────────────────────────────
     try:
@@ -5553,6 +5636,128 @@ def _sync_from_gsheets(cfg_ref):
         except Exception as e:
             log.append(f"배치 탭 오류: {e}")
 
+    # ── ⑤ INDEX 탭 (선택): 기준월 / Ni / Co / 매입사(빈칸=표준) ───────────────
+    try:
+        rows = sh.worksheet("INDEX").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _ix_std = _ix_alt = 0; _ix_skip = set(); _ix_hint = set()
+            _buyer_by_id = {b["id"]: b for b in buyers}
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 4
+                mo, ni, co, byr = row[:4]
+                if not mo or not ni or not co:
+                    continue
+                try:
+                    datetime.strptime(mo, "%Y-%m")
+                except ValueError:
+                    _ix_skip.add(mo); continue
+                rec = {"month": mo, "ni_index": _to_float(ni), "co_index": _to_float(co)}
+                if byr:
+                    bid = _match_buyer_id(byr, buyers)
+                    if not bid:
+                        _ix_skip.add(byr); continue
+                    alt = cfg_ref.setdefault("index_history_alt", {}).setdefault(bid, [])
+                    alt[:] = sorted([h for h in alt if h["month"] != mo] + [rec], key=lambda x: x["month"])
+                    if not _buyer_by_id.get(bid, {}).get("custom_index"):
+                        _ix_hint.add(_buyer_by_id.get(bid, {}).get("name", byr))
+                    _ix_alt += 1
+                else:
+                    hist = cfg_ref.setdefault("index_history", [])
+                    hist[:] = sorted([h for h in hist if h["month"] != mo] + [rec], key=lambda x: x["month"])
+                    _ix_std += 1
+            _ix_msg = f"INDEX: 표준 {_ix_std}건 / 매입사별 {_ix_alt}건"
+            if _ix_hint:
+                _ix_msg += f" ⚠️ 매입사 관리에서 '자체 INDEX 사용'을 켜야 적용: {', '.join(sorted(_ix_hint))}"
+            if _ix_skip:
+                _ix_msg += f" ⚠️ 형식·매입사 오류 스킵: {', '.join(sorted(_ix_skip)[:5])}"
+            log.append(_ix_msg)
+        except Exception as e:
+            log.append(f"INDEX 탭 오류: {e}")
+
+    # ── ⑥ 환율 탭 (선택): 기준월 / EUR-USD / USD-KRW ──────────────────────────
+    try:
+        rows = sh.worksheet("환율").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _fx_e = _fx_k = 0
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 3
+                mo, eur, krw = row[:3]
+                if not mo:
+                    continue
+                try:
+                    datetime.strptime(mo, "%Y-%m")
+                except ValueError:
+                    continue
+                if eur:
+                    lst = cfg_ref.setdefault("eur_usd_rates", [])
+                    lst[:] = sorted([r for r in lst if r["month"] != mo] + [{"month": mo, "rate": round(_to_float(eur), 4)}],
+                                    key=lambda x: x["month"]); _fx_e += 1
+                if krw:
+                    lst = cfg_ref.setdefault("usd_krw_rates", [])
+                    lst[:] = sorted([r for r in lst if r["month"] != mo] + [{"month": mo, "rate": _to_float(krw)}],
+                                    key=lambda x: x["month"]); _fx_k += 1
+            log.append(f"환율: EUR/USD {_fx_e}건 / USD/KRW {_fx_k}건")
+        except Exception as e:
+            log.append(f"환율 탭 오류: {e}")
+
+    # ── ⑦ 판관비 탭 (선택): 기준월 / 간접 판관비 / 기타 원가 ───────────────────
+    try:
+        rows = sh.worksheet("판관비").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _sg_n = 0
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 3
+                mo, sga, oth = row[:3]
+                if not mo or not (sga or oth):
+                    continue
+                try:
+                    datetime.strptime(mo, "%Y-%m")
+                except ValueError:
+                    continue
+                lst = cfg_ref.setdefault("sga_monthly", [])
+                lst[:] = sorted([r for r in lst if r["month"] != mo]
+                                + [{"month": mo, "sga": _to_float(sga) if sga else 0.0, "other": _to_float(oth) if oth else 0.0}],
+                                key=lambda x: x["month"]); _sg_n += 1
+            log.append(f"판관비: {_sg_n}개월")
+        except Exception as e:
+            log.append(f"판관비 탭 오류: {e}")
+
+    # ── ⑧ 기초재고 탭 (선택): 스크랩유형 / 기준일 / 수량(kg) / 단가($/kg) / 톤백 ──
+    try:
+        rows = sh.worksheet("기초재고").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _op_n = 0; _op_skip = set()
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 5
+                sc_nm, dt, qty, uc, tb = row[:5]
+                if not sc_nm or not qty:
+                    continue
+                scid = scrap_map.get(sc_nm)
+                if not scid or not _valid_date_str(dt) or not uc:
+                    _op_skip.add(sc_nm); continue
+                inv = cfg_ref.setdefault("raw_material_inventory", {}).setdefault(scid, {"opening": None, "purchases": []})
+                inv["opening"] = {"date": dt, "quantity_kg": _to_float(qty), "unit_cost": _to_float(uc),
+                                  "ton_bags": int(_to_float(tb)) if tb else 0}
+                _op_n += 1
+            _op_msg = f"기초재고: {_op_n}건"
+            if _op_skip:
+                _op_msg += f" ⚠️ 스크랩명·기준일·단가 오류 스킵: {', '.join(sorted(_op_skip))}"
+            log.append(_op_msg)
+        except Exception as e:
+            log.append(f"기초재고 탭 오류: {e}")
+
     return True, "\n".join(log)
 
 
@@ -5644,14 +5849,19 @@ with t_idx:
             "- 입고: 스크랩 유형별 구매 이력 전체 교체 (기초재고 보존)  \n"
             "- 출고: (출고유형, 스크랩유형) 조합 단위 교체  \n"
             "- 배치(선택): (HBL, 임가공사, 스크랩) 조합 기준 upsert — 시트에 없는 배치는 유지  \n"
+            "- 컨테이너(선택): HBL별 중량·Invoice 합산, Ni·Co·수분 가중평균 → 선적건 반영  \n"
+            "- INDEX / 환율 / 판관비 / 기초재고(선택): 월·유형 기준 upsert  \n"
             "  \n"
-            "**선적 탭 열 순서 (12열)**  \n"
-            "HBL / Invoice No / 출하일 / 매입사 / 중량 / Invoice금액 / "
-            "Provisional월 / Final월 / 상태 / ETD / ETA / 수출비  \n"
-            "**배치 탭 열 순서 (9열)**  \n"
-            "HBL / 임가공사 / 스크랩 유형 / 투입(kg) / 생산(kg) / 임가공비($/kg) / "
-            "BP매각단가($/kg) / 스크랩매각단가($/kg) / 비고 — 빈 셀은 기존값·계약값 유지  \n"
+            "**선적 탭 (12열 + 확장 12열, 빈칸=기존값 유지)**  \n"
+            "HBL / Invoice No / 출하일 / 매입사 / 중량 / Invoice금액 / Prov월 / Final월 / 상태 / ETD / ETA / 수출비 / "
+            "수분(%) / 매입사Ni / 매입사Co / Ni기준 / Co기준 / 기타조정 / 조정사유 / "
+            "가정산입금일 / 가정산입금액 / 확정산입금일 / 확정산입금액 / 계약ID  \n"
+            "**배치 탭 (9열)** HBL / 임가공사 / 스크랩 유형 / 투입(kg) / 생산(kg) / 임가공비 / BP매각단가 / 스크랩매각단가 / 비고  \n"
+            "**컨테이너 탭 (7열)** HBL / 컨테이너번호 / 중량(kg) / Invoice(USD) / Ni(%) / Co(%) / 수분(%)  \n"
+            "**INDEX 탭** 기준월 / Ni / Co / 매입사(빈칸=표준) · **환율 탭** 기준월 / EUR-USD / USD-KRW · "
+            "**판관비 탭** 기준월 / 판관비 / 기타 · **기초재고 탭** 스크랩유형 / 기준일 / 수량 / 단가 / 톤백  \n"
             "  \n"
+            "시트에서 상태를 final로 바꾼 건은 동기화 후 선적 정산 추적의 '확정액 미확정' 목록에서 일괄 확정하세요.  \n"
             "ℹ️ **미리보기** 후 실제 동기화 버튼이 활성화됩니다."
         )
 
