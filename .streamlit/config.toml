@@ -1,4 +1,6 @@
+# base = "dark" pinned: app.py's custom CSS hard-codes dark surfaces/text colours.
 [theme]
+base                     = "dark"
 primaryColor             = "#2383e2"
 backgroundColor          = "#191919"
 secondaryBackgroundColor = "#252525"

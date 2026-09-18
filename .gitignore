@@ -1,0 +1,10 @@
+# Credentials / local data — never commit (service-account key, local config backup)
+*.json
+!.devcontainer/devcontainer.json
+.streamlit/secrets.toml
+
+# Local artefacts
+__pycache__/
+*.pyc
+.claude/
+*.sLDH
