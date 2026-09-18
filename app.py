@@ -976,12 +976,49 @@ def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
             f'letter-spacing:-.5px;line-height:1.15">{value}</div>'
             f'{_sub_h}</div>')
 
-def _avg_conv_rate(cfg, scrap_id):
-    """스크랩 유형별 평균 전환율(%) — 처리 이력 실적 기반."""
+def _conv_rate_for(cfg, scrap_id, processor_id=None):
+    """전환율(%)과 그 출처 반환. 우선순위: 처리 이력 실적 평균 → 임가공사 계약 조건 → 기본 80%.
+    (예전엔 실적이 없으면 조용히 80%를 가정했음 — 출처를 함께 돌려줘 화면에 표시한다.)"""
     rates = [float(r["conversion_rate_pct"])
              for r in cfg.get("processing_history", [])
-             if r.get("scrap_type_id") == scrap_id and r.get("conversion_rate_pct")]
-    return round(sum(rates) / len(rates), 1) if rates else 80.0
+             if r.get("scrap_type_id") == scrap_id and r.get("conversion_rate_pct")
+             and (processor_id is None or r.get("processor_id") == processor_id)]
+    if rates:
+        return round(sum(rates) / len(rates), 1), "실적"
+    for p in cfg.get("processors", []):
+        if processor_id and p.get("id") != processor_id:
+            continue
+        cv = (p.get("conditions", {}).get(scrap_id, {}) or {}).get("conversion_rate")
+        if cv:
+            return float(cv), "계약"
+    return 80.0, "기본값"
+
+def _avg_conv_rate(cfg, scrap_id):
+    """스크랩 유형별 전환율(%) — _conv_rate_for 의 값만 (하위호환)."""
+    return _conv_rate_for(cfg, scrap_id)[0]
+
+def _finished_goods_kg(cfg, scrap_id=None, processor_id=None):
+    """완제품(BP/BM) 재고 추정(kg) = 선적건에 연결되지 않은 배치의 생산량 합.
+    배치가 HBL에 연결되는 순간 '선적됨'으로 보므로, 미연결 배치 생산량이 곧
+    창고에 쌓인 완제품이다. scrap_id/processor_id 로 범위를 좁힐 수 있다."""
+    valid_sids = {s.get("id") for s in cfg.get("shipments", [])}
+    total = 0.0
+    for r in cfg.get("processing_history", []):
+        if scrap_id and r.get("scrap_type_id") != scrap_id:
+            continue
+        if processor_id and r.get("processor_id") != processor_id:
+            continue
+        sid = r.get("shipment_id", "")
+        if sid and sid in valid_sids:
+            continue
+        total += float(r.get("output_kg", 0) or 0)
+    return total
+
+def _sga_totals(cfg):
+    """저장된 월별 간접 판관비·기타 원가 합계 (USD). 반환: (판관비 합, 기타 합)."""
+    rows = cfg.get("sga_monthly", [])
+    return (sum(float(r.get("sga") or 0) for r in rows),
+            sum(float(r.get("other") or 0) for r in rows))
 
 def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
     """임가공사에 있는 미처리 원료 추정량(kg) = 출하 누계 − 처리 이력 투입 누계."""
@@ -1057,14 +1094,15 @@ def _contract_metrics(cfg, contract):
     max_mt      = qty_mt * (1 + tol / 100)
     fulfill_pct = (shipped_mt / qty_mt * 100) if qty_mt else 0
     remaining_mt = max(0.0, min_mt - shipped_mt)
-    conv = _avg_conv_rate(cfg, scrap_id)
+    _ct_proc_id    = contract.get("processor_id") or None
+    conv, conv_src = _conv_rate_for(cfg, scrap_id, _ct_proc_id)
     _, _, _lot_rem = _fifo_lot_trace(cfg, scrap_id)
     warehouse_raw_kg  = sum(lot.get("remain", 0) for lot in _lot_rem)
     warehouse_bp_mt   = warehouse_raw_kg * conv / 100 / 1000
-    _ct_proc_id    = contract.get("processor_id") or None
     at_proc_raw_kg = _at_processor_raw_kg(cfg, scrap_id, _ct_proc_id)
     at_proc_bp_mt  = at_proc_raw_kg * conv / 100 / 1000
-    total_avail_mt = warehouse_bp_mt + at_proc_bp_mt
+    finished_bp_mt = _finished_goods_kg(cfg, scrap_id, _ct_proc_id) / 1000   # 미연결 배치 = 창고 완제품
+    total_avail_mt = warehouse_bp_mt + at_proc_bp_mt + finished_bp_mt
     if shipped_mt >= min_mt:
         status = "complete"
     elif total_avail_mt >= remaining_mt:
@@ -1078,7 +1116,134 @@ def _contract_metrics(cfg, contract):
         "at_proc_raw_kg": at_proc_raw_kg, "at_proc_bp_mt": at_proc_bp_mt,
         "total_avail_mt": total_avail_mt, "status": status,
         "oop_alloc_mt": oop_alloc_kg / 1000,
+        "finished_bp_mt": finished_bp_mt, "conv_src": conv_src,
     }
+
+# ── 손익 엔진 (손익 분석 탭 · 요약 보고서 · 엑셀 보고서 공용) ─────────────────
+# 예전엔 원료단가·자동 창고비 결정 함수가 손익 분석 탭 안에서 정의되고, 요약
+# 보고서와 엑셀이 '그 탭이 먼저 실행됐다'는 전제로 그 이름을 빌려 썼다.
+# 여기로 올려 세 곳이 같은 함수를 쓰고, 탭 실행 순서에 의존하지 않게 한다.
+def _pnl_context(cfg):
+    """FIFO 원가·자동 창고비 사전 계산과 원료단가/보관비 결정 함수 묶음."""
+    ph_all  = cfg.get("processing_history", [])
+    inv_cfg = cfg.get("raw_material_inventory", {})
+    dr_sc   = {dr.get("scrap_type_id") for dr in cfg.get("dispatch_records", [])}
+    sc_ids  = {r.get("scrap_type_id", "") for r in ph_all
+               if r.get("scrap_type_id")
+               and inv_cfg.get(r.get("scrap_type_id", ""), {}).get("opening")
+               and r.get("scrap_type_id") in dr_sc}
+    rmc_map, stor_map = {}, {}          # (scrap_id, ship_id) → $/kg  /  USD
+    for sc in sc_ids:
+        bl, _, _ = _fifo_lot_trace(cfg, sc)
+        for sid, d in bl.items():
+            lots = d.get("lots", {})
+            q = sum(v["qty"]    for v in lots.values() if v.get("unit_cost") is not None)
+            a = sum(v["amount"] for v in lots.values() if v.get("unit_cost") is not None)
+            if q > 0:
+                rmc_map[(sc, sid)] = a / q
+            stor_map[(sc, sid)] = d.get("storage_cost", 0.0)
+    inp_total = defaultdict(float)      # 동일 (scrap, shipment) 내 비례 배분용
+    for r in ph_all:
+        inp_total[(r.get("scrap_type_id", ""), r.get("shipment_id", ""))] += _ph_input_kg(r)
+
+    def key(rec):
+        return (rec.get("scrap_type_id", ""),
+                rec.get("shipment_id", "") or f"__no_ship__{rec.get('id','')}")
+
+    def auto_storage(rec):
+        """FIFO 자동 창고비 — 수동 storage_days 없는 배치의 fallback (입고량 비례 배분)."""
+        sc, sid = rec.get("scrap_type_id", ""), rec.get("shipment_id", "")
+        total = stor_map.get((sc, sid), 0.0)
+        if total <= 0:
+            return 0.0
+        it, ir = inp_total.get((sc, sid), 0.0), _ph_input_kg(rec)
+        return round(total * (ir / it), 4) if it > 0 else 0.0
+
+    def eff_storage(rec):
+        m = _ph_storage_cost(rec, cfg)
+        return m if m else auto_storage(rec)
+
+    def rmc_fifo(rec, default_rmc=0.0):
+        """원료단가 결정 (FIFO 우선). 반환: (단가, 출처)"""
+        fifo = rmc_map.get(key(rec))
+        if fifo is not None:
+            return fifo, "FIFO"
+        stored = rec.get("raw_material_cost_per_kg")
+        if stored is not None:
+            return float(stored), "수동"
+        avg, _ = _inv_moving_avg(cfg, rec.get("scrap_type_id", ""), _rec_ref_date(rec, cfg))
+        if avg is not None:
+            return avg, "이동평균"
+        if default_rmc > 0:
+            return default_rmc, "기본값"
+        return 0.0, "—"
+
+    def rmc_mavg(rec, default_rmc=0.0):
+        """원료단가 결정 (이동평균 우선). 반환: (단가, 출처)"""
+        avg, _ = _inv_moving_avg(cfg, rec.get("scrap_type_id", ""), _rec_ref_date(rec, cfg))
+        if avg is not None:
+            return avg, "이동평균"
+        stored = rec.get("raw_material_cost_per_kg")
+        if stored is not None:
+            return float(stored), "수동"
+        fifo = rmc_map.get(key(rec))
+        if fifo is not None:
+            return fifo, "FIFO"
+        if default_rmc > 0:
+            return default_rmc, "기본값"
+        return 0.0, "—"
+
+    return {"rmc_map": rmc_map, "stor_map": stor_map, "inp_total": inp_total,
+            "sc_ids": sc_ids, "key": key, "auto_storage": auto_storage,
+            "eff_storage": eff_storage, "rmc_fifo": rmc_fifo, "rmc_mavg": rmc_mavg}
+
+def _batch_pnl_rows(cfg, ctx, rmc_mode="FIFO 우선", default_rmc=0.0):
+    """배치별 손익 레코드 (관리회계 기준: 스크랩 매각·재매입 상계 → 임가공비(순)).
+    월별/HBL별/매입사별/임가공사별 집계는 이 결과를 _pnl_agg 로 합산만 한다."""
+    ship_m  = {s["id"]: s for s in cfg.get("shipments", [])}
+    buyer_m = {b["id"]: b for b in cfg.get("buyers", [])}
+    proc_m  = {p["id"]: p for p in cfg.get("processors", [])}
+    sc_m    = {s["id"]: s for s in cfg.get("scrap_types", [])}
+    pick    = ctx["rmc_mavg"] if rmc_mode == "이동평균 우선" else ctx["rmc_fifo"]
+    rows = []
+    for r in cfg.get("processing_history", []):
+        sid = r.get("shipment_id", "")
+        sh  = ship_m.get(sid, {})
+        b   = buyer_m.get(r.get("buyer_id") or sh.get("buyer_id", ""), {})
+        out = float(r.get("output_kg", 0) or 0)
+        inp = _ph_input_kg(r)
+        rmc, rmc_src = pick(r, default_rmc)
+        stor = ctx["eff_storage"](r)
+        rows.append({
+            "rec": r, "sid": sid, "ship": sh, "hbl": sh.get("hbl", "—"),
+            "month": (sh.get("loading_date") or "")[:7],
+            "buyer": b, "buyer_lbl": f"{b.get('name','?')} ({b.get('product','?')})",
+            "product": (b.get("product") or "").upper(),
+            "proc_id": r.get("processor_id", ""),
+            "proc_nm": proc_m.get(r.get("processor_id", ""), {}).get("name", "—"),
+            "scrap_id": r.get("scrap_type_id", ""),
+            "sc_nm": sc_m.get(r.get("scrap_type_id", ""), {}).get("name", "—"),
+            "out": out, "inp": inp,
+            "bp":  float(r.get("bp_sale_per_kg", 0) or 0) * out,
+            "pf":  float(r.get("processing_fee_per_kg", 0) or 0) * inp,
+            "sc_rev": float(r.get("scrap_sale_per_kg", 0) or 0) * inp,
+            "eu":  _ph_export_usd(r, cfg),
+            "raw": rmc * inp, "rmc": rmc, "rmc_src": rmc_src,
+            "stor": stor,
+            "stor_src": "수동" if _ph_storage_cost(r, cfg) else ("FIFO 자동" if stor else "—"),
+        })
+    return rows
+
+def _pnl_agg(rows, key_fn):
+    """_batch_pnl_rows 결과를 key_fn 기준으로 합산. 값: bp/pf/eu/raw/stor/sc_rev/out/inp/cnt"""
+    agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0, "raw": 0.0, "stor": 0.0,
+                               "sc_rev": 0.0, "out": 0.0, "inp": 0.0, "cnt": 0})
+    for x in rows:
+        a = agg[key_fn(x)]
+        for k in ("bp", "pf", "eu", "raw", "stor", "sc_rev", "out", "inp"):
+            a[k] += x[k]
+        a["cnt"] += 1
+    return agg
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 cfg = load_cfg()
@@ -2475,83 +2640,13 @@ with t_pnl:
     _pm_pnl   = {p["id"]: p for p in cfg.get("processors", [])}
     _scm_pnl  = {s["id"]: s for s in cfg.get("scrap_types", [])}
 
-    # ── FIFO 원가 + 창고비 사전 계산 (섹션 전체 공용) ────────────────────────
-    # (scrap_type_id, shipment_id) → FIFO 가중평균 단가 / FIFO 자동 창고비
-    # 조건: 기초재고 있고 dispatch_records 있는 스크랩 유형만
-    _fifo_rmc_map     = {}   # (sc_id, ship_id) → $/kg 스크랩
-    _fifo_storage_map = {}   # (sc_id, ship_id) → USD 창고비
-    _fifo_sc_ids_avail = {
-        r.get("scrap_type_id","") for r in _ph_all
-        if r.get("scrap_type_id")
-        and cfg.get("raw_material_inventory",{}).get(r.get("scrap_type_id",""),{}).get("opening")
-        and any(dr.get("scrap_type_id")==r.get("scrap_type_id","")
-                for dr in cfg.get("dispatch_records",[]))
-    }
-    for _fsc in _fifo_sc_ids_avail:
-        _f_bl, _, _ = _fifo_lot_trace(cfg, _fsc)
-        for _f_sid, _f_data in _f_bl.items():
-            _f_lots = _f_data.get("lots", {})
-            _f_known_qty = sum(v["qty"] for v in _f_lots.values()
-                               if v.get("unit_cost") is not None)
-            _f_known_amt = sum(v["amount"] for v in _f_lots.values()
-                               if v.get("unit_cost") is not None)
-            if _f_known_qty > 0:
-                _fifo_rmc_map[(_fsc, _f_sid)] = _f_known_amt / _f_known_qty
-            _fifo_storage_map[(_fsc, _f_sid)] = _f_data.get("storage_cost", 0.0)
-
-    # 배치 입고량 합계 (동일 scrap+shipment 내 비례 배분용)
-    _batch_inp_total = defaultdict(float)
-    for _br in _ph_all:
-        _batch_inp_total[(_br.get("scrap_type_id",""), _br.get("shipment_id",""))] += _ph_input_kg(_br)
-
-    def _auto_storage_for_batch(rec):
-        """FIFO 자동 창고비 — 수동 storage_days 미입력 배치에만 fallback으로 사용.
-        동일 (scrap_type, shipment) 내 배치별 입고량 비례 배분.
-        """
-        _sc   = rec.get("scrap_type_id","")
-        _sid  = rec.get("shipment_id","")
-        total = _fifo_storage_map.get((_sc, _sid), 0.0)
-        if total <= 0:
-            return 0.0
-        inp_total = _batch_inp_total.get((_sc, _sid), 0.0)
-        inp_r     = _ph_input_kg(rec)
-        return round(total * (inp_r / inp_total), 4) if inp_total > 0 else 0.0
-
-    def _get_rmc_fifo(rec, default_rmc=0.0):
-        """FIFO 우선 원료단가 결정. 반환: (unit_cost, source_label)"""
-        _sc  = rec.get("scrap_type_id","")
-        _sid = rec.get("shipment_id","") or f"__no_ship__{rec.get('id','')}"
-        fifo = _fifo_rmc_map.get((_sc, _sid))
-        if fifo is not None:
-            return fifo, "FIFO"
-        stored = rec.get("raw_material_cost_per_kg")
-        if stored is not None:
-            return float(stored), "수동"
-        _as_date = _rec_ref_date(rec, cfg)
-        _avg, _ = _inv_moving_avg(cfg, _sc, _as_date)
-        if _avg is not None:
-            return _avg, "이동평균"
-        if default_rmc > 0:
-            return default_rmc, "기본값"
-        return 0.0, "—"
-
-    def _get_rmc_mavg(rec, default_rmc=0.0):
-        """이동평균 우선 원료단가 결정. 반환: (unit_cost, source_label)"""
-        _sc  = rec.get("scrap_type_id","")
-        _as_date = _rec_ref_date(rec, cfg)
-        _avg, _ = _inv_moving_avg(cfg, _sc, _as_date)
-        if _avg is not None:
-            return _avg, "이동평균"
-        stored = rec.get("raw_material_cost_per_kg")
-        if stored is not None:
-            return float(stored), "수동"
-        _sid = rec.get("shipment_id","") or f"__no_ship__{rec.get('id','')}"
-        fifo = _fifo_rmc_map.get((_sc, _sid))
-        if fifo is not None:
-            return fifo, "FIFO"
-        if default_rmc > 0:
-            return default_rmc, "기본값"
-        return 0.0, "—"
+    # ── 손익 엔진 바인딩 (모듈 레벨 _pnl_context 공용) ──────────────────────
+    _pctx = _pnl_context(cfg)
+    _fifo_rmc_map          = _pctx["rmc_map"]
+    _fifo_sc_ids_avail     = _pctx["sc_ids"]
+    _auto_storage_for_batch = _pctx["auto_storage"]
+    _get_rmc_fifo          = _pctx["rmc_fifo"]
+    _get_rmc_mavg          = _pctx["rmc_mavg"]
 
     # ══════════════════════════════════════════════════════════════════════════
     # 섹션 1 — 관리회계 손익 요약 (상계 기준)
@@ -2924,9 +3019,7 @@ with t_pnl:
     st.divider()
 
     # 보관비 헬퍼 (섹션 2·3 공용)
-    def _eff_storage(rec):
-        manual = _ph_storage_cost(rec, cfg)
-        return manual if manual else _auto_storage_for_batch(rec)
+    _eff_storage = _pctx["eff_storage"]
 
     # ══════════════════════════════════════════════════════════════════════════
     # 섹션 2 — HBL별 손익 요약
@@ -5622,23 +5715,11 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id):
     ph_all_xl = cfg.get("processing_history", [])
     ship_map_xl = {s["id"]: s for s in cfg.get("shipments", [])}
 
-    # 원료비·보관비 — 손익 분석 탭의 헬퍼 재사용 (같은 rerun에서 먼저 정의됨).
-    # 예외적으로 미정의 시(NameError) 이동평균/0 으로 fallback해 보고서 생성은 유지.
+    # 원료비·보관비 — 모듈 레벨 손익 엔진 사용 (손익 탭과 동일 규칙)
+    _xctx = _pnl_context(cfg)
     def _xl_raw(r):
-        try:
-            return _get_rmc_fifo(r)[0] * _ph_input_kg(r)
-        except NameError:
-            return (_inv_moving_avg(cfg, r.get("scrap_type_id",""),
-                                    _rec_ref_date(r, cfg))[0] or 0) * _ph_input_kg(r)
-
-    def _xl_stor(r):
-        man = _ph_storage_cost(r, cfg)
-        if man:
-            return man
-        try:
-            return _auto_storage_for_batch(r)
-        except NameError:
-            return 0.0
+        return _xctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
+    _xl_stor = _xctx["eff_storage"]
 
     pnl_mo = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"cnt":0})
     for r in ph_all_xl:
@@ -6002,9 +6083,9 @@ with t_report:
     _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
     _yr_inv   = sum(float(s.get("invoice_usd",0) or 0) for s in _yr_ships)
     # 관리회계 기준: 원료비(FIFO 우선)·보관비까지 차감한 실질 손익 (판관비 제외)
-    # _get_rmc_fifo/_auto_storage_for_batch 는 손익 분석 탭에서 정의됨 (탭 코드가 먼저 실행)
-    _yr_raw   = sum(_get_rmc_fifo(r)[0] * _ph_input_kg(r) for r in _yr_ph)
-    _yr_stor  = sum(_ph_storage_cost(r, cfg) or _auto_storage_for_batch(r) for r in _yr_ph)
+    _rctx     = _pnl_context(cfg)          # 손익 탭과 같은 엔진 — 탭 실행 순서 무관
+    _yr_raw   = sum(_rctx["rmc_fifo"](r)[0] * _ph_input_kg(r) for r in _yr_ph)
+    _yr_stor  = sum(_rctx["eff_storage"](r) for r in _yr_ph)
     _yr_real  = _yr_bp - _yr_raw - _yr_pf - _yr_eu - _yr_stor
 
     _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
@@ -6083,8 +6164,8 @@ with t_report:
         _mo_agg[_mo_key]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
         _mo_agg[_mo_key]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
         _mo_agg[_mo_key]["eu"]   += _ph_export_usd(r, cfg)
-        _mo_agg[_mo_key]["raw"]  += _get_rmc_fifo(r)[0] * _ph_input_kg(r)
-        _mo_agg[_mo_key]["stor"] += _ph_storage_cost(r, cfg) or _auto_storage_for_batch(r)
+        _mo_agg[_mo_key]["raw"]  += _rctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
+        _mo_agg[_mo_key]["stor"] += _rctx["eff_storage"](r)
     if _mo_agg:
         _mo_rows = []
         for _mk in sorted(_mo_agg.keys()):
@@ -6276,55 +6357,11 @@ with t_report:
     _rpt_sc_m     = {s["id"]: s for s in cfg.get("scrap_types", [])}
     _rpt_proc_m   = {p["id"]: p for p in cfg.get("processors", [])}
 
-    # ── FIFO 원가·보관비 사전 계산 (report 탭 전용) ──────────────────────────
-    _rpt_fifo_rmc  = {}  # (sc_id, ship_id) → $/kg
-    _rpt_fifo_stor = {}  # (sc_id, ship_id) → USD
-    _rpt_fifo_sc_ids = {
-        r.get("scrap_type_id","") for r in _rpt_ph_all
-        if (r.get("scrap_type_id")
-            and cfg.get("raw_material_inventory",{}).get(r.get("scrap_type_id",""),{}).get("opening")
-            and any(dr.get("scrap_type_id") == r.get("scrap_type_id","")
-                    for dr in cfg.get("dispatch_records",[])))
-    }
-    for _rsc in _rpt_fifo_sc_ids:
-        _rbl, _, _ = _fifo_lot_trace(cfg, _rsc)
-        for _rsid, _rsd in _rbl.items():
-            _rlots = _rsd.get("lots", {})
-            _rqty  = sum(v["qty"]            for v in _rlots.values() if v.get("unit_cost") is not None)
-            _ramt  = sum(v.get("amount",0.0) for v in _rlots.values() if v.get("unit_cost") is not None)
-            if _rqty > 0:
-                _rpt_fifo_rmc[(_rsc, _rsid)] = _ramt / _rqty
-            _rpt_fifo_stor[(_rsc, _rsid)] = _rsd.get("storage_cost", 0.0)
-
-    _rpt_batch_inp = defaultdict(float)
-    for _rrr in _rpt_ph_all:
-        _rpt_batch_inp[(_rrr.get("scrap_type_id",""), _rrr.get("shipment_id",""))] += _ph_input_kg(_rrr)
-
+    # ── 원료비·보관비 — 모듈 레벨 손익 엔진 (손익 탭·엑셀과 동일 규칙: FIFO → 수동 → 이동평균) ──
+    _rpt_fifo_rmc = _rctx["rmc_map"]
     def _rpt_raw(rec):
-        """배치 원료비 — FIFO 우선, 없으면 선적일 기준 이동평균"""
-        _sc3  = rec.get("scrap_type_id","")
-        _sid3 = rec.get("shipment_id","") or f"__no_ship__{rec.get('id','')}"
-        fifo3 = _rpt_fifo_rmc.get((_sc3, _sid3))
-        if fifo3 is not None:
-            return fifo3 * _ph_input_kg(rec)
-        # 날짜 기준 이동평균 (선적일 → 더 정확한 당시 단가)
-        _ref_date3 = _rec_ref_date(rec, cfg)
-        avg3, _ = _inv_moving_avg(cfg, _sc3, _ref_date3)
-        return (avg3 or 0) * _ph_input_kg(rec)
-
-    def _rpt_stor(rec):
-        """배치 보관비 — 수동 우선, 없으면 FIFO 자동 비례 배분"""
-        man3 = _ph_storage_cost(rec, cfg)
-        if man3:
-            return man3
-        _sc3  = rec.get("scrap_type_id","")
-        _sid3 = rec.get("shipment_id","") or f"__no_ship__{rec.get('id','')}"
-        tot3  = _rpt_fifo_stor.get((_sc3, _sid3), 0.0)
-        if tot3 <= 0:
-            return 0.0
-        inp_tot3 = _rpt_batch_inp.get((_sc3, _sid3), 0.0)
-        inp_r3   = _ph_input_kg(rec)
-        return round(tot3 * (inp_r3 / inp_tot3), 4) if inp_tot3 > 0 else 0.0
+        return _rctx["rmc_fifo"](rec)[0] * _ph_input_kg(rec)
+    _rpt_stor = _rctx["eff_storage"]
 
     # ── Section 3: 손익 요약 ─────────────────────────────────────────────────
     st.markdown("#### ① 손익 요약")
