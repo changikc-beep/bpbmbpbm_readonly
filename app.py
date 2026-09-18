@@ -1318,6 +1318,12 @@ if not READ_ONLY:
             if _dval and not _valid_date_str(_dval):
                 _dship[_dfield] = ""
                 _dmig_changed = True
+    # 계약 상태가 None/빈칸이면 'active' 로 정규화 — 조회 코드가 .get("contract_status","active")
+    # 로 기본값을 주지만 키가 None 으로 저장돼 있으면 기본값이 안 먹어 계약이 통째로 무시됐음
+    for _cmig in cfg.get("contracts", []):
+        if not _cmig.get("contract_status"):
+            _cmig["contract_status"] = "active"
+            _dmig_changed = True
     if _dmig_changed:
         save_cfg(cfg)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5636,13 +5642,17 @@ def _sync_from_gsheets(cfg_ref):
                             _adopt["buyer_id"] = _ship_by_id.get(sid, {}).get("buyer_id", "")
                         b_adopt += 1
                     else:
+                        # BP 매각단가 미기재 시 선적건 Invoice 단가(총액÷중량)를 기본값으로 — 앱 수동 입력 관행과 동일
+                        _sh_new = _ship_by_id.get(sid, {})
+                        _bp_dflt = (round(float(_sh_new.get("invoice_usd") or 0) / float(_sh_new.get("weight_kg") or 0), 4)
+                                    if float(_sh_new.get("invoice_usd") or 0) > 0 and float(_sh_new.get("weight_kg") or 0) > 0 else 0.0)
                         ph_ref.append({
                             "id": str(uuid.uuid4())[:8], "shipment_id": sid,
                             "processor_id": pid, "scrap_type_id": scid,
                             "output_kg": out_v, "input_kg": upd["input_kg"],
                             "conversion_rate_pct": conv,
                             "processing_fee_per_kg": sr["fee"] if sr["fee"] is not None else cond.get("processing_fee"),
-                            "bp_sale_per_kg": sr["bps"] if sr["bps"] is not None else 0.0,
+                            "bp_sale_per_kg": sr["bps"] if sr["bps"] is not None else _bp_dflt,
                             "scrap_sale_per_kg": sr["scs"],
                             "buyer_id": _ship_by_id.get(sid, {}).get("buyer_id", ""),
                             "notes": sr["notes"],
