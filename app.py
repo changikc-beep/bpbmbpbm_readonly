@@ -5428,7 +5428,7 @@ def _sync_from_gsheets(cfg_ref):
                 _ctr_by_hbl.setdefault(hbl, []).append({
                     "no": cno, "w": _to_float(w), "inv": _to_float(inv) if inv else 0.0,
                     "ni": _to_float(ni) if ni else None, "co": _to_float(co) if co else None,
-                    "moist": _to_float(mo) if mo else 0.0,
+                    "moist": _to_float(mo) if mo else 0.0, "has_moist": bool(mo),
                 })
             _ctr_hbl_cnt = 0
             for hbl, cl in _ctr_by_hbl.items():
@@ -5442,7 +5442,9 @@ def _sync_from_gsheets(cfg_ref):
                     s["invoice_usd"] = round(inv_sum, 2)
                 sw = sum(c["w"] * (1 - c["moist"] / 100) for c in cl)
                 if sw > 0:
-                    s["moisture_pct"] = round((1 - sw / gw) * 100, 4) or None
+                    # 수분·Ni·Co 는 채워진 행이 있을 때만 반영 (전부 빈칸이면 기존값 유지)
+                    if any(c["has_moist"] for c in cl):
+                        s["moisture_pct"] = round((1 - sw / gw) * 100, 4) or None
                     _ni_rows = [c for c in cl if c["ni"] is not None]
                     _co_rows = [c for c in cl if c["co"] is not None]
                     if _ni_rows:
@@ -5983,8 +5985,8 @@ with t_idx:
     st.divider()
 
     # ── 자동 조회 (Frankfurter API) ───────────────────────────────────────────
-    st.subheader("🔄 EUR/USD 자동 조회")
-    st.caption("Frankfurter.app (무료 API, 유럽중앙은행 기준) — API 키 불필요")
+    st.subheader("🔄 EUR/USD · USD/KRW 자동 조회")
+    st.caption("Frankfurter.app (무료 API, 유럽중앙은행 기준) — API 키 불필요. 두 환율을 한 번에 월별 저장합니다.")
 
     _af1, _af2, _af3 = st.columns([2, 2, 3])
     with _af1:
@@ -6030,9 +6032,20 @@ with t_idx:
                         _rest2 = [r for r in cfg.get("eur_usd_rates",[]) if r["month"] != _month_str]
                         _rest2.append({"month": _month_str, "rate": round(_rate_val, 4)})
                         cfg["eur_usd_rates"] = sorted(_rest2, key=lambda x: x["month"])
-                        _saved.append(f"{_month_str}: {_rate_val:.4f} (기준일 {_actual_date})")
+                        _saved.append(f"{_month_str}: EUR/USD {_rate_val:.4f} (기준일 {_actual_date})")
                     else:
                         _failed.append(f"{_month_str} (HTTP {_resp.status_code})")
+                    # USD/KRW 도 같은 소스(ECB 기준)에서 함께 저장
+                    _resp_k = _req.get(
+                        f"https://api.frankfurter.app/{_fetch_date}?from=USD&to=KRW",
+                        timeout=8
+                    )
+                    if _resp_k.status_code == 200:
+                        _krw_val = _resp_k.json()["rates"]["KRW"]
+                        _rest3 = [r for r in cfg.get("usd_krw_rates",[]) if r["month"] != _month_str]
+                        _rest3.append({"month": _month_str, "rate": round(_krw_val, 2)})
+                        cfg["usd_krw_rates"] = sorted(_rest3, key=lambda x: x["month"])
+                        _saved.append(f"{_month_str}: USD/KRW {_krw_val:,.2f}")
                 except Exception as _fe:
                     _failed.append(f"{_month_str} ({_fe})")
             if _saved:
