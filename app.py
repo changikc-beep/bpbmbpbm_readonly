@@ -297,11 +297,8 @@ def _get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def _load_cfg_drive():
-    """Google Drive에서 config.json 내용을 읽어 dict 반환 (120초 캐시).
-    앱 내 저장(save_cfg)은 즉시 캐시를 비우므로 본인 작업엔 항상 최신이 보임.
-    다른 기기에서 저장한 직후엔 사이드바 '데이터 새로고침' 버튼 사용."""
+def _download_cfg_raw():
+    """Google Drive에서 config.json 을 즉시 내려받아 dict 반환 (캐시 없음)."""
     from googleapiclient.http import MediaIoBaseDownload
     import io
     svc     = _get_drive_service()
@@ -314,6 +311,12 @@ def _load_cfg_drive():
         _, done = dl.next_chunk()
     buf.seek(0)
     return json.loads(buf.read().decode("utf-8"))
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_cfg_drive():
+    """config.json (120초 캐시). 앱 내 저장(save_cfg)은 즉시 캐시를 비우므로 본인 작업엔
+    항상 최신이 보임. 다른 기기에서 저장한 직후엔 사이드바 '데이터 새로고침' 버튼 사용."""
+    return _download_cfg_raw()
 
 def _save_cfg_drive(c):
     """dict를 JSON으로 직렬화해 Google Drive 파일에 덮어씁니다."""
@@ -359,11 +362,27 @@ def load_cfg():
     """항상 Google Drive에서 로드 (로컬·클라우드 공통 원본)."""
     return _load_cfg_drive()
 
-def save_cfg(c):
-    """항상 Google Drive에 저장 (로컬·클라우드 공통 원본)."""
+def save_cfg(c, force=False):
+    """항상 Google Drive에 저장 (로컬·클라우드 공통 원본).
+
+    동시 저장 충돌 방지: 저장은 파일 전체를 덮어쓰므로, 두 기기(또는 탭)에서 열어두고
+    각각 저장하면 나중 저장이 먼저 저장을 조용히 지운다(캐시 120초 동안 창이 열림).
+    cfg['_meta']['rev'] 를 저장마다 1씩 올리고, 저장 직전 Drive의 현재 rev 가 내가
+    불러온 rev 와 다르면 저장을 중단하고 새로고침을 안내한다. force=True 는 백업 복원용."""
     if READ_ONLY:
         st.error("🔒 읽기 전용 모드 — 저장이 차단되었습니다.")
         st.stop()
+    loaded_rev = int((c.get("_meta") or {}).get("rev") or 0)
+    if not force:
+        try:
+            cur_rev = int((_download_cfg_raw().get("_meta") or {}).get("rev") or 0)
+        except Exception:
+            cur_rev = loaded_rev          # 확인 실패 시 저장은 진행 (가용성 우선)
+        if cur_rev != loaded_rev:
+            st.error("다른 기기·탭에서 먼저 저장된 변경이 있어 이번 저장을 중단했습니다 (덮어쓰기 방지). "
+                     "사이드바 '데이터 새로고침'을 누른 뒤 방금 입력한 내용을 다시 저장해 주세요.")
+            st.stop()
+    c["_meta"] = {"rev": loaded_rev + 1, "saved_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
     _save_cfg_drive(c)
     # 로컬 개발 편의용: Drive와 별도로 로컬 백업 유지
     if _HAS_LOCAL_CREDS and os.path.exists(CONFIG_FILE):
@@ -1313,14 +1332,20 @@ CO = _latest_idx[0]["co_index"] if _latest_idx else 56598.72
 with st.sidebar:
     st.title("📊 현황")
 
-    # ── 환율 ────────────────────────────────────────────────────────────────
-    XR = st.number_input("💱 USD / KRW", value=1380.0, step=1.0, format="%.0f")
+    # ── 환율 — INDEX 이력 탭에 저장된 최근 월 USD/KRW 를 기본값으로, 세션에서 덮어쓰기 가능 ──
+    _xr_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"])
+    _xr_dflt  = float(_xr_rates[-1]["rate"]) if _xr_rates else 1380.0
+    XR = st.number_input("💱 USD / KRW", value=_xr_dflt, step=1.0, format="%.0f", key="xr_input",
+                         help=("INDEX 이력 탭 " + _xr_rates[-1]["month"] + " 등록값") if _xr_rates else "미등록 — 기본값 1,380")
     st.divider()
 
     # ── 요약 한 줄 (경고·재고 상세는 요약 보고서의 할 일 패널·재고 회전 계획으로 일원화) ──
     _sb_ships  = cfg.get("shipments", [])
     _sb_nosett = sum(1 for s in _sb_ships if not s.get("status","") or s.get("status") == "provisional")
     st.caption(f"선적 {len(_sb_ships)}건 · 미확정 {_sb_nosett}건")
+    _sb_meta = cfg.get("_meta") or {}
+    if _sb_meta.get("saved_at"):
+        st.caption(f"마지막 저장 {_sb_meta['saved_at'][:16].replace('T', ' ')} (rev {_sb_meta.get('rev', 0)})")
 
     if _latest_idx:
         st.caption(f"INDEX 기준: {_latest_idx[0]['month']}  Ni \\${NI:,.0f} / Co \\${CO:,.0f}")
@@ -1977,6 +2002,18 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         s.get("other_adj_desc",""),
                         key=f"sh_adjd_{real_i}")
 
+                # ── 입금 기록 (실제 입금일·금액 — 채권 Aging·현금 전망에 반영) ──
+                st.markdown("**입금 기록**")
+                pr1, pr2, pr3, pr4 = st.columns(4)
+                new_ppd = pr1.text_input("가정산 입금일 (YYYY-MM-DD)", s.get("prov_paid_date","") or "", key=f"sh_ppd_{real_i}")
+                new_ppu = pr2.number_input("가정산 입금액 (USD)", value=float(s.get("prov_paid_usd") or 0),
+                                           step=1.0, format="%.2f", key=f"sh_ppu_{real_i}",
+                                           help="비어 있으면 미입금으로 봅니다. 예상액은 Invoice × 가정산 비율")
+                new_fpd = pr3.text_input("확정산 입금일 (YYYY-MM-DD)", s.get("final_paid_date","") or "", key=f"sh_fpd_{real_i}")
+                new_fpu = pr4.number_input("확정산 입금액 (USD)", value=float(s.get("final_paid_usd") or 0),
+                                           step=1.0, format="%.2f", key=f"sh_fpu_{real_i}",
+                                           help="확정산 청구액(④)으로 실제 입금된 금액. 반환한 경우 음수")
+
                 # ── 컨테이너별 가중평균 계산기 ──────────────────────────────
                 with st.popover("🧮 컨테이너별 가중평균 계산기"):
                     st.caption("매입사가 컨테이너 단위로 성분분석·정산한 경우: 컨테이너별 값을 "
@@ -2241,6 +2278,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         # ETA > 선적일 검사
                         if new_ld and new_eta and new_eta < new_ld:
                             _save_err.append(f"ETA({new_eta})가 선적일({new_ld})보다 앞섭니다")
+                        for _pd_lbl, _pd_val in (("가정산 입금일", new_ppd), ("확정산 입금일", new_fpd)):
+                            if _pd_val.strip() and not _valid_date_str(_pd_val.strip()):
+                                _save_err.append(f"{_pd_lbl} 형식이 잘못됐습니다 (YYYY-MM-DD)")
                         # Final월 >= Provisional월 검사
                         if new_pm != "—" and new_fm != "—" and new_fm < new_pm:
                             _save_err.append(f"Final월({new_fm})이 Provisional월({new_pm})보다 앞섭니다")
@@ -2295,6 +2335,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 "linked_contract_id": new_linked_ct_id if new_linked_ct_id else None,
                                 "other_adj_usd":new_other_adj if new_other_adj else None,
                                 "other_adj_desc":new_other_desc,
+                                "prov_paid_date":  new_ppd.strip() or None,
+                                "prov_paid_usd":   new_ppu if new_ppu else None,
+                                "final_paid_date": new_fpd.strip() or None,
+                                "final_paid_usd":  new_fpu if new_fpu else None,
                                 "final_amount_usd": _snap_final})
                             save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with cb:
@@ -2346,58 +2390,74 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             st.download_button("📥 CSV",pd.DataFrame(tbl_rows).to_csv(index=False,encoding="utf-8-sig"),
                 f"선적정산_{date.today():%Y%m%d}.csv","text/csv")
 
-        # ── 📊 채권 Aging 보고서 ────────────────────────────────────────────
-        _aging_ships = [s for s in shipments if s.get("status","") != "paid"]
-        if _aging_ships:
-            with st.expander("📊 미수채권 Aging 보고서", expanded=False):
-                _today_str = date.today().isoformat()
-                _aging_rows = []
-                for _as in _aging_ships:
-                    _ab  = buyer_map.get(_as.get("buyer_id",""), {})
-                    _ald = _as.get("loading_date","")
-                    if _ald:
-                        try:
-                            _days = (date.today() - date.fromisoformat(_ald)).days
-                        except Exception:
-                            _days = -1
-                    else:
-                        _days = -1
-                    _aging_band = (
-                        "< 30일" if _days < 30
-                        else "30–60일" if _days < 60
-                        else "60–90일" if _days < 90
-                        else "> 90일"
-                    ) if _days >= 0 else "선적일 미정"
-                    # 가정산 지급액 계산
-                    _act  = _get_contract_for_shipment(cfg, _as.get("id",""))
-                    _ast  = _settle_terms(_act, _ab)
-                    _prov_paid_a = float(_as.get("invoice_usd",0)) * (_ast["prov_pct"] / 100.0)
-                    _aging_rows.append({
-                        "Aging":        _aging_band,
-                        "경과일":        _days if _days >= 0 else None,
-                        "HBL":          _as.get("hbl","—"),
-                        "매입사":        _ab.get("name","?"),
-                        "선적일":        _ald or "—",
-                        "중량(MT)":      round(float(_as.get("weight_kg",0))/1000, 2),
-                        "Invoice(USD)": float(_as.get("invoice_usd",0)),
-                        "가정산 지급액":  round(_prov_paid_a, 2),
-                        "상태":          _as.get("status","provisional"),
-                    })
-                _aging_rows.sort(key=lambda r: (r["Aging"] == "선적일 미정", r.get("경과일", 0) if isinstance(r.get("경과일",0), int) else 0), reverse=True)
-                _df_aging = pd.DataFrame(_aging_rows)
-                # 합계 행
-                _tot_inv = sum(r["Invoice(USD)"] for r in _aging_rows)
-                _tot_prov = sum(r["가정산 지급액"] for r in _aging_rows)
+        # ── 채권 Aging 보고서 (입금 기록 기준) ───────────────────────────────
+        # 미수 = (가정산 예정액 − 가정산 입금액) + (확정산 청구액 − 확정산 입금액, final/paid 건만).
+        # 만기 = 가정산: 선적일 + 매입사 가정산 입금 조건 / 확정산: (ETA, 없으면 선적일+60일) + 확정산 조건.
+        # (예전엔 입금 기록이 없어 선적일 경과일수로 근사했음)
+        _today_d = date.today()
+        _aging_rows = []
+        for _as in shipments:
+            _ab  = buyer_map.get(_as.get("buyer_id",""), {})
+            _ast = _settle_terms(_get_contract_for_shipment(cfg, _as.get("id","")), _ab)
+            _inv = float(_as.get("invoice_usd") or 0)
+            _prov_exp  = _inv * (_ast["prov_pct"] / 100.0)
+            _prov_open = _prov_exp - float(_as.get("prov_paid_usd") or 0)
+            _final_open = 0.0
+            if _as.get("status") in ("final", "paid"):
+                _famt = _as.get("final_amount_usd") or _recompute_final_settlement(cfg, _as)
+                if _famt is not None:
+                    _final_net  = float(_famt) - _prov_exp + float(_as.get("other_adj_usd") or 0)
+                    _final_open = _final_net - float(_as.get("final_paid_usd") or 0)
+            _prov_open  = _prov_open  if abs(_prov_open)  > 1 else 0.0
+            _final_open = _final_open if abs(_final_open) > 1 else 0.0
+            if not _prov_open and not _final_open:
+                continue
+            try:
+                _ld_d = date.fromisoformat(_as.get("loading_date", ""))
+            except Exception:
+                _ld_d = None
+            _eta_d = None
+            if _valid_date_str(_as.get("eta", "")):
+                _eta_d = date.fromisoformat(_as["eta"])
+            elif _ld_d:
+                _eta_d = _ld_d + timedelta(days=60)
+            _prov_due  = (_ld_d  + timedelta(days=int(_ab.get("prov_pay_days")  or 0) or 30)) if _ld_d  else None
+            _final_due = (_eta_d + timedelta(days=int(_ab.get("final_pay_days") or 0) or 30)) if _eta_d else None
+            _dues = [d for d, o in ((_prov_due, _prov_open), (_final_due, _final_open)) if d and o]
+            _due  = min(_dues) if _dues else None
+            _days = (_today_d - _due).days if _due else None
+            if _days is None:   _band = "만기 미정"
+            elif _days < 0:     _band = "미도래"
+            elif _days < 30:    _band = "< 30일"
+            elif _days < 60:    _band = "30–60일"
+            elif _days < 90:    _band = "60–90일"
+            else:               _band = "> 90일"
+            _aging_rows.append({
+                "Aging":      _band,
+                "경과일":     _days,
+                "HBL":        _as.get("hbl","—"),
+                "매입사":     _ab.get("name","?"),
+                "상태":       _as.get("status","provisional"),
+                "가정산 미수": round(_prov_open, 2),
+                "확정산 미수": round(_final_open, 2),
+                "미수 합계":  round(_prov_open + _final_open, 2),
+                "기준 만기일": _due.isoformat() if _due else "—",
+            })
+        if _aging_rows:
+            with st.expander(f"미수채권 Aging — {len(_aging_rows)}건 (입금 기록 기준)", expanded=False):
+                _aging_rows.sort(key=lambda r: (r["경과일"] is None, -(r["경과일"] or 0)))
                 _band_cnt = {}
                 for _r in _aging_rows:
                     _band_cnt[_r["Aging"]] = _band_cnt.get(_r["Aging"], 0) + 1
-                st.caption(
-                    "  ·  ".join([f"**{b}**: {n}건" for b, n in sorted(_band_cnt.items())])
-                    + f"  |  Invoice 합계: **\\${_tot_inv:,.0f}**  |  가정산 지급 합계: **\\${_tot_prov:,.0f}**"
-                )
+                _tot_open = sum(r["미수 합계"] for r in _aging_rows)
+                _tot_over = sum(r["미수 합계"] for r in _aging_rows if r["경과일"] is not None and r["경과일"] >= 0)
+                st.caption("  ·  ".join(f"**{b}**: {n}건" for b, n in sorted(_band_cnt.items()))
+                           + f"  |  미수 합계 **\\${_tot_open:,.0f}**  |  만기 경과분 **\\${_tot_over:,.0f}**"
+                           "  |  음수 = 반환 예정. 입금 조건은 매입사 관리에서 설정(미설정 30일)")
                 st.dataframe(
-                    _df_aging.style.format({"Invoice(USD)": "${:,.2f}", "가정산 지급액": "${:,.2f}", "중량(MT)": "{:,.2f}",
-                                             "경과일": lambda v: f"{v:.0f}일" if pd.notna(v) else "—"}),
+                    pd.DataFrame(_aging_rows).style.format(na_rep="—", formatter={
+                        "가정산 미수": "${:,.2f}", "확정산 미수": "${:,.2f}", "미수 합계": "${:,.2f}",
+                        "경과일": lambda v: f"{v:+.0f}일" if pd.notna(v) else "—"}),
                     use_container_width=True, hide_index=True,
                 )
 
@@ -5790,6 +5850,39 @@ with t_idx:
                 cfg["eur_usd_rates"] = sorted(_eur_rest, key=lambda x: x["month"])
                 save_cfg(cfg); st.success(f"{_eur_m} 저장 — EUR/USD {_eur_r:.4f}"); st.rerun()
 
+    # ── 월별 USD/KRW 환율 ─────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("💱 월별 USD/KRW 환율")
+    st.caption("원화 환산 KPI·엑셀 보고서에 사용. 사이드바 기본값은 가장 최근 월 값이며 세션에서 덮어쓸 수 있습니다.")
+    _krw_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"], reverse=True)
+    if _krw_rates:
+        st.dataframe(pd.DataFrame([{"기준월": r["month"], "USD/KRW": float(r["rate"])} for r in _krw_rates])
+                     .style.format({"USD/KRW": "{:,.0f}"}), use_container_width=True, hide_index=True)
+        _kd1, _kd2 = st.columns([4, 1])
+        with _kd1:
+            _krw_dm = st.selectbox("삭제할 월", [r["month"] for r in _krw_rates], key="krw_del_sel")
+        with _kd2:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            with st.popover("🗑️", use_container_width=True):
+                st.warning(f"USD/KRW **{_krw_dm}** 삭제")
+                if st.button("삭제 확인", key="krw_del_cfm", type="primary", use_container_width=True):
+                    cfg["usd_krw_rates"] = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_dm]
+                    save_cfg(cfg); st.rerun()
+    else:
+        st.info("등록된 USD/KRW 환율이 없습니다. 사이드바 기본값 1,380이 적용됩니다.")
+    with st.form("add_krw"):
+        _kw1, _kw2 = st.columns(2)
+        with _kw1: _krw_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-09")
+        with _kw2: _krw_r = st.number_input("USD/KRW", value=1380.0, step=1.0, format="%.0f")
+        if st.form_submit_button("💾 저장"):
+            try: datetime.strptime(_krw_m, "%Y-%m")
+            except ValueError: st.error("YYYY-MM 형식으로 입력하세요.")
+            else:
+                _krw_rest = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_m]
+                _krw_rest.append({"month": _krw_m, "rate": float(_krw_r)})
+                cfg["usd_krw_rates"] = sorted(_krw_rest, key=lambda x: x["month"])
+                save_cfg(cfg); st.success(f"{_krw_m} 저장 — USD/KRW {_krw_r:,.0f}"); st.rerun()
+
     # ── 월별 간접 판관비·기타 원가 ───────────────────────────────────────────
     st.divider()
     st.subheader("🏢 월별 간접 판관비·기타 원가")
@@ -5856,7 +5949,7 @@ with t_idx:
             st.warning("확인을 누르면 현재 데이터가 백업 파일 내용으로 완전히 교체됩니다. "
                        "되돌리려면 지금 상태를 먼저 백업하세요.")
             if st.button("복원 확인 — 현재 데이터를 백업으로 교체", key="bk_restore_btn", type="primary"):
-                save_cfg(_bk_cfg); st.toast("복원 완료"); st.rerun()
+                save_cfg(_bk_cfg, force=True); st.toast("복원 완료"); st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -6346,6 +6439,12 @@ if _page == PG_REPORT:
         _todo.append(("🟡", f"선적 중량·배치 생산량 불일치 {len(_td_wt_bad)}건",
                       _td_hbls(_td_wt_bad) + " — 2% 초과 차이", "설정·관리 > 임가공사 관리 > 세부 내역"))
 
+    # 9) 입금완료 상태인데 확정산 입금 기록이 없는 건
+    _td_paid_norec = [s for s in _td_ships if s.get("status") == "paid" and not s.get("final_paid_date")]
+    if _td_paid_norec:
+        _todo.append(("🟡", f"입금완료 상태인데 입금 기록 없음 {len(_td_paid_norec)}건",
+                      _td_hbls(_td_paid_norec) + " — 입금일·금액 입력", "선적 정산 추적"))
+
     if _todo:
         with st.expander(f"📌 할 일 — {len(_todo)}개 항목", expanded=True):
             for _dot, _title, _detail, _tab in _todo:
@@ -6377,7 +6476,9 @@ if _page == PG_REPORT:
                 _cbasis = "추정"
         if _camt is None:
             continue  # 매입사/계약 정보 미비 등 — 전망에서 제외
-        _cnet = _camt - _cpp + _cadj
+        _cnet = _camt - _cpp + _cadj - float(_cs.get("final_paid_usd") or 0)   # 이미 입금된 확정산 차감
+        if abs(_cnet) < 1:
+            continue  # 확정산까지 입금 완료
         _cfm  = _cs.get("final_month", "—")
         if _cbasis in ("확정", "계산"):
             _cwhen = "청구 가능"
