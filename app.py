@@ -6669,6 +6669,182 @@ if _page == PG_HOME:
                 column_config=_cc_money("가정산 수령", "확정산 잔액", dec=0),
             )
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # 간이 현금 전망 — 기초 현금(월 1회 입력) + 예상 입금 − 예상 지출 → 3개월 월말 잔액
+    #   입금: 확정산 잔액(_cf_rows) + 가정산 미입금(입금 조건일이 아직 안 지난 건)
+    #   지출: 임가공비(배치 기준일 + 지급 조건일이 아직 안 지난 건) + 원료 매입(입고일 + 지급 조건일)
+    #         + 월 고정 지출(입력값, 없으면 등록된 월별 판관비 평균)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.markdown("#### 간이 현금 전망 (3개월)")
+    _cs = cfg.get("cash_forecast", {}) or {}
+    _cs_month   = _cs.get("month") or date.today().strftime("%Y-%m")
+    _cs_balance = float(_cs.get("balance_usd") or 0)
+    _cs_proc_d  = int(_cs.get("proc_pay_days") or 45)
+    _cs_raw_d   = int(_cs.get("raw_pay_days") or 30)
+    _cs_fixed   = _cs.get("fixed_monthly_usd")
+    _sga_list   = cfg.get("sga_monthly", [])
+    _sga_avg    = (sum(float(r.get("sga") or 0) + float(r.get("other") or 0) for r in _sga_list[-3:])
+                   / len(_sga_list[-3:])) if _sga_list else 0.0
+    _fixed_m    = float(_cs_fixed) if _cs_fixed not in (None, "") else _sga_avg
+    _fixed_src  = "입력값" if _cs_fixed not in (None, "") else (f"판관비 최근 {len(_sga_list[-3:])}개월 평균" if _sga_list else "미설정 (0)")
+
+    with st.expander("전망 설정 — 기초 현금 · 지급 조건 · 월 고정 지출", expanded=not _cs.get("balance_usd")):
+        st.caption("월초에 은행 잔액 하나만 USD 환산으로 넣어 주면 됩니다. 나머지는 기본값으로도 방향이 맞습니다.")
+        with st.form("cash_forecast_form"):
+            _cf1, _cf2, _cf3 = st.columns(3)
+            with _cf1:
+                _in_month = st.text_input("기준월 (YYYY-MM)", value=_cs_month)
+                _in_bal   = st.number_input("기초 현금 (USD 환산)", value=_cs_balance, step=1000.0, format="%.0f")
+            with _cf2:
+                _in_proc  = st.number_input("임가공비 지급 조건 (배치일 후 일수)", value=_cs_proc_d, min_value=0, max_value=180, step=5)
+                _in_raw   = st.number_input("원료 매입 지급 조건 (입고일 후 일수)", value=_cs_raw_d, min_value=0, max_value=180, step=5)
+            with _cf3:
+                _in_fixed = st.number_input("월 고정 지출 (USD, 0이면 판관비 평균 사용)",
+                                            value=float(_cs_fixed) if _cs_fixed not in (None, "") else 0.0,
+                                            step=500.0, format="%.0f")
+                st.caption(f"현재 적용: ${_fixed_m:,.0f}/월 ({_fixed_src})")
+            if st.form_submit_button("저장", disabled=READ_ONLY):
+                cfg["cash_forecast"] = {
+                    "month": _in_month.strip(), "balance_usd": float(_in_bal),
+                    "proc_pay_days": int(_in_proc), "raw_pay_days": int(_in_raw),
+                    "fixed_monthly_usd": (float(_in_fixed) if _in_fixed > 0 else None),
+                }
+                save_cfg(cfg); st.rerun()
+
+    _sc_pct = st.slider("INDEX 시나리오 (%) — Final월 INDEX가 없는 '추정' 건에만 적용", -20, 20, 0, 5, key="cash_idx_pct")
+
+    # ── 월 축: 기준월부터 3개월 ──
+    def _m_add(ym, n):
+        _y, _m = int(ym[:4]), int(ym[5:7]); _m += n
+        return f"{_y + (_m - 1) // 12}-{(_m - 1) % 12 + 1:02d}"
+    try:
+        _cash_months = [_m_add(_cs_month, i) for i in range(3)]
+    except Exception:
+        _cs_month = date.today().strftime("%Y-%m"); _cash_months = [_m_add(_cs_month, i) for i in range(3)]
+    _today_c  = date.today()
+    _flows    = defaultdict(lambda: defaultdict(float))   # month → {항목: 금액}
+    _flow_det = []                                          # 상세 행
+
+    def _bucket(ym):
+        """기준월 이전 → 기준월(지연분), 3개월 초과 → None(제외)."""
+        if ym < _cash_months[0]: return _cash_months[0]
+        return ym if ym in _cash_months else None
+
+    # 입금 1) 확정산 잔액 — 미수 현금 전망과 동일 (시나리오는 '추정' 건만 재계산)
+    _ship_by_hbl = {s.get("hbl", "").strip(): s for s in _td_ships}
+    for _r in _cf_rows:
+        _amt = float(_r["확정산 잔액"])
+        if _sc_pct and _r["기준"] == "추정":
+            _s0 = _ship_by_hbl.get(_r["HBL"])
+            if _s0:
+                _f = 1 + _sc_pct / 100.0
+                _re = _recompute_final_settlement(cfg, _s0, fallback_index=(NI * _f, CO * _f))
+                if _re is not None:
+                    _b0  = _td_buyers.get(_s0.get("buyer_id", ""), {})
+                    _st0 = _settle_terms(_get_contract_for_shipment(cfg, _s0.get("id", "")), _b0)
+                    _amt = (_re - float(_s0.get("invoice_usd") or 0) * _st0["prov_pct"] / 100.0
+                            + float(_s0.get("other_adj_usd") or 0) - float(_s0.get("final_paid_usd") or 0))
+        _bk = _bucket(_r["예상 입금월"]) if _r["예상 입금월"] != "미정" else _cash_months[-1]
+        if _bk:
+            _flows[_bk]["확정산 입금"] += _amt
+            _flow_det.append({"월": _bk, "구분": "확정산 입금", "항목": f"{_r['HBL']} ({_r['매입사']}, {_r['기준']})", "금액": round(_amt, 0)})
+    # 입금 2) 가정산 미입금 — 입금 기록이 없고 입금 조건일이 아직 안 지난 건 (지난 건은 수령으로 간주)
+    for _s in _td_ships:
+        if _s.get("status") != "provisional" or _s.get("prov_paid_date") or not _valid_date_str(_s.get("loading_date", "")):
+            continue
+        _b1  = _td_buyers.get(_s.get("buyer_id", ""), {})
+        _due = date.fromisoformat(_s["loading_date"]) + timedelta(days=int(_b1.get("prov_pay_days") or 0) or 30)
+        if _due < _today_c:
+            continue
+        _st1 = _settle_terms(_get_contract_for_shipment(cfg, _s.get("id", "")), _b1)
+        _pamt = float(_s.get("invoice_usd") or 0) * _st1["prov_pct"] / 100.0
+        _bk = _bucket(_due.strftime("%Y-%m"))
+        if _bk and _pamt:
+            _flows[_bk]["가정산 입금"] += _pamt
+            _flow_det.append({"월": _bk, "구분": "가정산 입금", "항목": f"{_s.get('hbl','')} ({_b1.get('name','?')}) 만기 {_due}", "금액": round(_pamt, 0)})
+    # 지출 1) 임가공비 — 배치 기준일 + 지급 조건일이 아직 안 지난 건
+    _proc_m = {p["id"]: p for p in cfg.get("processors", [])}
+    for _r in cfg.get("processing_history", []):
+        _rd = _rec_ref_date(_r, cfg)
+        if not _rd:
+            continue
+        _due = date.fromisoformat(_rd) + timedelta(days=_cs_proc_d)
+        if _due < _today_c:
+            continue
+        _fee = float(_r.get("processing_fee_per_kg") or 0) * _ph_input_kg(_r)
+        _bk = _bucket(_due.strftime("%Y-%m"))
+        if _bk and _fee:
+            _flows[_bk]["임가공비 지급"] -= _fee
+            _flow_det.append({"월": _bk, "구분": "임가공비 지급", "항목": f"{_proc_m.get(_r.get('processor_id',''),{}).get('name','?')} 배치 {_rd} 만기 {_due}", "금액": round(-_fee, 0)})
+    # 지출 2) 원료 매입 — 입고일 + 지급 조건일이 아직 안 지난 건
+    for _scid, _inv in (cfg.get("raw_material_inventory", {}) or {}).items():
+        for _pu in _inv.get("purchases", []):
+            if not _valid_date_str(_pu.get("date", "")):
+                continue
+            _due = date.fromisoformat(_pu["date"]) + timedelta(days=_cs_raw_d)
+            if _due < _today_c:
+                continue
+            _cost = float(_pu.get("quantity_kg") or 0) * float(_pu.get("unit_cost") or 0)
+            _bk = _bucket(_due.strftime("%Y-%m"))
+            if _bk and _cost:
+                _flows[_bk]["원료 매입 지급"] -= _cost
+                _flow_det.append({"월": _bk, "구분": "원료 매입 지급", "항목": f"입고 {_pu['date']} {float(_pu.get('quantity_kg') or 0):,.0f} kg 만기 {_due}", "금액": round(-_cost, 0)})
+    # 지출 3) 월 고정 지출
+    for _mth in _cash_months:
+        _flows[_mth]["고정 지출"] -= _fixed_m
+
+    _cash_rows = []; _bal = _cs_balance
+    for _mth in _cash_months:
+        _fl = _flows[_mth]
+        _in  = _fl["확정산 입금"] + _fl["가정산 입금"]
+        _out = _fl["임가공비 지급"] + _fl["원료 매입 지급"] + _fl["고정 지출"]
+        _open = _bal; _bal = _bal + _in + _out
+        _cash_rows.append({"월": _mth, "기초 잔액": round(_open, 0),
+                           "확정산 입금": round(_fl["확정산 입금"], 0), "가정산 입금": round(_fl["가정산 입금"], 0),
+                           "임가공비 지급": round(_fl["임가공비 지급"], 0), "원료 매입 지급": round(_fl["원료 매입 지급"], 0),
+                           "고정 지출": round(_fl["고정 지출"], 0), "순증감": round(_in + _out, 0), "월말 잔액": round(_bal, 0)})
+    _min_row = min(_cash_rows, key=lambda r: r["월말 잔액"])
+    _k1, _k2, _k3, _k4 = st.columns(4)
+    _k1.markdown(_kpi_card("기초 현금", f"${_cs_balance:,.0f}", f"{_cs_month} 월초 · 설정에서 입력"), unsafe_allow_html=True)
+    _k2.markdown(_kpi_card("3개월 예상 입금", f"${sum(r['확정산 입금'] + r['가정산 입금'] for r in _cash_rows):,.0f}",
+                           "확정산 잔액 + 가정산 미입금"), unsafe_allow_html=True)
+    _k3.markdown(_kpi_card("3개월 예상 지출", f"${-sum(r['임가공비 지급'] + r['원료 매입 지급'] + r['고정 지출'] for r in _cash_rows):,.0f}",
+                           f"임가공비·원료·고정 ${_fixed_m:,.0f}/월"), unsafe_allow_html=True)
+    _k4.markdown(_kpi_card("최저 월말 잔액", f"${_min_row['월말 잔액']:,.0f}", f"{_min_row['월']} · 3개월 후 ${_cash_rows[-1]['월말 잔액']:,.0f}",
+                           val_color=(_C_NEG if _min_row["월말 잔액"] < 0 else "#e5e5e5"),
+                           left_border=(_C_NEG if _min_row["월말 잔액"] < 0 else "")), unsafe_allow_html=True)
+    if not _cs.get("balance_usd"):
+        st.warning("기초 현금이 입력되지 않아 잔액이 0에서 시작합니다. 위 '전망 설정'에서 월초 잔액을 넣어 주세요.")
+    st.dataframe(pd.DataFrame(_cash_rows), use_container_width=True, hide_index=True,
+                 column_config=_cc_money("기초 잔액", "확정산 입금", "가정산 입금", "임가공비 지급",
+                                         "원료 매입 지급", "고정 지출", "순증감", "월말 잔액", dec=0))
+    try:
+        import plotly.graph_objects as go
+        _fig_c = go.Figure()
+        _fig_c.add_trace(go.Bar(x=_cash_months, y=[r["확정산 입금"] + r["가정산 입금"] for r in _cash_rows],
+                                name="입금", marker_color=_C_POS))
+        _fig_c.add_trace(go.Bar(x=_cash_months, y=[r["임가공비 지급"] + r["원료 매입 지급"] + r["고정 지출"] for r in _cash_rows],
+                                name="지출", marker_color=_C_NEG))
+        _fig_c.add_trace(go.Scatter(x=_cash_months, y=[r["월말 잔액"] for r in _cash_rows], name="월말 잔액",
+                                    mode="lines+markers+text", line=dict(color=_C_LINE, width=2),
+                                    text=[f"${r['월말 잔액']:,.0f}" for r in _cash_rows], textposition="top center",
+                                    textfont=dict(size=9, color=_C_LINE)))
+        _fig_c.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+        _fig_c.update_layout(barmode="relative", bargap=0.4)
+        _fig_style(_fig_c, height=280); _fig_c.update_xaxes(type="category")
+        st.plotly_chart(_fig_c, use_container_width=True)
+    except ImportError:
+        pass
+    with st.expander("입출금 상세 (건별)", expanded=False):
+        st.caption("기준월 이전 만기분은 기준월로 몰아서 계산합니다. 3개월 밖 만기는 제외되고, 예상 입금월이 '미정'인 확정산은 마지막 달에 넣습니다. "
+                   "입금 조건일이 이미 지난 가정산·임가공비·원료 매입은 결제 완료로 간주합니다.")
+        if _flow_det:
+            st.dataframe(pd.DataFrame(sorted(_flow_det, key=lambda r: (r["월"], r["구분"]))),
+                         use_container_width=True, hide_index=True, column_config=_cc_money("금액", dec=0))
+        else:
+            st.caption("해당 기간에 예정된 입출금이 없습니다.")
+
     # ── 엑셀 보고서 (대시보드 요약과 동일 기준: 할 일·현금 전망·완제품 재고 포함) ──
     if active_buyers:
         _xl_bytes = _excel_report_cached(cfg, NI, CO, XR, rpt_month, active_buyers[0]["id"],
