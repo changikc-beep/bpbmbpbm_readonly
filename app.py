@@ -991,6 +991,73 @@ def _prov_invoice_calc(cfg, s):
     return round(round(pkg, 2) * float(s.get("weight_kg", 0) or 0), 2)
 
 
+# ── 차트 공통 스타일 (plotly) — 색 규칙: BP 파랑 / BM 초록 / 흑자 초록 / 적자 빨강 / 총계 보라 ──
+_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#2383e2", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#f59e0b"
+_C_COST = {"원료 매입비": "#6b7280", "임가공비(순)": "#a16207", "수출비": "#0e7490", "보관비": "#7c3aed"}
+_GRID = "rgba(255,255,255,0.07)"
+
+def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None):
+    """모든 plotly 차트에 같은 배경·격자·글꼴·여백·범례를 적용한다."""
+    fig.update_layout(
+        height=height,
+        title=dict(text=title, font=dict(size=13, color="#e5e5e5"), x=0, xanchor="left") if title else None,
+        margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
+        plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
+        font=dict(color="#c5c5c5", size=11),
+        showlegend=legend,
+        legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+        xaxis_title="", yaxis_title="",
+        hoverlabel=dict(bgcolor="#2a2a2a", bordercolor="#444", font=dict(color="#e5e5e5", size=11)),
+    )
+    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#c5c5c5"), zeroline=False)
+    fig.update_yaxes(showgrid=True, gridcolor=_GRID, tickformat=y_fmt, automargin=True,
+                     tickfont=dict(size=10, color="#c5c5c5"), zeroline=False)
+    return fig
+
+def _fig_monthly_pnl(rows, height=320, title=None):
+    """월별 손익 구성 차트: 매출은 위로, 비용 4종은 아래로 쌓고 실질 손익을 선으로 겹친다.
+    rows: [{"월", "매출(BP)", "원료 매입비", "임가공비(순)", "수출비", "보관비", "실질 손익"}]"""
+    import plotly.graph_objects as go
+    _x = [r["월"] for r in rows]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=_x, y=[r["매출(BP)"] for r in rows], name="매출(BP)", marker_color=_C_BP,
+                         hovertemplate="%{x}<br>매출 $%{y:,.0f}<extra></extra>"))
+    for _k, _c in _C_COST.items():
+        fig.add_trace(go.Bar(x=_x, y=[-(r.get(_k) or 0) for r in rows], name=_k, marker_color=_c,
+                             hovertemplate="%{x}<br>" + _k + " $%{y:,.0f}<extra></extra>"))
+    _real = [r["실질 손익"] for r in rows]
+    fig.add_trace(go.Scatter(
+        x=_x, y=_real, name="실질 손익", mode="lines+markers+text",
+        line=dict(color=_C_LINE, width=2),
+        marker=dict(size=8, color=[_C_POS if v >= 0 else _C_NEG for v in _real],
+                    line=dict(color="#1e1e1e", width=1)),
+        text=[f"${v:+,.0f}" for v in _real], textposition="top center",
+        textfont=dict(size=9, color=_C_LINE),
+        hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>",
+    ))
+    fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+    fig.update_layout(barmode="relative", bargap=0.35)
+    _fig_style(fig, height=height, title=title)
+    fig.update_xaxes(type="category")   # "YYYY-MM" 문자열을 날짜로 해석하지 않게
+    return fig
+
+
+def _cc_money(*cols, dec=2, kg=(), pct=(), perkg=(), small=()):
+    """st.dataframe column_config 빌더 — 숫자형을 유지해 정렬이 되게 하고 표기만 통일한다."""
+    cc = {}
+    for c in cols:
+        cc[c] = st.column_config.NumberColumn(c, format=f"$%,.{dec}f")
+    for c in kg:
+        cc[c] = st.column_config.NumberColumn(c, format="%,.0f")
+    for c in pct:
+        cc[c] = st.column_config.NumberColumn(c, format="%+.2f%%")
+    for c in perkg:
+        cc[c] = st.column_config.NumberColumn(c, format="$%.4f")
+    for c in small:
+        cc[c] = st.column_config.NumberColumn(c, format="%d", width="small")
+    return cc
+
 def status_badge(s):
     m={"provisional":("Provisional 정산","b-wn"),"final":("최종정산","b-ok"),"paid":("입금완료","b-bp")}
     lbl,cls=m.get(s,("—","b-ng"))
@@ -1550,7 +1617,30 @@ if _page == PG_PNL and _sub == SUB_SENS:
             "Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}",
             "단가($/kg)":"${:.4f}","단가(원/kg)":"₩{:,.2f}"}),
             use_container_width=True,hide_index=True)
-        st.line_chart(df_s.set_index("변동률")[["단가($/kg)"]])
+        try:
+            import plotly.graph_objects as go
+            _sx  = [r["변동률"] for r in srows]
+            _sy  = [r["단가($/kg)"] for r in srows]
+            _fig_s = go.Figure()
+            _fig_s.add_trace(go.Scatter(
+                x=_sx, y=_sy, mode="lines+markers+text", name="단가($/kg)",
+                line=dict(color=_C_BP, width=2), marker=dict(size=7, color=_C_BP),
+                text=[f"${v:.2f}" for v in _sy], textposition="top center", textfont=dict(size=9),
+                hovertemplate="%{x}<br>$%{y:.4f}/kg<extra></extra>",
+            ))
+            if "+0%" in _sx:
+                _i0 = _sx.index("+0%")
+                _fig_s.add_trace(go.Scatter(
+                    x=[_sx[_i0]], y=[_sy[_i0]], mode="markers", name="현재 INDEX",
+                    marker=dict(size=14, color=_C_LINE, symbol="diamond",
+                                line=dict(color="#1e1e1e", width=1)),
+                    hovertemplate="현재 INDEX 기준<br>$%{y:.4f}/kg<extra></extra>",
+                ))
+            st.plotly_chart(_fig_style(_fig_s, height=280, y_fmt="$,.2f",
+                                       title=f"{sens_b} — {sens_t} 변동 시 매각 단가"),
+                            use_container_width=True)
+        except ImportError:
+            st.line_chart(df_s.set_index("변동률")[["단가($/kg)"]])
 
         # ── 임가공비 단가 시나리오 ─────────────────────────────────────────
         st.divider()
@@ -1794,21 +1884,23 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 "중량(kg)": _s.get("weight_kg",0),
                 "상태":   {"provisional":"🟡 Provisional","final":"🟢 최종","paid":"🔵 입금"}.get(_s.get("status","provisional"),"—"),
             })
-        st.dataframe(pd.DataFrame(_tl).style.format({"중량(kg)":"{:,.0f}"}),
-                     use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(_tl), use_container_width=True, hide_index=True,
+                     column_config=_cc_money(kg=("중량(kg)",), small=("No.",)))
 
-        # Gantt 차트
+        # Gantt 차트 — 기본은 미정산(provisional·final)만, 입금완료는 토글
+        _g_paid = st.toggle("입금완료 건도 일정에 표시", value=False, key="gantt_paid")
         try:
             import plotly.express as px
             _gantt = []
             for _r in _tl:
                 if _r["선적일"] == "미정": continue
+                if not _g_paid and _r["상태"].endswith("입금"): continue
                 try:
                     _s_dt = datetime.strptime(_r["선적일"], "%Y-%m-%d")
                     _e_dt = (datetime.strptime(_r["ETA"], "%Y-%m-%d")
                              if _r["ETA"] != "TBD" else _s_dt + timedelta(days=60))
                     _gantt.append({
-                        "항차":   f"#{_r['No.']}  {_r['HBL']}",
+                        "항차":   _r["HBL"],
                         "매입사": _r["매입사"],
                         "ETD":    _s_dt,
                         "ETA":    _e_dt,
@@ -1821,8 +1913,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _df_g["라벨"] = _df_g.apply(
                     lambda r: f"{r['매입사'].split('(')[0].strip()}  "
                               f"({(r['ETA']-r['ETD']).days}일)", axis=1)
-                # 상태별 색상 — 진하게
-                _cmap = {"🟡 Provisional":"#1F4E79","🟢 최종":"#1E8449","🔵 입금":"#117A65"}
+                # 상태별 색상 — 색 규칙(가정산 노랑 / 최종 초록 / 입금 파랑)과 통일
+                _cmap = {"🟡 Provisional": "#b45309", "🟢 최종": "#15803d", "🔵 입금": "#1d4ed8"}
                 _fig  = px.timeline(
                     _df_g, x_start="ETD", x_end="ETA", y="항차",
                     color="상태", text="라벨",
@@ -1830,47 +1922,27 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     hover_data={"매입사":True,"ETD":True,"ETA":True,"라벨":False,"상태":False},
                     color_discrete_map=_cmap,
                 )
-                _fig.update_traces(
-                    textposition="inside",
-                    insidetextanchor="middle",
-                    textfont=dict(color="white", size=10, family="Arial"),
-                    marker_line=dict(color="rgba(255,255,255,0.4)", width=1),
-                )
-                # 오늘 날짜 기준선
                 _today_dt = datetime.today()
+                _fig.update_traces(
+                    textposition="inside", insidetextanchor="middle",
+                    textfont=dict(color="white", size=10),
+                    marker_line=dict(color="rgba(255,255,255,0.35)", width=1),
+                )
+                # 이미 도착(ETA 경과)한 항차는 흐리게
+                for _tr in _fig.data:
+                    _tr.marker.opacity = [0.45 if _e < _today_dt else 1.0
+                                          for _e in pd.to_datetime(_df_g.loc[_df_g["상태"] == _tr.name, "ETA"])]
                 _fig.add_vline(
                     x=_today_dt.timestamp()*1000,
-                    line_dash="dot", line_color="#ef4444", line_width=2,
-                    annotation_text=f"오늘 ({_today_dt.strftime('%m/%d')})",
-                    annotation_font=dict(color="#ef4444", size=10),
+                    line_dash="dot", line_color=_C_NEG, line_width=2,
+                    annotation_text=f"오늘 {_today_dt.strftime('%m/%d')}",
+                    annotation_font=dict(color=_C_NEG, size=10),
                     annotation_position="top left",
                 )
-                _fig.update_yaxes(
-                    autorange="reversed",
-                    tickfont=dict(size=11, color="#D0D0E8"),
-                    gridcolor="rgba(255,255,255,0.08)",
-                )
-                _fig.update_xaxes(
-                    showgrid=True, gridcolor="rgba(255,255,255,0.08)",
-                    tickformat="%m/%d",
-                    tickfont=dict(size=10, color="#c5c5c5"),
-                )
-                _fig.update_layout(
-                    height=max(280, len(_gantt)*54+110),
-                    xaxis_title="", yaxis_title="",
-                    margin=dict(l=150, r=20, t=50, b=20),
-                    plot_bgcolor="#1e1e1e",
-                    paper_bgcolor="#252525",
-                    font=dict(color="#c5c5c5"),
-                    legend=dict(
-                        title="",
-                        orientation="h",
-                        yanchor="bottom", y=1.02,
-                        xanchor="right", x=1,
-                        font=dict(size=11, color="#c5c5c5"),
-                        bgcolor="rgba(37,37,37,0.90)",
-                    ),
-                )
+                _fig_style(_fig, height=max(220, len(_gantt)*38+90), y_fmt=None)
+                _fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor=_GRID,
+                                  tickfont=dict(size=11, color="#D0D0E8"))
+                _fig.update_xaxes(showgrid=True, gridcolor=_GRID, tickformat="%m/%d")
                 st.plotly_chart(_fig, use_container_width=True)
         except ImportError:
             st.caption("plotly 설치 시 Gantt 차트 표시 — `pip install plotly`")
@@ -3022,22 +3094,14 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                       f"-${_tot_eu:,.0f}", f"-${abs(_stor_s1):,.0f}",
                       f"-${_sga_s1 + _other_s1:,.0f}", f"${_tot_op_s1:+,.0f}"],
                 textposition="outside",
-                increasing=dict(marker=dict(color="#2383e2")),
-                decreasing=dict(marker=dict(color="#ef4444")),
-                totals=dict(marker=dict(color="#8b5cf6")),
+                increasing=dict(marker=dict(color=_C_BP)),
+                decreasing=dict(marker=dict(color=_C_NEG)),
+                totals=dict(marker=dict(color=_C_TOT)),
                 connector=dict(line=dict(color="#484848", width=1, dash="dot")),
                 hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
             ))
-            _wf.update_layout(
-                title=dict(
-                    text=f"매출 ${_tot_bp:,.0f}  →  영업이익 {_op_sign} ${_tot_op_s1:+,.0f}  (원료비 FIFO 기준)",
-                    font=dict(size=13)),
-                height=380, margin=dict(l=10, r=10, t=55, b=10),
-                yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.07)"),
-                plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
-                font=dict(color="#c5c5c5"),
-                showlegend=False,
-            )
+            _fig_style(_wf, height=380, legend=False,
+                       title=f"매출 ${_tot_bp:,.0f}  →  영업이익 {_op_sign} ${_tot_op_s1:+,.0f}  (원료비 FIFO 기준)")
             st.plotly_chart(_wf, use_container_width=True)
         except ImportError:
             pass
@@ -3162,61 +3226,17 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                         "실질 손익":  round(_mr2, 2),
                     })
                 _df_mon2 = pd.DataFrame(_mon_rows2)
-                def _hl_mon2(row):
-                    styles = [""] * len(row)
-                    _cols2 = list(row.index)
-                    v_gp   = row.get("매출총이익", 0) or 0
-                    v_real = row.get("실질 손익", 0) or 0
-                    c_gp   = ("color:#155724;font-weight:600" if v_gp   >= 0 else "color:#721c24;font-weight:600")
-                    c_real = ("color:#155724;font-weight:600" if v_real >= 0 else "color:#721c24;font-weight:600")
-                    if "매출총이익" in _cols2: styles[_cols2.index("매출총이익")] = c_gp
-                    if "실질 손익"  in _cols2: styles[_cols2.index("실질 손익")]  = c_real
-                    return styles
-                # ── 트렌드 차트 ──────────────────────────────────────────────
+                # ── 트렌드 차트 (매출 ↑ / 비용 ↓ 쌓기 + 실질 손익 선) ──
                 try:
-                    _mx   = [r["월"] for r in _mon_rows2]
-                    _mgm  = [r["매출총이익"] for r in _mon_rows2]
-                    _mrl  = [r["실질 손익"] for r in _mon_rows2]
-                    _fig_mon = go.Figure()
-                    _fig_mon.add_trace(go.Bar(
-                        x=_mx, y=_mgm, name="매출총이익",
-                        marker_color=["#2383e2" if v >= 0 else "#ef4444" for v in _mgm],
-                        text=[f"${v:+,.0f}" for v in _mgm],
-                        textposition="outside", textfont=dict(size=9),
-                    ))
-                    _fig_mon.add_trace(go.Scatter(
-                        x=_mx, y=_mrl, name="실질 손익",
-                        mode="lines+markers+text",
-                        line=dict(color="#f59e0b", width=2),
-                        marker=dict(size=7, color=["#4ade80" if v >= 0 else "#ef4444" for v in _mrl]),
-                        text=[f"${v:+,.0f}" for v in _mrl],
-                        textposition="top center", textfont=dict(size=9, color="#f59e0b"),
-                    ))
-                    _fig_mon.add_hline(y=0, line_dash="dot",
-                                       line_color="rgba(255,255,255,0.20)", line_width=1)
-                    _fig_mon.update_layout(
-                        height=300, margin=dict(l=10, r=10, t=30, b=10),
-                        yaxis=dict(tickformat="$,.0f", gridcolor="rgba(255,255,255,0.07)"),
-                        plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
-                        font=dict(color="#c5c5c5"),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                                    xanchor="right", x=1, bgcolor="rgba(0,0,0,0)"),
-                        barmode="overlay",
-                    )
-                    st.plotly_chart(_fig_mon, use_container_width=True)
+                    st.plotly_chart(_fig_monthly_pnl([r for r in _mon_rows2 if r["월"] != "미상"], height=320),
+                                    use_container_width=True)
                 except (ImportError, Exception):
                     pass
 
-                st.dataframe(_df_mon2.style.apply(_hl_mon2, axis=1).format({
-                    "생산(kg)":    "{:,.0f}",
-                    "매출(BP)":    "${:,.2f}",
-                    "원료 매입비":  "${:,.2f}",
-                    "임가공비(순)": "${:,.2f}",
-                    "매출총이익":  "${:+,.2f}",
-                    "수출비":      "${:,.2f}",
-                    "보관비":      "${:,.2f}",
-                    "실질 손익":   "${:+,.2f}",
-                }), use_container_width=True, hide_index=True)
+                st.dataframe(_df_mon2, use_container_width=True, hide_index=True,
+                             column_config=_cc_money("매출(BP)", "원료 매입비", "임가공비(순)", "매출총이익",
+                                                     "수출비", "보관비", "실질 손익",
+                                                     kg=("생산(kg)",), small=("HBL수",)))
                 st.caption("매출총이익 = 매출 − 원료 매입비(FIFO 우선) − 임가공비(순)  |  "
                            "실질 손익 = 매출총이익 − 수출비 − 보관비  |  "
                            "스크랩 매각·BP 재매입은 상계, 간접 판관비·기타(기간 합계)는 월별 배분에서 제외. "
@@ -3337,29 +3357,10 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 "마진율(%)":   round(_hmgr, 2) if _hmgr is not None else None,
             })
 
-        def _hl_sum_tbl(row):
-            styles = [""] * len(row)
-            _ci = list(row.index)
-            v = row.get("실질 손익", 0) or 0
-            if "실질 손익" in _ci:
-                styles[_ci.index("실질 손익")] = (
-                    "background-color:#1E8449;color:white;font-weight:600" if v >= 0
-                    else "background-color:#922b21;color:white;font-weight:600")
-            return styles
-
         st.dataframe(
-            pd.DataFrame(_sum_rows).style.apply(_hl_sum_tbl, axis=1).format(na_rep="—", formatter={
-                "BP생산(kg)":  "{:,.0f}",
-                "매출(BP)":    "${:,.2f}",
-                "원료 매입비":  "${:,.2f}",
-                "임가공비(순)": "${:,.2f}",
-                "매출총이익":  "${:+,.2f}",
-                "수출비":      "${:,.2f}",
-                "보관비":      lambda v: f"${v:,.2f}" if v else "—",
-                "실질 손익":   "${:+,.2f}",
-                "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
-            }),
-            use_container_width=True, hide_index=True,
+            pd.DataFrame(_sum_rows), use_container_width=True, hide_index=True,
+            column_config=_cc_money("매출(BP)", "원료 매입비", "임가공비(순)", "매출총이익", "수출비",
+                                    "보관비", "실질 손익", kg=("BP생산(kg)",), pct=("마진율(%)",)),
         )
 
         # Excel 다운로드
@@ -3552,28 +3553,11 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 })
             _by_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
 
-            def _hl_by_tbl(row):
-                styles = [""] * len(row)
-                _ci = list(row.index)
-                v = row.get("실질 손익", 0) or 0
-                _c = ("color:#1E8449;font-weight:600" if v >= 0
-                      else "color:#922b21;font-weight:600")
-                for _col in ("실질 손익", "실질손익/kg", "마진율(%)"):
-                    if _col in _ci:
-                        styles[_ci.index(_col)] = _c
-                return styles
-
             st.dataframe(
-                pd.DataFrame(_by_rows).style.apply(_hl_by_tbl, axis=1).format(na_rep="—", formatter={
-                    "BP생산(kg)":  "{:,.0f}",
-                    "매출(BP)":    "${:,.2f}",
-                    "매출총이익":  "${:+,.2f}",
-                    "실질 손익":   "${:+,.2f}",
-                    "매출단가/kg": lambda v: f"${v:.4f}" if v is not None else "—",
-                    "실질손익/kg": lambda v: f"${v:+.4f}" if v is not None else "—",
-                    "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
-                }),
-                use_container_width=True, hide_index=True,
+                pd.DataFrame(_by_rows), use_container_width=True, hide_index=True,
+                column_config=_cc_money("매출(BP)", "매출총이익", "실질 손익",
+                                        kg=("BP생산(kg)",), pct=("마진율(%)",),
+                                        perkg=("매출단가/kg", "실질손익/kg")),
             )
 
             # 실질손익/kg 막대 차트 — 매입사 간 단위 수익성 비교
@@ -3584,20 +3568,15 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 if len(_bc_names) >= 2:
                     _fig_by = go.Figure(go.Bar(
                         x=_bc_names, y=_bc_vals,
-                        marker_color=["#2383e2" if v >= 0 else "#ef4444" for v in _bc_vals],
+                        marker_color=[_C_POS if v >= 0 else _C_NEG for v in _bc_vals],
                         text=[f"${v:+.4f}" for v in _bc_vals],
                         textposition="outside", textfont=dict(size=10),
+                        hovertemplate="%{x}<br>$%{y:+.4f}/kg<extra></extra>",
                     ))
-                    _fig_by.add_hline(y=0, line_dash="dot",
-                                      line_color="rgba(255,255,255,0.20)", line_width=1)
-                    _fig_by.update_layout(
-                        title=dict(text="실질 손익 ($/kg BP) — 매입사별", font=dict(size=13)),
-                        height=280, margin=dict(l=10, r=10, t=45, b=10),
-                        yaxis=dict(tickformat="$,.2f", gridcolor="rgba(255,255,255,0.07)"),
-                        plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
-                        font=dict(color="#c5c5c5"), showlegend=False,
-                    )
-                    st.plotly_chart(_fig_by, use_container_width=True)
+                    _fig_by.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+                    st.plotly_chart(_fig_style(_fig_by, height=280, legend=False, y_fmt="$,.2f",
+                                               title="실질 손익 ($/kg BP) — 매입사별"),
+                                    use_container_width=True)
             except ImportError:
                 pass
 
@@ -3623,14 +3602,11 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 })
             _pr_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
             if _pr_rows:
-                st.dataframe(pd.DataFrame(_pr_rows).style.apply(_hl_by_tbl, axis=1).format(na_rep="—", formatter={
-                    "투입(kg)": "{:,.0f}", "생산(kg)": "{:,.0f}",
-                    "실제 전환율(%)": lambda v: f"{v:.2f}%" if v is not None else "—",
-                    "임가공비(순)":   "${:,.2f}",
-                    "임가공비/kg BP": lambda v: f"${v:.4f}" if v is not None else "—",
-                    "매출총이익": "${:+,.2f}", "실질 손익": "${:+,.2f}",
-                    "실질손익/kg": lambda v: f"${v:+.4f}" if v is not None else "—",
-                }), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_pr_rows), use_container_width=True, hide_index=True,
+                             column_config=_cc_money("임가공비(순)", "매출총이익", "실질 손익",
+                                                     kg=("투입(kg)", "생산(kg)"),
+                                                     perkg=("임가공비/kg BP", "실질손익/kg"),
+                                                     pct=("실제 전환율(%)",)))
                 st.caption("임가공비 단가 변동 시나리오는 손익·시나리오 > 민감도에서 계산할 수 있습니다.")
 
     st.divider()
@@ -6689,11 +6665,8 @@ if _page == PG_HOME:
                        "실제 입금 시기는 매입사 정산 관행에 따라 다릅니다. 음수는 반환 예정액입니다.")
             _cf_rows.sort(key=lambda r: (r["구분"] != "청구 가능", r["Final월"]))
             st.dataframe(
-                pd.DataFrame(_cf_rows).style.format({
-                    "가정산 수령": "${:,.0f}",
-                    "확정산 잔액": "${:+,.0f}",
-                }),
-                use_container_width=True, hide_index=True,
+                pd.DataFrame(_cf_rows), use_container_width=True, hide_index=True,
+                column_config=_cc_money("가정산 수령", "확정산 잔액", dec=0),
             )
 
     # ── 엑셀 보고서 (대시보드 요약과 동일 기준: 할 일·현금 전망·완제품 재고 포함) ──
@@ -6728,6 +6701,52 @@ if _page == PG_HOME:
     _yr_stor  = sum(_rctx["eff_storage"](r) for r in _yr_ph)
     _yr_real  = _yr_bp - _yr_raw - _yr_pf - _yr_eu - _yr_stor
 
+    # ── 월별 집계 (카드 전월 대비 배지 + 아래 월별 구성 차트 공용) ──
+    _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0, "raw": 0.0, "stor": 0.0,
+                                   "out": 0.0, "cnt": 0, "inv": 0.0})
+    for r in _yr_ph:
+        _mo_key = (_rpt_ship_m0.get(r.get("shipment_id",""), {}).get("loading_date","") or "")[:7]
+        if not _mo_key:
+            continue
+        _mo_agg[_mo_key]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
+        _mo_agg[_mo_key]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
+        _mo_agg[_mo_key]["eu"]   += _ph_export_usd(r, cfg)
+        _mo_agg[_mo_key]["raw"]  += _rctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
+        _mo_agg[_mo_key]["stor"] += _rctx["eff_storage"](r)
+        _mo_agg[_mo_key]["out"]  += float(r.get("output_kg",0) or 0)
+    for s in _yr_ships:
+        _mo_key = (s.get("loading_date","") or "")[:7]
+        if _mo_key:
+            _mo_agg[_mo_key]["cnt"] += 1
+            _mo_agg[_mo_key]["inv"] += float(s.get("invoice_usd",0) or 0)
+    _mo_rows = []
+    for _mk in sorted(_mo_agg.keys()):
+        _mv = _mo_agg[_mk]
+        _mo_rows.append({"월": _mk, "매출(BP)": round(_mv["bp"], 2), "원료 매입비": round(_mv["raw"], 2),
+                         "임가공비(순)": round(_mv["pf"], 2), "수출비": round(_mv["eu"], 2),
+                         "보관비": round(_mv["stor"], 2),
+                         "실질 손익": round(_mv["bp"] - _mv["raw"] - _mv["pf"] - _mv["eu"] - _mv["stor"], 2),
+                         "생산(kg)": _mv["out"], "선적": _mv["cnt"], "Invoice": _mv["inv"]})
+    # 전월 대비: 데이터가 있는 최근 두 달을 비교 (이번 달 실적이 아직 없으면 직전 두 달)
+    _mo_last, _mo_prev = (_mo_rows[-1], _mo_rows[-2]) if len(_mo_rows) >= 2 else (None, None)
+    def _mom_badge(key, fmt_abs, pct=True):
+        """(배지 문구, 색) — 최근월 vs 직전월 증감."""
+        if not _mo_last:
+            return "", "#9b9b9b"
+        _d = _mo_last[key] - _mo_prev[key]
+        if abs(_d) < 1e-9:
+            return f"{_mo_last['월'][5:]}월 보합", "#9b9b9b"
+        _arrow = "▲" if _d > 0 else "▼"
+        _col   = _C_POS if _d > 0 else _C_NEG
+        _txt   = f"{_arrow} {fmt_abs(abs(_d))}"
+        if pct and _mo_prev[key]:
+            _txt += f" ({_d / abs(_mo_prev[key]) * 100:+.0f}%)"
+        return f"{_mo_last['월'][5:]}월 {_txt}", _col
+    _b_cnt = _mom_badge("선적",     lambda v: f"{v:.0f}건", pct=False)
+    _b_out = _mom_badge("생산(kg)", lambda v: f"{v/1000:.1f} MT")
+    _b_inv = _mom_badge("Invoice",  lambda v: f"${v/1000:,.0f}k")
+    _b_rl  = _mom_badge("실질 손익", lambda v: f"${v/1000:,.0f}k", pct=False)
+
     _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
     _yoy_sub      = f"전년 동기 {len(_yr_ships) - len(_yr_ships_ly):+d}건"
     _yr_input_kg  = sum(float(r.get("input_kg",0) or 0) for r in _yr_ph) or 1
@@ -6741,10 +6760,11 @@ if _page == PG_HOME:
 
     st.markdown(f"#### {_cur_year}년 누계")
     _ya1, _ya2, _ya3, _ya4 = st.columns(4)
-    _ya1.markdown(_kpi_card("선적 건수",    f"{len(_yr_ships)}건",  _yoy_sub),                         unsafe_allow_html=True)
-    _ya2.markdown(_kpi_card("BP 생산",      f"{_yr_out/1000:.1f} MT", _conv_sub),                       unsafe_allow_html=True)
-    _ya3.markdown(_kpi_card("Invoice 합계", f"${_yr_inv/1_000_000:.1f}M", _inv_sub),                   unsafe_allow_html=True)
-    _ya4.markdown(_kpi_card("실질 손익",    _margin_fmt, _margin_sub, val_color=_margin_col),           unsafe_allow_html=True)
+    _ya1.markdown(_kpi_card_badge("선적 건수",    *_b_cnt, f"{len(_yr_ships)}건",        _yoy_sub),   unsafe_allow_html=True)
+    _ya2.markdown(_kpi_card_badge("BP 생산",      *_b_out, f"{_yr_out/1000:.1f} MT",     _conv_sub),  unsafe_allow_html=True)
+    _ya3.markdown(_kpi_card_badge("Invoice 합계", *_b_inv, f"${_yr_inv/1_000_000:.1f}M", _inv_sub),   unsafe_allow_html=True)
+    _ya4.markdown(_kpi_card_badge("실질 손익",    *_b_rl,  _margin_fmt, _margin_sub, val_color=_margin_col), unsafe_allow_html=True)
+    st.caption("배지: 실적이 있는 최근 월과 그 직전 월의 비교")
 
     st.divider()
     st.markdown("#### 현재 운영 현황")
@@ -6795,44 +6815,13 @@ if _page == PG_HOME:
                              f"provisional {_prov_cnt} · final {_final_cnt}"),
                   unsafe_allow_html=True)
 
-    # ── 월별 실질 손익 추이 (관리회계 기준 — 원료비·보관비 차감, 판관비 제외) ──
-    _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0, "raw": 0.0, "stor": 0.0})
-    for r in _yr_ph:
-        _mo_key = (_rpt_ship_m0.get(r.get("shipment_id",""), {}).get("loading_date","") or "")[:7]
-        if not _mo_key:
-            continue
-        _mo_agg[_mo_key]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
-        _mo_agg[_mo_key]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
-        _mo_agg[_mo_key]["eu"]   += _ph_export_usd(r, cfg)
-        _mo_agg[_mo_key]["raw"]  += _rctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
-        _mo_agg[_mo_key]["stor"] += _rctx["eff_storage"](r)
-    if _mo_agg:
-        _mo_rows = []
-        for _mk in sorted(_mo_agg.keys()):
-            _mv = _mo_agg[_mk]
-            _mo_real = _mv["bp"] - _mv["raw"] - _mv["pf"] - _mv["eu"] - _mv["stor"]
-            _mo_rows.append({"월": _mk, "실질 손익": round(_mo_real, 2),
-                              "구분": "흑자" if _mo_real >= 0 else "적자"})
+    # ── 월별 손익 구성 추이 (관리회계 기준 — 원료비·보관비 차감, 판관비 제외) ──
+    if _mo_rows:
         try:
-            import plotly.express as px
-            _df_mo = pd.DataFrame(_mo_rows)
-            _fig_mo = px.bar(
-                _df_mo, x="월", y="실질 손익", color="구분", text="실질 손익",
-                color_discrete_map={"흑자": "#4ade80", "적자": "#ef4444"},
-            )
-            _fig_mo.update_traces(texttemplate="$%{y:,.0f}", textposition="outside")
-            _fig_mo.add_hline(y=0, line_color="rgba(255,255,255,0.3)", line_width=1)
-            _fig_mo.update_layout(
-                height=320, showlegend=False,
-                margin=dict(l=10, r=10, t=30, b=10),
-                plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
-                font=dict(color="#c5c5c5"),
-                xaxis_title="", yaxis_title="",
-            )
-            _fig_mo.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
-            st.markdown(f"#### {_cur_year}년 월별 실질 손익 추이")
-            st.caption("원료비(FIFO 우선)·보관비 차감, 간접 판관비 제외 — 손익·시나리오 > 손익 요약의 월별 추이와 동일 기준")
-            st.plotly_chart(_fig_mo, use_container_width=True)
+            st.markdown(f"#### {_cur_year}년 월별 손익 구성")
+            st.caption("매출은 위로, 원료비·임가공비·수출비·보관비는 아래로 쌓고 실질 손익을 선으로 표시 — "
+                       "손익·시나리오 > 손익 요약의 월별 추이와 같은 기준")
+            st.plotly_chart(_fig_monthly_pnl(_mo_rows, height=340), use_container_width=True)
         except ImportError:
             pass
 
