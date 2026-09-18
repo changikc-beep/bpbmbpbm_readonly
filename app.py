@@ -238,6 +238,46 @@ div[data-testid="stMarkdown"] table tbody tr:hover td{
 .b-sc{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
 .b-ok{background:rgba(34,197,94,.15);color:#4ade80;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(34,197,94,.25)}
 .b-wn{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
+/* ── 페이지 내비게이션 (상위: 채워진 필 스트립 / 하위: 밑줄 탭) ── */
+.st-key-nav_top div[data-testid="stSegmentedControl"]{margin-top:-4px}
+.st-key-nav_top div[data-testid="stButtonGroup"]{
+    background:#252525;border:1px solid #333;border-radius:12px;padding:4px;gap:3px;
+    box-shadow:0 1px 3px rgba(0,0,0,.35)
+}
+.st-key-nav_top div[data-testid="stButtonGroup"] button{
+    border-radius:9px !important;border:none !important;background:transparent !important;
+    color:#9b9b9b !important;font-size:.92rem !important;font-weight:600 !important;
+    padding:8px 20px !important;transition:background .15s,color .15s;box-shadow:none !important
+}
+.st-key-nav_top div[data-testid="stButtonGroup"] button:hover{
+    background:rgba(255,255,255,.06) !important;color:#e5e5e5 !important
+}
+.st-key-nav_top div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
+.st-key-nav_top div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
+    background:#2383e2 !important;color:#fff !important;
+    box-shadow:0 1px 6px rgba(35,131,226,.45) !important
+}
+.st-key-nav_top div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
+
+.st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:2px;margin-bottom:6px}
+.st-key-nav_sub div[data-testid="stButtonGroup"]{
+    background:transparent;border:none;border-bottom:1px solid #333;border-radius:0;
+    padding:0;gap:0;width:100%
+}
+.st-key-nav_sub div[data-testid="stButtonGroup"] button{
+    border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
+    background:transparent !important;color:#8a8a8a !important;
+    font-size:.8rem !important;font-weight:500 !important;padding:6px 14px 7px !important;
+    margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
+}
+.st-key-nav_sub div[data-testid="stButtonGroup"] button:hover{color:#e5e5e5 !important}
+.st-key-nav_sub div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
+.st-key-nav_sub div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
+    color:#e5e5e5 !important;font-weight:600 !important;border-bottom:2px solid #2383e2 !important
+}
+.st-key-nav_sub div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
+.nav-crumb{font-size:.72rem;color:#7a7a7a;letter-spacing:.02em;margin:2px 0 0 2px}
+.nav-crumb b{color:#c5c5c5;font-weight:600}
 .b-ng{background:rgba(239,68,68,.15);color:#f87171;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(239,68,68,.25)}
 
 </style>""", unsafe_allow_html=True)
@@ -1356,11 +1396,18 @@ if "main_nav" not in st.session_state:
     if _qp_page:
         st.session_state["main_nav"] = _qp_page
 _nav_kw = {} if "main_nav" in st.session_state else {"default": _PAGES[0]}
-try:
-    _page = st.segmented_control("페이지", _PAGES, key="main_nav", selection_mode="single",
-                                 label_visibility="collapsed", **_nav_kw)
-except AttributeError:   # 구버전 Streamlit
-    _page = st.radio("페이지", _PAGES, horizontal=True, key="main_nav", label_visibility="collapsed")
+def _nav_box(key):
+    """CSS 타깃용 키 컨테이너 (구버전 Streamlit은 key 미지원 → 일반 컨테이너)."""
+    try:
+        return st.container(key=key)
+    except TypeError:
+        return st.container()
+with _nav_box("nav_top"):
+    try:
+        _page = st.segmented_control("페이지", _PAGES, key="main_nav", selection_mode="single",
+                                     label_visibility="collapsed", **_nav_kw)
+    except AttributeError:   # 구버전 Streamlit
+        _page = st.radio("페이지", _PAGES, horizontal=True, key="main_nav", label_visibility="collapsed")
 if not _page:
     _page = _PAGES[0]
 if st.query_params.get("page") != _PAGE_SLUGS[_page]:
@@ -1385,13 +1432,15 @@ if _page in _SUBS:
     if _sub_key not in st.session_state and _sub_qp in _SUBS[_page]:
         st.session_state[_sub_key] = _sub_qp
     _sub_kw = {} if _sub_key in st.session_state else {"default": _SUBS[_page][0]}
-    try:
-        _sub = st.segmented_control("구분", _SUBS[_page], key=_sub_key, selection_mode="single",
-                                    label_visibility="collapsed", **_sub_kw)
-    except AttributeError:
-        _sub = st.radio("구분", _SUBS[_page], horizontal=True, key=_sub_key, label_visibility="collapsed")
+    with _nav_box("nav_sub"):
+        try:
+            _sub = st.segmented_control("구분", _SUBS[_page], key=_sub_key, selection_mode="single",
+                                        label_visibility="collapsed", **_sub_kw)
+        except AttributeError:
+            _sub = st.radio("구분", _SUBS[_page], horizontal=True, key=_sub_key, label_visibility="collapsed")
     if not _sub:
         _sub = _SUBS[_page][0]
+    st.markdown(f'<div class="nav-crumb">{_page} &rsaquo; <b>{_sub}</b></div>', unsafe_allow_html=True)
     if st.query_params.get("sub") != _sub:
         st.query_params["sub"] = _sub
 elif "sub" in st.query_params:
