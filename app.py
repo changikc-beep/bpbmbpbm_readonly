@@ -1365,32 +1365,45 @@ with st.sidebar:
 
 st.title("BP / BM 재고·손익 관리")
 
-(t_report, t_bp, t_sens,
- t_ship, t_freight, t_pnl,
- t_contract, t_master) = st.tabs([
-    "📋 요약 보고서",
-    "📊 BP/BM 매각 단가", "📉 민감도 분석",
-    "🚢 선적 정산 추적", "🚛 포워더 운임 관리", "💰 손익 분석",
-    "📋 계약 이행", "⚙️ 설정·관리",
-])
+# ── 페이지 내비게이션 ─────────────────────────────────────────────────────────
+# st.tabs 는 보이지 않는 탭의 코드까지 매 조작마다 전부 실행한다(스타일 표 40여 개·
+# 차트·손익 집계). 선택한 페이지의 코드만 실행하도록 세그먼트 컨트롤로 전환.
+_PAGES = ["📋 요약 보고서", "📊 BP/BM 매각 단가", "📉 민감도 분석",
+          "🚢 선적 정산 추적", "🚛 포워더 운임 관리", "💰 손익 분석",
+          "📋 계약 이행", "⚙️ 설정·관리"]
+PG_REPORT, PG_BP, PG_SENS, PG_SHIP, PG_FREIGHT, PG_PNL, PG_CONTRACT, PG_SETTINGS = _PAGES
+try:
+    _page = st.segmented_control("페이지", _PAGES, default=_PAGES[0], key="main_nav",
+                                 selection_mode="single", label_visibility="collapsed")
+except AttributeError:   # 구버전 Streamlit
+    _page = st.radio("페이지", _PAGES, horizontal=True, key="main_nav", label_visibility="collapsed")
+if not _page:
+    _page = _PAGES[0]
 
-# 설정·관리 서브탭 — t_master 안에서 정의하지만 이후 with t_xxx: 로 개별 사용 가능
-with t_master:
+# 설정·관리 서브탭: 설정 페이지에서만 실제 탭으로 그린다. 다른 페이지에서는 서브탭
+# 본문(파일 곳곳의 with t_xxx: 블록)이 그대로 실행되므로, 화면에 나타나지 않는
+# 임시 컨테이너(_void)에 그리게 하고 스크립트 끝에서 비운다.
+_void = st.empty()
+if _page == PG_SETTINGS:
     (t_buy, t_proc, t_stype,
      t_outflow, t_idx, t_docs) = st.tabs([
         "🏢 매입사 관리", "🏭 임가공사 관리", "🗃️ 스크랩 유형 관리",
         "📥 입출고 기록", "📈 INDEX 이력", "📎 문서 보관함",
     ])
+else:
+    _void_box = _void.container()
+    t_buy = t_proc = t_stype = t_outflow = t_idx = t_docs = _void_box
 
 active_buyers = [b for b in cfg["buyers"] if b.get("active",True)]
 active_procs  = [p for p in cfg.get("processors",[]) if p.get("active",True)]
 active_scraps = [s for s in cfg.get("scrap_types",[]) if s.get("active",True)]
+buyer_opts    = {f"{b['name']} ({b['product']})": b["id"] for b in cfg["buyers"]}   # 선적·임가공사 탭 공용
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — BP/BM 매각 단가
 # ══════════════════════════════════════════════════════════════════════════════
-with t_bp:
+if _page == PG_BP:
     st.subheader("BP/BM 매각 단가 계산")
     with st.expander("⚙️ Metal INDEX ($/ton)", expanded=False):
         _bp_ref = st.selectbox("이력 불러오기", ["최신값 자동"] + hist_opts, key="bp_idx_ref")
@@ -1455,7 +1468,7 @@ with t_bp:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — 민감도 분석
 # ══════════════════════════════════════════════════════════════════════════════
-with t_sens:
+if _page == PG_SENS:
     st.subheader("민감도 분석")
     if not active_buyers: st.warning("매입사가 없습니다.")
     else:
@@ -1561,7 +1574,7 @@ with t_sens:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — 선적 정산 추적  (Provisional/Final 비교 통합)
 # ══════════════════════════════════════════════════════════════════════════════
-with t_ship:
+if _page == PG_SHIP:
     st.subheader("선적 정산 추적")
     with st.expander("ℹ️ 정산 프로세스 안내", expanded=False):
         st.markdown("""
@@ -2493,7 +2506,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — 포워더 운임 관리
 # ══════════════════════════════════════════════════════════════════════════════
-with t_freight:
+if _page == PG_FREIGHT:
     st.subheader("포워더 운임 관리")
     st.caption("포워더별 운임 견적을 관리합니다. 임가공사 관리 탭의 수출비 설정에 활용됩니다.")
 
@@ -2697,7 +2710,7 @@ with t_freight:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 7 — 손익 분석
 # ══════════════════════════════════════════════════════════════════════════════
-with t_pnl:
+if _page == PG_PNL:
     st.subheader("손익 분석")
 
     # ③ EUR/USD 공백 경고: 출고·처리 이력 월 중 최신 등록 환율보다 이후 월 검출
@@ -6134,7 +6147,7 @@ def _excel_report_cached(cfg, ni, co, xr, ref_month, sel_buyer_id):
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 0 — 요약 보고서
 # ══════════════════════════════════════════════════════════════════════════════
-with t_report:
+if _page == PG_REPORT:
     st.subheader("요약 보고서")
 
     # ── 헤더 바 ──────────────────────────────────────────────────────────────
@@ -6586,511 +6599,517 @@ with t_report:
 
     st.divider()
 
-    # ── 공통 데이터 재사용 ───────────────────────────────────────────────────
-    _rpt_buyer_m  = {b["id"]: b for b in cfg["buyers"]}
-    _rpt_ship_m   = {s["id"]: s for s in _rpt_ships}
-    _rpt_sc_m     = {s["id"]: s for s in cfg.get("scrap_types", [])}
-    _rpt_proc_m   = {p["id"]: p for p in cfg.get("processors", [])}
-
-    # ── 원료비·보관비 — 모듈 레벨 손익 엔진 (손익 탭·엑셀과 동일 규칙: FIFO → 수동 → 이동평균) ──
-    _rpt_fifo_rmc = _rctx["rmc_map"]
-    def _rpt_raw(rec):
-        return _rctx["rmc_fifo"](rec)[0] * _ph_input_kg(rec)
-    _rpt_stor = _rctx["eff_storage"]
-
-    # ── Section 3: 손익 요약 ─────────────────────────────────────────────────
-    st.markdown("#### ① 손익 요약")
-    st.caption("**매출총이익** = 매출(BP) − 원료 매입비 − 임가공비(순)  |  "
-               "**실질 손익** = 매출총이익 − 수출비 − 보관비  (원료: FIFO 우선 → 이동평균, 판관비 제외)")
-
-    _pnl_by_month = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"inp":0.0,"cnt":0})
-    for _r in _rpt_ph_all:
-        _sh = _rpt_ship_m.get(_r.get("shipment_id",""), {})
-        _mo = (_sh.get("loading_date") or "미연결")[:7]
-        _out = float(_r.get("output_kg",0) or 0)
-        _inp = _ph_input_kg(_r)
-        _pnl_by_month[_mo]["bp"]   += float(_r.get("bp_sale_per_kg",0) or 0) * _out
-        _pnl_by_month[_mo]["pf"]   += float(_r.get("processing_fee_per_kg",0) or 0) * _inp
-        _pnl_by_month[_mo]["eu"]   += _ph_export_usd(_r, cfg)
-        _pnl_by_month[_mo]["raw"]  += _rpt_raw(_r)
-        _pnl_by_month[_mo]["stor"] += _rpt_stor(_r)
-        _pnl_by_month[_mo]["out"]  += _out
-        _pnl_by_month[_mo]["inp"]  += _inp
-        _pnl_by_month[_mo]["cnt"]  += 1
-
-    if _pnl_by_month:
-        _pnl_rows = []
-        _cum_real=0.0
-        _tot_bp_r=0.0; _tot_pf_r=0.0; _tot_eu_r=0.0
-        _tot_raw_r=0.0; _tot_stor_r=0.0; _tot_out_r=0.0; _tot_inp_r=0.0
-        for _mo in sorted(_pnl_by_month.keys()):
-            _v    = _pnl_by_month[_mo]
-            _gp   = _v["bp"] - _v["raw"] - _v["pf"]          # 매출총이익
-            _real = _gp - _v["eu"] - _v["stor"]              # 실질 손익
-            _cum_real += _real
-            _tot_bp_r += _v["bp"];  _tot_pf_r  += _v["pf"];  _tot_eu_r  += _v["eu"]
-            _tot_raw_r+= _v["raw"]; _tot_stor_r+= _v["stor"]
-            _tot_out_r+= _v["out"]; _tot_inp_r += _v["inp"]
-            _pnl_rows.append({
-                "월":              _mo,
-                "배치수":          _v["cnt"],
-                "생산(kg)":        round(_v["out"],0),
-                "매출 BP(USD)":    round(_v["bp"],2),
-                "원료비(USD)":     round(_v["raw"],2),
-                "임가공비(USD)":   round(_v["pf"],2),
-                "매출총이익(USD)": round(_gp,2),
-                "수출비(USD)":     round(_v["eu"],2),
-                "보관비(USD)":     round(_v["stor"],2) if _v["stor"] else None,
-                "실질 손익(USD)":  round(_real,2),
-                "누적 실질 손익":  round(_cum_real,2),
-            })
-
-        # 요약 메트릭
-        _tot_gp_r = _tot_bp_r - _tot_raw_r - _tot_pf_r
-        _pm1,_pm2,_pm3,_pm4,_pm5 = st.columns(5)
-        _gp_col_r = "#4ade80" if _tot_gp_r >= 0 else "#f87171"
-        _cr_col = "#4ade80" if _cum_real >= 0 else "#f87171"
-        _pm1.markdown(_kpi_card("💰 총 매출 (BP)",    f"${_tot_bp_r:,.0f}"), unsafe_allow_html=True)
-        _pm2.markdown(_kpi_card("🧱 총 원료 매입비",  f"${_tot_raw_r:,.0f}"), unsafe_allow_html=True)
-        _pm3.markdown(_kpi_card("🏭 총 임가공비 (순)", f"${_tot_pf_r:,.0f}"), unsafe_allow_html=True)
-        _pm4.markdown(_kpi_card("📊 매출총이익",      f"${_tot_gp_r:+,.0f}", val_color=_gp_col_r), unsafe_allow_html=True)
-        _pm5.markdown(_kpi_card("💎 누적 실질 손익",  f"${_cum_real:+,.0f}", val_color=_cr_col), unsafe_allow_html=True)
-
-        # 원료 원가 기준 안내
-        _rmc_fifo_cnt_r = sum(
-            1 for r in _rpt_ph_all
-            if _rpt_fifo_rmc.get((r.get("scrap_type_id",""),
-                r.get("shipment_id","") or f"__no_ship__{r.get('id','')}")) is not None)
-        _rmc_mavg_cnt_r = len(_rpt_ph_all) - _rmc_fifo_cnt_r
-        _rmc_src_r = []
-        if _rmc_fifo_cnt_r: _rmc_src_r.append(f"{_rmc_fifo_cnt_r}건 FIFO")
-        if _rmc_mavg_cnt_r: _rmc_src_r.append(f"{_rmc_mavg_cnt_r}건 이동평균")
-        if _rmc_src_r:
-            st.caption(f"📌 원료비 원가 기준: {' / '.join(_rmc_src_r)}")
-
-        def _hl_pnl(row):
-            styles = [""] * len(row)
-            _ci = list(row.index)
-            v_gp   = row.get("매출총이익(USD)",0) or 0
-            v_real = row.get("실질 손익(USD)",0) or 0
-            c_gp   = ("background-color:#2E75B6;color:white;font-weight:600" if v_gp>=0
-                      else "background-color:#922b21;color:white;font-weight:600")
-            c_real = ("background-color:#1E8449;color:white;font-weight:600" if v_real>=0
-                      else "background-color:#C0392B;color:white;font-weight:600")
-            if "매출총이익(USD)" in _ci: styles[_ci.index("매출총이익(USD)")] = c_gp
-            if "실질 손익(USD)"  in _ci: styles[_ci.index("실질 손익(USD)")]  = c_real
-            return styles
-
-        st.dataframe(
-            pd.DataFrame(_pnl_rows).style.apply(_hl_pnl, axis=1).format(na_rep="—", formatter={
-                "생산(kg)":        "{:,.0f}",
-                "매출 BP(USD)":    "${:,.2f}",
-                "원료비(USD)":     "${:,.2f}",
-                "임가공비(USD)":   "${:,.2f}",
-                "매출총이익(USD)": "${:+,.2f}",
-                "수출비(USD)":     "${:,.2f}",
-                "보관비(USD)":     lambda v: f"${v:,.2f}" if v else "—",
-                "실질 손익(USD)":  "${:+,.2f}",
-                "누적 실질 손익":  "${:+,.2f}",
-            }),
-            use_container_width=True, hide_index=True,
-        )
-
-        # BP 1kg당 비용 분해 (FIFO vs 이동평균)
-        if _tot_out_r > 0:
-            _raw_mavg_r = sum(
-                (_inv_moving_avg(cfg, r.get("scrap_type_id",""))[0] or 0) * _ph_input_kg(r)
-                for r in _rpt_ph_all
-            )
-            _conv_r = _tot_out_r / _tot_inp_r * 100 if _tot_inp_r else 0
-            _bp_pk_r  = _tot_bp_r  / _tot_out_r
-            _pf_pk_r  = _tot_pf_r  / _tot_out_r
-            _eu_pk_r  = _tot_eu_r  / _tot_out_r
-            _rf_pk_r  = _tot_raw_r  / _tot_out_r
-            _rm_pk_r  = _raw_mavg_r / _tot_out_r
-            _st_pk_r  = _tot_stor_r / _tot_out_r
-            _gpf_pk_r = _bp_pk_r - _rf_pk_r - _pf_pk_r   # 매출총이익 FIFO
-            _gpm_pk_r = _bp_pk_r - _rm_pk_r - _pf_pk_r   # 매출총이익 이동평균
-            _bpkg_r = [
-                ("BP 매각가 (매출)",     _bp_pk_r, _bp_pk_r),
-                ("  (−) 원료 매입비",    _rf_pk_r, _rm_pk_r),
-                ("  (−) 임가공비 (순)",  _pf_pk_r, _pf_pk_r),
-                ("= 매출총이익",         _gpf_pk_r, _gpm_pk_r),
-                ("  (−) 수출비",         _eu_pk_r, _eu_pk_r),
-                ("  (−) 보관비",         _st_pk_r, _st_pk_r),
-                ("= 실질 손익",          _gpf_pk_r - _eu_pk_r - _st_pk_r,
-                                         _gpm_pk_r - _eu_pk_r - _st_pk_r),
-            ]
-            with st.expander(f"📐 BP 1kg당 비용 분해  (전환율 가중평균 {_conv_r:.1f}%)", expanded=False):
-                _df_bpkg_r = pd.DataFrame(_bpkg_r, columns=["항목","FIFO ($/kg BP)","이동평균 ($/kg BP)"])
-                def _hl_bpkg_r(row):
-                    lbl = row["항목"]; fv = row["FIFO ($/kg BP)"]; mv = row["이동평균 ($/kg BP)"]
-                    if "실질 손익" in lbl:
-                        bg = "#1E8449" if fv >= 0 else "#922b21"
-                        s  = f"background-color:{bg};color:white;font-weight:700"
-                        return ["font-weight:700", s, s]
-                    if lbl.startswith("="):   return ["font-weight:700","font-weight:700","font-weight:700"]
-                    if "BP 매각가" in lbl:    return ["font-weight:700","color:#1565c0;font-weight:600","color:#1565c0;font-weight:600"]
-                    if "원료" in lbl and abs(fv - mv) > 0.0001:
-                        fc = "color:#1E8449;font-weight:600" if fv<=mv else "color:#E74C3C;font-weight:600"
-                        mc = "color:#1E8449;font-weight:600" if mv<=fv else "color:#E74C3C;font-weight:600"
-                        return ["color:#555", fc, mc]
-                    return ["color:#555","",""]
-                st.dataframe(
-                    _df_bpkg_r.style.apply(_hl_bpkg_r, axis=1)
-                              .format({"FIFO ($/kg BP)":"${:+.4f}", "이동평균 ($/kg BP)":"${:+.4f}"}),
-                    use_container_width=True, hide_index=True,
-                )
-
-        # 직접판매 손익 요약
-        _ds_rpt = [ds for ds in cfg.get("direct_sales",[]) if ds.get("sale_price_per_kg") is not None]
-        if _ds_rpt:
-            _ds_rev_r = sum(float(ds.get("sale_price_per_kg",0)) * float(ds.get("quantity_kg",0)) for ds in _ds_rpt)
-            _ds_qty_r = sum(float(ds.get("quantity_kg",0)) for ds in _ds_rpt)
-            _ds_raw_r = sum(
-                (_inv_moving_avg(cfg, ds.get("scrap_type_id",""))[0] or 0) * float(ds.get("quantity_kg",0))
-                for ds in _ds_rpt
-            )
-            _ds_net_r = _ds_rev_r - _ds_raw_r
-            with st.expander(f"🏷️ 직접판매 손익 요약  ({len(_ds_rpt)}건, {_ds_qty_r:,.0f} kg)", expanded=False):
-                _dp1,_dp2,_dp3 = st.columns(3)
-                _dn_col = "#4ade80" if _ds_net_r >= 0 else "#f87171"
-                _dp1.markdown(_kpi_card("💰 직판 매출액",   f"${_ds_rev_r:,.0f}"), unsafe_allow_html=True)
-                _dp2.markdown(_kpi_card("🧱 원료 취득원가", f"${_ds_raw_r:,.0f}", "이동평균 원가 기준"), unsafe_allow_html=True)
-                _dp3.markdown(_kpi_card("📈 직판 매출이익", f"${_ds_net_r:+,.0f}", val_color=_dn_col), unsafe_allow_html=True)
+    # ── 상세 섹션 토글 — 경영 요약은 항상, 상세 표(손익·선적·재고·임가공사·완제품·보관비)는 필요할 때만 ──
+    # (요약 보고서가 11개 섹션 덤프가 되어 있었음. 접혀 있으면 계산·표 렌더링도 건너뛴다.)
+    if not st.toggle("📑 상세 섹션 표시 — 손익 요약 · 선적 정산 현황 · 원료 재고 · 임가공사 보유 · 완제품 재고 · 보관비",
+                     value=False, key="rpt_detail"):
+        st.caption("상세 표는 위 토글을 켜면 표시됩니다. 손익 상세는 손익 분석 탭, 재고 상세는 입출고 기록 탭에서도 볼 수 있습니다.")
     else:
-        st.info("처리이력(임가공사 관리 탭)을 등록하면 손익 요약이 표시됩니다.")
+        # ── 공통 데이터 재사용 ───────────────────────────────────────────────────
+        _rpt_buyer_m  = {b["id"]: b for b in cfg["buyers"]}
+        _rpt_ship_m   = {s["id"]: s for s in _rpt_ships}
+        _rpt_sc_m     = {s["id"]: s for s in cfg.get("scrap_types", [])}
+        _rpt_proc_m   = {p["id"]: p for p in cfg.get("processors", [])}
 
-    st.divider()
+        # ── 원료비·보관비 — 모듈 레벨 손익 엔진 (손익 탭·엑셀과 동일 규칙: FIFO → 수동 → 이동평균) ──
+        _rpt_fifo_rmc = _rctx["rmc_map"]
+        def _rpt_raw(rec):
+            return _rctx["rmc_fifo"](rec)[0] * _ph_input_kg(rec)
+        _rpt_stor = _rctx["eff_storage"]
 
-    # ── Section 4: 선적 정산 현황 ────────────────────────────────────────────
-    st.markdown("#### ② 선적 정산 현황")
-    if not _rpt_ships:
-        st.info("등록된 선적건이 없습니다.")
-    else:
-        _prov_c  = sum(1 for s in _rpt_ships if s.get("status")=="provisional")
-        _final_c = sum(1 for s in _rpt_ships if s.get("status")=="final")
-        _paid_c  = sum(1 for s in _rpt_ships if s.get("status")=="paid")
-        _tot_w   = sum(s.get("weight_kg",0) for s in _rpt_ships)
-        _tot_inv = sum(s.get("invoice_usd",0) for s in _rpt_ships)
-        _sc1,_sc2,_sc3,_sc4,_sc5,_sc6 = st.columns(6)
-        _pc_col = "#fb923c" if _prov_c else "#e5e5e5"
-        _sc1.markdown(_kpi_card("🚢 총 선적건",         f"{len(_rpt_ships)}건"), unsafe_allow_html=True)
-        _sc2.markdown(_kpi_card("⚖️ 총 중량",           f"{_tot_w/1000:,.1f} t"), unsafe_allow_html=True)
-        _sc3.markdown(_kpi_card("🟡 Provisional 정산",  f"{_prov_c}건", "미확정" if _prov_c else "", val_color=_pc_col), unsafe_allow_html=True)
-        _sc4.markdown(_kpi_card("🟢 최종정산",          f"{_final_c}건"), unsafe_allow_html=True)
-        _sc5.markdown(_kpi_card("🔵 입금완료",          f"{_paid_c}건",  val_color="#4ade80"), unsafe_allow_html=True)
-        _sc6.markdown(_kpi_card("💵 총 Invoice",        f"${_tot_inv:,.0f}"), unsafe_allow_html=True)
+        # ── Section 3: 손익 요약 ─────────────────────────────────────────────────
+        st.markdown("#### ① 손익 요약")
+        st.caption("**매출총이익** = 매출(BP) − 원료 매입비 − 임가공비(순)  |  "
+                   "**실질 손익** = 매출총이익 − 수출비 − 보관비  (원료: FIFO 우선 → 이동평균, 판관비 제외)")
 
-        _ship_tbl = []
-        for _s in sorted(_rpt_ships, key=lambda x: x.get("loading_date",""), reverse=True):
-            _sb = _rpt_buyer_m.get(_s.get("buyer_id"),{})
-            _stat_lbl = {"provisional":"🟡 Provisional","final":"🟢 최종","paid":"🔵 입금"}.get(_s.get("status",""),"—")
-            _ship_tbl.append({
-                "HBL":         _s.get("hbl","—"),
-                "매입사":      f"{_sb.get('name','?')} ({_sb.get('product','?')})",
-                "선적일":      _s.get("loading_date",""),
-                "중량(kg)":    _s.get("weight_kg",0),
-                "Invoice(USD)":_s.get("invoice_usd",0),
-                "Prov 월":     _s.get("prov_month","—"),
-                "Final 월":    _s.get("final_month","—"),
-                "상태":        _stat_lbl,
-            })
-        st.dataframe(pd.DataFrame(_ship_tbl).style.format(
-            {"중량(kg)":"{:,.0f}","Invoice(USD)":"${:,.2f}"}),
-            use_container_width=True, hide_index=True)
+        _pnl_by_month = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"inp":0.0,"cnt":0})
+        for _r in _rpt_ph_all:
+            _sh = _rpt_ship_m.get(_r.get("shipment_id",""), {})
+            _mo = (_sh.get("loading_date") or "미연결")[:7]
+            _out = float(_r.get("output_kg",0) or 0)
+            _inp = _ph_input_kg(_r)
+            _pnl_by_month[_mo]["bp"]   += float(_r.get("bp_sale_per_kg",0) or 0) * _out
+            _pnl_by_month[_mo]["pf"]   += float(_r.get("processing_fee_per_kg",0) or 0) * _inp
+            _pnl_by_month[_mo]["eu"]   += _ph_export_usd(_r, cfg)
+            _pnl_by_month[_mo]["raw"]  += _rpt_raw(_r)
+            _pnl_by_month[_mo]["stor"] += _rpt_stor(_r)
+            _pnl_by_month[_mo]["out"]  += _out
+            _pnl_by_month[_mo]["inp"]  += _inp
+            _pnl_by_month[_mo]["cnt"]  += 1
 
-        # HBL별 손익 연결
-        _hbl_linked = [r for r in _rpt_ph_all if r.get("shipment_id","")]
-        if _hbl_linked:
-            st.markdown("---")
-            st.markdown("**HBL별 실질 손익** (처리이력 연결 기준)")
-            _hbl4_agg = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0})
-            for _r4 in _hbl_linked:
-                _hid4 = _r4["shipment_id"]
-                _op4  = float(_r4.get("output_kg",0) or 0)
-                _ip4  = _ph_input_kg(_r4)
-                _hbl4_agg[_hid4]["bp"]   += float(_r4.get("bp_sale_per_kg",0) or 0) * _op4
-                _hbl4_agg[_hid4]["pf"]   += float(_r4.get("processing_fee_per_kg",0) or 0) * _ip4
-                _hbl4_agg[_hid4]["eu"]   += _ph_export_usd(_r4, cfg)
-                _hbl4_agg[_hid4]["raw"]  += _rpt_raw(_r4)
-                _hbl4_agg[_hid4]["stor"] += _rpt_stor(_r4)
-                _hbl4_agg[_hid4]["out"]  += _op4
-
-            _hbl4_rows = []
-            for _hid4, _hv4 in sorted(
-                _hbl4_agg.items(),
-                key=lambda x: _rpt_ship_m.get(x[0],{}).get("loading_date",""),
-                reverse=True,
-            ):
-                _hs4    = _rpt_ship_m.get(_hid4, {})
-                _hb4    = _rpt_buyer_m.get(_hs4.get("buyer_id",""), {})
-                _gp4    = _hv4["bp"] - _hv4["raw"] - _hv4["pf"]      # 매출총이익
-                _real4  = _gp4 - _hv4["eu"] - _hv4["stor"]           # 실질 손익
-                _mgr4   = _real4 / _hv4["bp"] * 100 if _hv4["bp"] > 0 else None
-                _hbl4_rows.append({
-                    "HBL":         _hs4.get("hbl","—"),
-                    "선적일":      _hs4.get("loading_date",""),
-                    "매입사":      f"{_hb4.get('name','?')} ({_hb4.get('product','?')})",
-                    "BP(kg)":      round(_hv4["out"],0),
-                    "매출(BP)":    round(_hv4["bp"],2),
-                    "원료비":      round(_hv4["raw"],2),
-                    "임가공비(순)": round(_hv4["pf"],2),
-                    "매출총이익":  round(_gp4,2),
-                    "수출비":      round(_hv4["eu"],2),
-                    "보관비":      round(_hv4["stor"],2) if _hv4["stor"] else None,
-                    "실질 손익":   round(_real4,2),
-                    "마진율(%)":   round(_mgr4,2) if _mgr4 is not None else None,
+        if _pnl_by_month:
+            _pnl_rows = []
+            _cum_real=0.0
+            _tot_bp_r=0.0; _tot_pf_r=0.0; _tot_eu_r=0.0
+            _tot_raw_r=0.0; _tot_stor_r=0.0; _tot_out_r=0.0; _tot_inp_r=0.0
+            for _mo in sorted(_pnl_by_month.keys()):
+                _v    = _pnl_by_month[_mo]
+                _gp   = _v["bp"] - _v["raw"] - _v["pf"]          # 매출총이익
+                _real = _gp - _v["eu"] - _v["stor"]              # 실질 손익
+                _cum_real += _real
+                _tot_bp_r += _v["bp"];  _tot_pf_r  += _v["pf"];  _tot_eu_r  += _v["eu"]
+                _tot_raw_r+= _v["raw"]; _tot_stor_r+= _v["stor"]
+                _tot_out_r+= _v["out"]; _tot_inp_r += _v["inp"]
+                _pnl_rows.append({
+                    "월":              _mo,
+                    "배치수":          _v["cnt"],
+                    "생산(kg)":        round(_v["out"],0),
+                    "매출 BP(USD)":    round(_v["bp"],2),
+                    "원료비(USD)":     round(_v["raw"],2),
+                    "임가공비(USD)":   round(_v["pf"],2),
+                    "매출총이익(USD)": round(_gp,2),
+                    "수출비(USD)":     round(_v["eu"],2),
+                    "보관비(USD)":     round(_v["stor"],2) if _v["stor"] else None,
+                    "실질 손익(USD)":  round(_real,2),
+                    "누적 실질 손익":  round(_cum_real,2),
                 })
 
-            def _hl_hbl4(row):
+            # 요약 메트릭
+            _tot_gp_r = _tot_bp_r - _tot_raw_r - _tot_pf_r
+            _pm1,_pm2,_pm3,_pm4,_pm5 = st.columns(5)
+            _gp_col_r = "#4ade80" if _tot_gp_r >= 0 else "#f87171"
+            _cr_col = "#4ade80" if _cum_real >= 0 else "#f87171"
+            _pm1.markdown(_kpi_card("💰 총 매출 (BP)",    f"${_tot_bp_r:,.0f}"), unsafe_allow_html=True)
+            _pm2.markdown(_kpi_card("🧱 총 원료 매입비",  f"${_tot_raw_r:,.0f}"), unsafe_allow_html=True)
+            _pm3.markdown(_kpi_card("🏭 총 임가공비 (순)", f"${_tot_pf_r:,.0f}"), unsafe_allow_html=True)
+            _pm4.markdown(_kpi_card("📊 매출총이익",      f"${_tot_gp_r:+,.0f}", val_color=_gp_col_r), unsafe_allow_html=True)
+            _pm5.markdown(_kpi_card("💎 누적 실질 손익",  f"${_cum_real:+,.0f}", val_color=_cr_col), unsafe_allow_html=True)
+
+            # 원료 원가 기준 안내
+            _rmc_fifo_cnt_r = sum(
+                1 for r in _rpt_ph_all
+                if _rpt_fifo_rmc.get((r.get("scrap_type_id",""),
+                    r.get("shipment_id","") or f"__no_ship__{r.get('id','')}")) is not None)
+            _rmc_mavg_cnt_r = len(_rpt_ph_all) - _rmc_fifo_cnt_r
+            _rmc_src_r = []
+            if _rmc_fifo_cnt_r: _rmc_src_r.append(f"{_rmc_fifo_cnt_r}건 FIFO")
+            if _rmc_mavg_cnt_r: _rmc_src_r.append(f"{_rmc_mavg_cnt_r}건 이동평균")
+            if _rmc_src_r:
+                st.caption(f"📌 원료비 원가 기준: {' / '.join(_rmc_src_r)}")
+
+            def _hl_pnl(row):
                 styles = [""] * len(row)
-                _ci4 = list(row.index)
-                v4 = row.get("실질 손익", 0) or 0
-                if "실질 손익" in _ci4:
-                    styles[_ci4.index("실질 손익")] = (
-                        "background-color:#1E8449;color:white;font-weight:600" if v4 >= 0
-                        else "background-color:#C0392B;color:white;font-weight:600")
+                _ci = list(row.index)
+                v_gp   = row.get("매출총이익(USD)",0) or 0
+                v_real = row.get("실질 손익(USD)",0) or 0
+                c_gp   = ("background-color:#2E75B6;color:white;font-weight:600" if v_gp>=0
+                          else "background-color:#922b21;color:white;font-weight:600")
+                c_real = ("background-color:#1E8449;color:white;font-weight:600" if v_real>=0
+                          else "background-color:#C0392B;color:white;font-weight:600")
+                if "매출총이익(USD)" in _ci: styles[_ci.index("매출총이익(USD)")] = c_gp
+                if "실질 손익(USD)"  in _ci: styles[_ci.index("실질 손익(USD)")]  = c_real
                 return styles
 
             st.dataframe(
-                pd.DataFrame(_hbl4_rows).style.apply(_hl_hbl4, axis=1).format(na_rep="—", formatter={
-                    "BP(kg)":      "{:,.0f}",
-                    "매출(BP)":    "${:,.2f}",
-                    "원료비":      "${:,.2f}",
-                    "임가공비(순)": "${:,.2f}",
-                    "매출총이익":  "${:+,.2f}",
-                    "수출비":      "${:,.2f}",
-                    "보관비":      lambda v: f"${v:,.2f}" if v else "—",
-                    "실질 손익":   "${:+,.2f}",
-                    "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
+                pd.DataFrame(_pnl_rows).style.apply(_hl_pnl, axis=1).format(na_rep="—", formatter={
+                    "생산(kg)":        "{:,.0f}",
+                    "매출 BP(USD)":    "${:,.2f}",
+                    "원료비(USD)":     "${:,.2f}",
+                    "임가공비(USD)":   "${:,.2f}",
+                    "매출총이익(USD)": "${:+,.2f}",
+                    "수출비(USD)":     "${:,.2f}",
+                    "보관비(USD)":     lambda v: f"${v:,.2f}" if v else "—",
+                    "실질 손익(USD)":  "${:+,.2f}",
+                    "누적 실질 손익":  "${:+,.2f}",
                 }),
                 use_container_width=True, hide_index=True,
             )
 
-    st.divider()
+            # BP 1kg당 비용 분해 (FIFO vs 이동평균)
+            if _tot_out_r > 0:
+                _raw_mavg_r = sum(
+                    (_inv_moving_avg(cfg, r.get("scrap_type_id",""))[0] or 0) * _ph_input_kg(r)
+                    for r in _rpt_ph_all
+                )
+                _conv_r = _tot_out_r / _tot_inp_r * 100 if _tot_inp_r else 0
+                _bp_pk_r  = _tot_bp_r  / _tot_out_r
+                _pf_pk_r  = _tot_pf_r  / _tot_out_r
+                _eu_pk_r  = _tot_eu_r  / _tot_out_r
+                _rf_pk_r  = _tot_raw_r  / _tot_out_r
+                _rm_pk_r  = _raw_mavg_r / _tot_out_r
+                _st_pk_r  = _tot_stor_r / _tot_out_r
+                _gpf_pk_r = _bp_pk_r - _rf_pk_r - _pf_pk_r   # 매출총이익 FIFO
+                _gpm_pk_r = _bp_pk_r - _rm_pk_r - _pf_pk_r   # 매출총이익 이동평균
+                _bpkg_r = [
+                    ("BP 매각가 (매출)",     _bp_pk_r, _bp_pk_r),
+                    ("  (−) 원료 매입비",    _rf_pk_r, _rm_pk_r),
+                    ("  (−) 임가공비 (순)",  _pf_pk_r, _pf_pk_r),
+                    ("= 매출총이익",         _gpf_pk_r, _gpm_pk_r),
+                    ("  (−) 수출비",         _eu_pk_r, _eu_pk_r),
+                    ("  (−) 보관비",         _st_pk_r, _st_pk_r),
+                    ("= 실질 손익",          _gpf_pk_r - _eu_pk_r - _st_pk_r,
+                                             _gpm_pk_r - _eu_pk_r - _st_pk_r),
+                ]
+                with st.expander(f"📐 BP 1kg당 비용 분해  (전환율 가중평균 {_conv_r:.1f}%)", expanded=False):
+                    _df_bpkg_r = pd.DataFrame(_bpkg_r, columns=["항목","FIFO ($/kg BP)","이동평균 ($/kg BP)"])
+                    def _hl_bpkg_r(row):
+                        lbl = row["항목"]; fv = row["FIFO ($/kg BP)"]; mv = row["이동평균 ($/kg BP)"]
+                        if "실질 손익" in lbl:
+                            bg = "#1E8449" if fv >= 0 else "#922b21"
+                            s  = f"background-color:{bg};color:white;font-weight:700"
+                            return ["font-weight:700", s, s]
+                        if lbl.startswith("="):   return ["font-weight:700","font-weight:700","font-weight:700"]
+                        if "BP 매각가" in lbl:    return ["font-weight:700","color:#1565c0;font-weight:600","color:#1565c0;font-weight:600"]
+                        if "원료" in lbl and abs(fv - mv) > 0.0001:
+                            fc = "color:#1E8449;font-weight:600" if fv<=mv else "color:#E74C3C;font-weight:600"
+                            mc = "color:#1E8449;font-weight:600" if mv<=fv else "color:#E74C3C;font-weight:600"
+                            return ["color:#555", fc, mc]
+                        return ["color:#555","",""]
+                    st.dataframe(
+                        _df_bpkg_r.style.apply(_hl_bpkg_r, axis=1)
+                                  .format({"FIFO ($/kg BP)":"${:+.4f}", "이동평균 ($/kg BP)":"${:+.4f}"}),
+                        use_container_width=True, hide_index=True,
+                    )
 
-    # ── Section 5: 원료 재고 현황 ────────────────────────────────────────────
-    st.markdown("#### ③ 원료 재고 현황")
-    _inv_cfg = cfg.get("raw_material_inventory", {})
-    _inv_sc_list = [s for s in cfg.get("scrap_types",[]) if _inv_cfg.get(s["id"],{}).get("opening")]
-    if not _inv_sc_list:
-        st.info("스크랩 유형 관리 탭에서 기초재고를 설정하면 재고 현황이 표시됩니다.")
-    else:
-        # FIFO 잔여 Lot 가중평균 단가 계산
-        _rpt_fifo_rem = {}  # sc_id → ($/kg, remain_kg)
-        for _isc5 in _inv_sc_list:
-            _, _, _lot_rem5 = _fifo_lot_trace(cfg, _isc5["id"])
-            _rqty5 = sum(lr["remain"] for lr in _lot_rem5 if lr.get("unit_cost") is not None)
-            _ramt5 = sum(lr["remain"] * lr["unit_cost"] for lr in _lot_rem5 if lr.get("unit_cost") is not None)
-            _rpt_fifo_rem[_isc5["id"]] = (_ramt5 / _rqty5 if _rqty5 > 0 else None, _rqty5)
+            # 직접판매 손익 요약
+            _ds_rpt = [ds for ds in cfg.get("direct_sales",[]) if ds.get("sale_price_per_kg") is not None]
+            if _ds_rpt:
+                _ds_rev_r = sum(float(ds.get("sale_price_per_kg",0)) * float(ds.get("quantity_kg",0)) for ds in _ds_rpt)
+                _ds_qty_r = sum(float(ds.get("quantity_kg",0)) for ds in _ds_rpt)
+                _ds_raw_r = sum(
+                    (_inv_moving_avg(cfg, ds.get("scrap_type_id",""))[0] or 0) * float(ds.get("quantity_kg",0))
+                    for ds in _ds_rpt
+                )
+                _ds_net_r = _ds_rev_r - _ds_raw_r
+                with st.expander(f"🏷️ 직접판매 손익 요약  ({len(_ds_rpt)}건, {_ds_qty_r:,.0f} kg)", expanded=False):
+                    _dp1,_dp2,_dp3 = st.columns(3)
+                    _dn_col = "#4ade80" if _ds_net_r >= 0 else "#f87171"
+                    _dp1.markdown(_kpi_card("💰 직판 매출액",   f"${_ds_rev_r:,.0f}"), unsafe_allow_html=True)
+                    _dp2.markdown(_kpi_card("🧱 원료 취득원가", f"${_ds_raw_r:,.0f}", "이동평균 원가 기준"), unsafe_allow_html=True)
+                    _dp3.markdown(_kpi_card("📈 직판 매출이익", f"${_ds_net_r:+,.0f}", val_color=_dn_col), unsafe_allow_html=True)
+        else:
+            st.info("처리이력(임가공사 관리 탭)을 등록하면 손익 요약이 표시됩니다.")
 
-        _inv_rows = []
-        for _isc in _inv_sc_list:
-            _avg, _total_in = _inv_moving_avg(cfg, _isc["id"])
-            _dispatched  = sum(float(dr.get("quantity_kg",0))
-                               for dr in cfg.get("dispatch_records",[])
-                               if dr.get("scrap_type_id")==_isc["id"])
-            _direct_sold = sum(float(ds.get("quantity_kg",0))
-                               for ds in cfg.get("direct_sales",[])
-                               if ds.get("scrap_type_id")==_isc["id"])
-            _balance  = round(_total_in - _dispatched - _direct_sold, 0)
-            _est_val  = round(_balance * _avg, 0)      if (_avg   and _balance > 0) else None
-            _fifo_avg5, _ = _rpt_fifo_rem.get(_isc["id"], (None, 0))
-            _fifo_val5 = round(_balance * _fifo_avg5, 0) if (_fifo_avg5 and _balance > 0) else None
-            _inv_rows.append({
-                "스크랩 유형":        _isc["name"],
-                "누적 입고(kg)":      round(_total_in, 0),
-                "임가공 출고(kg)":    round(_dispatched, 0),
-                "직접판매(kg)":       round(_direct_sold, 0),
-                "창고 잔량(kg)":      _balance,
-                "이동평균 단가":      round(_avg,      5) if _avg      else None,
-                "FIFO 잔여 단가":     round(_fifo_avg5,5) if _fifo_avg5 else None,
-                "평가액(이동평균)":   _est_val,
-                "평가액(FIFO)":       _fifo_val5,
-            })
+        st.divider()
 
-        def _hl_inv(row):
-            styles = [""] * len(row)
-            v = row.get("창고 잔량(kg)", 0) or 0
-            if v < 0:
-                styles[4] = "background-color:#fadbd8"
-            return styles
+        # ── Section 4: 선적 정산 현황 ────────────────────────────────────────────
+        st.markdown("#### ② 선적 정산 현황")
+        if not _rpt_ships:
+            st.info("등록된 선적건이 없습니다.")
+        else:
+            _prov_c  = sum(1 for s in _rpt_ships if s.get("status")=="provisional")
+            _final_c = sum(1 for s in _rpt_ships if s.get("status")=="final")
+            _paid_c  = sum(1 for s in _rpt_ships if s.get("status")=="paid")
+            _tot_w   = sum(s.get("weight_kg",0) for s in _rpt_ships)
+            _tot_inv = sum(s.get("invoice_usd",0) for s in _rpt_ships)
+            _sc1,_sc2,_sc3,_sc4,_sc5,_sc6 = st.columns(6)
+            _pc_col = "#fb923c" if _prov_c else "#e5e5e5"
+            _sc1.markdown(_kpi_card("🚢 총 선적건",         f"{len(_rpt_ships)}건"), unsafe_allow_html=True)
+            _sc2.markdown(_kpi_card("⚖️ 총 중량",           f"{_tot_w/1000:,.1f} t"), unsafe_allow_html=True)
+            _sc3.markdown(_kpi_card("🟡 Provisional 정산",  f"{_prov_c}건", "미확정" if _prov_c else "", val_color=_pc_col), unsafe_allow_html=True)
+            _sc4.markdown(_kpi_card("🟢 최종정산",          f"{_final_c}건"), unsafe_allow_html=True)
+            _sc5.markdown(_kpi_card("🔵 입금완료",          f"{_paid_c}건",  val_color="#4ade80"), unsafe_allow_html=True)
+            _sc6.markdown(_kpi_card("💵 총 Invoice",        f"${_tot_inv:,.0f}"), unsafe_allow_html=True)
 
-        st.dataframe(
-            pd.DataFrame(_inv_rows).style.apply(_hl_inv, axis=1).format(na_rep="—", formatter={
-                "누적 입고(kg)":    "{:,.0f}",
-                "임가공 출고(kg)":  "{:,.0f}",
-                "직접판매(kg)":     "{:,.0f}",
-                "창고 잔량(kg)":    "{:,.0f}",
-                "이동평균 단가":    lambda v: f"${v:.5f}" if v is not None else "—",
-                "FIFO 잔여 단가":   lambda v: f"${v:.5f}" if v is not None else "—",
-                "평가액(이동평균)": lambda v: f"${v:,.0f}" if v is not None else "—",
-                "평가액(FIFO)":     lambda v: f"${v:,.0f}" if v is not None else "—",
-            }),
-            use_container_width=True, hide_index=True,
-        )
-        st.caption("창고 잔량 = 누적 입고 − 임가공 출고 − 직접판매  |  FIFO 잔여 단가 = 미소진 Lot 가중평균  |  임가공사 보유 현황은 ⑥ 참조")
+            _ship_tbl = []
+            for _s in sorted(_rpt_ships, key=lambda x: x.get("loading_date",""), reverse=True):
+                _sb = _rpt_buyer_m.get(_s.get("buyer_id"),{})
+                _stat_lbl = {"provisional":"🟡 Provisional","final":"🟢 최종","paid":"🔵 입금"}.get(_s.get("status",""),"—")
+                _ship_tbl.append({
+                    "HBL":         _s.get("hbl","—"),
+                    "매입사":      f"{_sb.get('name','?')} ({_sb.get('product','?')})",
+                    "선적일":      _s.get("loading_date",""),
+                    "중량(kg)":    _s.get("weight_kg",0),
+                    "Invoice(USD)":_s.get("invoice_usd",0),
+                    "Prov 월":     _s.get("prov_month","—"),
+                    "Final 월":    _s.get("final_month","—"),
+                    "상태":        _stat_lbl,
+                })
+            st.dataframe(pd.DataFrame(_ship_tbl).style.format(
+                {"중량(kg)":"{:,.0f}","Invoice(USD)":"${:,.2f}"}),
+                use_container_width=True, hide_index=True)
 
-    st.divider()
+            # HBL별 손익 연결
+            _hbl_linked = [r for r in _rpt_ph_all if r.get("shipment_id","")]
+            if _hbl_linked:
+                st.markdown("---")
+                st.markdown("**HBL별 실질 손익** (처리이력 연결 기준)")
+                _hbl4_agg = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0})
+                for _r4 in _hbl_linked:
+                    _hid4 = _r4["shipment_id"]
+                    _op4  = float(_r4.get("output_kg",0) or 0)
+                    _ip4  = _ph_input_kg(_r4)
+                    _hbl4_agg[_hid4]["bp"]   += float(_r4.get("bp_sale_per_kg",0) or 0) * _op4
+                    _hbl4_agg[_hid4]["pf"]   += float(_r4.get("processing_fee_per_kg",0) or 0) * _ip4
+                    _hbl4_agg[_hid4]["eu"]   += _ph_export_usd(_r4, cfg)
+                    _hbl4_agg[_hid4]["raw"]  += _rpt_raw(_r4)
+                    _hbl4_agg[_hid4]["stor"] += _rpt_stor(_r4)
+                    _hbl4_agg[_hid4]["out"]  += _op4
 
-    # ── Section 6: 임가공사 보유 현황 ───────────────────────────────────────────
-    st.markdown("#### ④ 임가공사 보유 현황")
-    st.caption("임가공 출고 누적 vs B/L 처리 투입 누적 — 차이가 현재 임가공사 보유 중인 스크랩 추정량입니다.")
-    _dr_all = cfg.get("dispatch_records", [])
-    if not _dr_all:
-        st.info("출고 기록 탭에서 임가공 출고를 입력하면 파이프라인 현황이 표시됩니다.")
-    else:
-        # 프로세서 × 스크랩유형 집계
-        _pipe_agg = defaultdict(lambda: {"dispatched": 0.0, "processed": 0.0})
-        for _dr in _dr_all:
-            _k = (_dr.get("processor_id",""), _dr.get("scrap_type_id",""))
-            _pipe_agg[_k]["dispatched"] += float(_dr.get("quantity_kg",0))
-        for _r in _rpt_ph_all:
-            _k = (_r.get("processor_id",""), _r.get("scrap_type_id",""))
-            _pipe_agg[_k]["processed"] += _ph_input_kg(_r)
-
-        _pipe_rows = []
-        for (_pid, _sid), _pv in sorted(_pipe_agg.items(),
-             key=lambda x: (_rpt_proc_m.get(x[0][0],{}).get("name",""),
-                            _rpt_sc_m.get(x[0][1],{}).get("name",""))):
-            _pr_name = _rpt_proc_m.get(_pid,{}).get("name","—")
-            _sc_name = _rpt_sc_m.get(_sid,{}).get("name","—")
-            _remain  = _pv["dispatched"] - _pv["processed"]
-            _pipe_rows.append({
-                "임가공사":        _pr_name,
-                "스크랩 유형":     _sc_name,
-                "출고 누적(kg)":   round(_pv["dispatched"],0),
-                "B/L 투입(kg)":    round(_pv["processed"],0),
-                "임가공사 보유(kg)":round(_remain, 0),
-            })
-        def _hl_pipe(row):
-            v = row.get("임가공사 보유(kg)",0) or 0
-            if v < -1: return ["","","","","color:#b71c1c;font-weight:600"]
-            if v > 0:  return ["","","","","color:#1565c0;font-weight:600"]
-            return [""]*5
-        st.dataframe(pd.DataFrame(_pipe_rows).style
-            .apply(_hl_pipe, axis=1)
-            .format({
-                "출고 누적(kg)":    "{:,.0f}",
-                "B/L 투입(kg)":     "{:,.0f}",
-                "임가공사 보유(kg)": "{:+,.0f}",
-            }), use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # ── Section 6b: 완제품(BP/BM) 재고 추정 ──────────────────────────────────
-    st.markdown("#### ⑤ 완제품(BP/BM) 재고 추정")
-    st.caption("생산 누계(배치 생산량) − 선적 누계(배치가 연결된 선적건 중량). 미연결 배치 생산량은 전량 재고로 봅니다. "
-               "계약 이행 탭의 '충당 가능'에는 미연결 배치분만 반영됩니다.")
-    if not _rpt_ph_all:
-        st.info("처리이력을 등록하면 완제품 재고가 표시됩니다.")
-    else:
-        _fg = defaultdict(lambda: {"prod": 0.0, "unlinked": 0.0, "ship_ids": set()})
-        for _r6 in _rpt_ph_all:
-            _sid6  = _r6.get("shipment_id", "")
-            _sh6   = _rpt_ship_m.get(_sid6)
-            _bid6  = _r6.get("buyer_id") or (_sh6 or {}).get("buyer_id", "")
-            _prod6 = (_rpt_buyer_m.get(_bid6, {}).get("product") or "미지정").upper()
-            _out6  = float(_r6.get("output_kg", 0) or 0)
-            _fg[_prod6]["prod"] += _out6
-            if _sh6:
-                _fg[_prod6]["ship_ids"].add(_sid6)
-            else:
-                _fg[_prod6]["unlinked"] += _out6
-        _fg_rows = []
-        for _p6, _v6 in sorted(_fg.items()):
-            _shipped6 = sum(float(_rpt_ship_m[_s].get("weight_kg", 0) or 0) for _s in _v6["ship_ids"])
-            _fg_rows.append({"제품": _p6,
-                             "생산 누계(kg)":        round(_v6["prod"], 0),
-                             "선적 누계(kg)":        round(_shipped6, 0),
-                             "미연결 배치 생산(kg)": round(_v6["unlinked"], 0),
-                             "재고 추정(kg)":        round(_v6["prod"] - _shipped6, 0)})
-        st.dataframe(pd.DataFrame(_fg_rows).style.format(
-            {c: "{:,.0f}" for c in _fg_rows[0] if c != "제품"}),
-            use_container_width=True, hide_index=True)
-        _fg_tot = sum(r["재고 추정(kg)"] for r in _fg_rows)
-        if _fg_tot < -1:
-            st.warning(f"재고 추정이 음수({_fg_tot:,.0f} kg)입니다 — 선적 중량이 배치 생산량보다 큽니다. "
-                       "배치 생산량 누락(시트 동기화 '배치' 탭 참고) 여부를 확인하세요.")
-
-    st.divider()
-
-    # ── Section 7: 보관비 현황 ───────────────────────────────────────────────
-    st.markdown("#### ⑥ 보관비 현황")
-    st.caption("수동 입력(storage_days) 및 FIFO 자동 계산 보관비를 스크랩 유형별로 집계합니다.")
-    if not _rpt_ph_all:
-        st.info("처리이력을 등록하면 보관비 현황이 표시됩니다.")
-    else:
-        _stor7_by_sc  = defaultdict(lambda: {"manual":0.0, "fifo_auto":0.0, "manual_cnt":0, "auto_cnt":0})
-        _stor7_by_mon = defaultdict(lambda: {"manual":0.0, "fifo_auto":0.0})
-        for _r7 in _rpt_ph_all:
-            _scid7 = _r7.get("scrap_type_id","")
-            _sh7   = _rpt_ship_m.get(_r7.get("shipment_id",""), {})
-            _mo7   = (_sh7.get("loading_date") or "미상")[:7]
-            _man7  = _ph_storage_cost(_r7, cfg)
-            _auto7 = _rpt_stor(_r7) if not _man7 else 0.0
-            if _man7:
-                _stor7_by_sc[_scid7]["manual"]     += _man7
-                _stor7_by_sc[_scid7]["manual_cnt"] += 1
-                _stor7_by_mon[_mo7]["manual"]      += _man7
-            elif _auto7:
-                _stor7_by_sc[_scid7]["fifo_auto"]  += _auto7
-                _stor7_by_sc[_scid7]["auto_cnt"]   += 1
-                _stor7_by_mon[_mo7]["fifo_auto"]   += _auto7
-
-        # 스크랩 유형별 합계
-        _stor7_sc_rows = []
-        _tot_man7 = 0.0; _tot_auto7 = 0.0
-        for _scid7, _sv7 in _stor7_by_sc.items():
-            _sc7nm = _rpt_sc_m.get(_scid7, {}).get("name","—")
-            _tot7  = _sv7["manual"] + _sv7["fifo_auto"]
-            _stor7_sc_rows.append({
-                "스크랩 유형":      _sc7nm,
-                "수동 보관비(USD)": round(_sv7["manual"],2)    if _sv7["manual"]    else None,
-                "수동 건수":        _sv7["manual_cnt"]          if _sv7["manual_cnt"] else None,
-                "FIFO 자동(USD)":   round(_sv7["fifo_auto"],2)  if _sv7["fifo_auto"] else None,
-                "자동 건수":        _sv7["auto_cnt"]            if _sv7["auto_cnt"]  else None,
-                "합계(USD)":        round(_tot7, 2),
-            })
-            _tot_man7 += _sv7["manual"]; _tot_auto7 += _sv7["fifo_auto"]
-
-        if _stor7_sc_rows:
-            _s7c1, _s7c2, _s7c3 = st.columns(3)
-            _s7c1.markdown(_kpi_card("🖊️ 수동 보관비 합계",    f"${_tot_man7:,.2f}"), unsafe_allow_html=True)
-            _s7c2.markdown(_kpi_card("🤖 FIFO 자동 보관비 합계", f"${_tot_auto7:,.2f}"), unsafe_allow_html=True)
-            _s7c3.markdown(_kpi_card("🏬 총 보관비",             f"${_tot_man7+_tot_auto7:,.2f}"), unsafe_allow_html=True)
-
-            st.dataframe(
-                pd.DataFrame(_stor7_sc_rows).style.format(na_rep="—", formatter={
-                    "수동 보관비(USD)": lambda v: f"${v:,.2f}" if v else "—",
-                    "FIFO 자동(USD)":   lambda v: f"${v:,.2f}" if v else "—",
-                    "합계(USD)":        "${:,.2f}",
-                }),
-                use_container_width=True, hide_index=True,
-            )
-
-        # 월별 보관비 집계
-        if _stor7_by_mon:
-            with st.expander("📅 월별 보관비 집계", expanded=False):
-                _stor7_mon_rows = []
-                for _mo7 in sorted(_stor7_by_mon.keys()):
-                    _mv7  = _stor7_by_mon[_mo7]
-                    _tot7m = _mv7["manual"] + _mv7["fifo_auto"]
-                    _stor7_mon_rows.append({
-                        "월":             _mo7,
-                        "수동(USD)":      round(_mv7["manual"],2)    if _mv7["manual"]    else None,
-                        "FIFO 자동(USD)": round(_mv7["fifo_auto"],2) if _mv7["fifo_auto"] else None,
-                        "합계(USD)":      round(_tot7m, 2),
+                _hbl4_rows = []
+                for _hid4, _hv4 in sorted(
+                    _hbl4_agg.items(),
+                    key=lambda x: _rpt_ship_m.get(x[0],{}).get("loading_date",""),
+                    reverse=True,
+                ):
+                    _hs4    = _rpt_ship_m.get(_hid4, {})
+                    _hb4    = _rpt_buyer_m.get(_hs4.get("buyer_id",""), {})
+                    _gp4    = _hv4["bp"] - _hv4["raw"] - _hv4["pf"]      # 매출총이익
+                    _real4  = _gp4 - _hv4["eu"] - _hv4["stor"]           # 실질 손익
+                    _mgr4   = _real4 / _hv4["bp"] * 100 if _hv4["bp"] > 0 else None
+                    _hbl4_rows.append({
+                        "HBL":         _hs4.get("hbl","—"),
+                        "선적일":      _hs4.get("loading_date",""),
+                        "매입사":      f"{_hb4.get('name','?')} ({_hb4.get('product','?')})",
+                        "BP(kg)":      round(_hv4["out"],0),
+                        "매출(BP)":    round(_hv4["bp"],2),
+                        "원료비":      round(_hv4["raw"],2),
+                        "임가공비(순)": round(_hv4["pf"],2),
+                        "매출총이익":  round(_gp4,2),
+                        "수출비":      round(_hv4["eu"],2),
+                        "보관비":      round(_hv4["stor"],2) if _hv4["stor"] else None,
+                        "실질 손익":   round(_real4,2),
+                        "마진율(%)":   round(_mgr4,2) if _mgr4 is not None else None,
                     })
+
+                def _hl_hbl4(row):
+                    styles = [""] * len(row)
+                    _ci4 = list(row.index)
+                    v4 = row.get("실질 손익", 0) or 0
+                    if "실질 손익" in _ci4:
+                        styles[_ci4.index("실질 손익")] = (
+                            "background-color:#1E8449;color:white;font-weight:600" if v4 >= 0
+                            else "background-color:#C0392B;color:white;font-weight:600")
+                    return styles
+
                 st.dataframe(
-                    pd.DataFrame(_stor7_mon_rows).style.format(na_rep="—", formatter={
-                        "수동(USD)":      lambda v: f"${v:,.2f}" if v else "—",
-                        "FIFO 자동(USD)": lambda v: f"${v:,.2f}" if v else "—",
-                        "합계(USD)":      "${:,.2f}",
+                    pd.DataFrame(_hbl4_rows).style.apply(_hl_hbl4, axis=1).format(na_rep="—", formatter={
+                        "BP(kg)":      "{:,.0f}",
+                        "매출(BP)":    "${:,.2f}",
+                        "원료비":      "${:,.2f}",
+                        "임가공비(순)": "${:,.2f}",
+                        "매출총이익":  "${:+,.2f}",
+                        "수출비":      "${:,.2f}",
+                        "보관비":      lambda v: f"${v:,.2f}" if v else "—",
+                        "실질 손익":   "${:+,.2f}",
+                        "마진율(%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
                     }),
                     use_container_width=True, hide_index=True,
                 )
+
+        st.divider()
+
+        # ── Section 5: 원료 재고 현황 ────────────────────────────────────────────
+        st.markdown("#### ③ 원료 재고 현황")
+        _inv_cfg = cfg.get("raw_material_inventory", {})
+        _inv_sc_list = [s for s in cfg.get("scrap_types",[]) if _inv_cfg.get(s["id"],{}).get("opening")]
+        if not _inv_sc_list:
+            st.info("스크랩 유형 관리 탭에서 기초재고를 설정하면 재고 현황이 표시됩니다.")
+        else:
+            # FIFO 잔여 Lot 가중평균 단가 계산
+            _rpt_fifo_rem = {}  # sc_id → ($/kg, remain_kg)
+            for _isc5 in _inv_sc_list:
+                _, _, _lot_rem5 = _fifo_lot_trace(cfg, _isc5["id"])
+                _rqty5 = sum(lr["remain"] for lr in _lot_rem5 if lr.get("unit_cost") is not None)
+                _ramt5 = sum(lr["remain"] * lr["unit_cost"] for lr in _lot_rem5 if lr.get("unit_cost") is not None)
+                _rpt_fifo_rem[_isc5["id"]] = (_ramt5 / _rqty5 if _rqty5 > 0 else None, _rqty5)
+
+            _inv_rows = []
+            for _isc in _inv_sc_list:
+                _avg, _total_in = _inv_moving_avg(cfg, _isc["id"])
+                _dispatched  = sum(float(dr.get("quantity_kg",0))
+                                   for dr in cfg.get("dispatch_records",[])
+                                   if dr.get("scrap_type_id")==_isc["id"])
+                _direct_sold = sum(float(ds.get("quantity_kg",0))
+                                   for ds in cfg.get("direct_sales",[])
+                                   if ds.get("scrap_type_id")==_isc["id"])
+                _balance  = round(_total_in - _dispatched - _direct_sold, 0)
+                _est_val  = round(_balance * _avg, 0)      if (_avg   and _balance > 0) else None
+                _fifo_avg5, _ = _rpt_fifo_rem.get(_isc["id"], (None, 0))
+                _fifo_val5 = round(_balance * _fifo_avg5, 0) if (_fifo_avg5 and _balance > 0) else None
+                _inv_rows.append({
+                    "스크랩 유형":        _isc["name"],
+                    "누적 입고(kg)":      round(_total_in, 0),
+                    "임가공 출고(kg)":    round(_dispatched, 0),
+                    "직접판매(kg)":       round(_direct_sold, 0),
+                    "창고 잔량(kg)":      _balance,
+                    "이동평균 단가":      round(_avg,      5) if _avg      else None,
+                    "FIFO 잔여 단가":     round(_fifo_avg5,5) if _fifo_avg5 else None,
+                    "평가액(이동평균)":   _est_val,
+                    "평가액(FIFO)":       _fifo_val5,
+                })
+
+            def _hl_inv(row):
+                styles = [""] * len(row)
+                v = row.get("창고 잔량(kg)", 0) or 0
+                if v < 0:
+                    styles[4] = "background-color:#fadbd8"
+                return styles
+
+            st.dataframe(
+                pd.DataFrame(_inv_rows).style.apply(_hl_inv, axis=1).format(na_rep="—", formatter={
+                    "누적 입고(kg)":    "{:,.0f}",
+                    "임가공 출고(kg)":  "{:,.0f}",
+                    "직접판매(kg)":     "{:,.0f}",
+                    "창고 잔량(kg)":    "{:,.0f}",
+                    "이동평균 단가":    lambda v: f"${v:.5f}" if v is not None else "—",
+                    "FIFO 잔여 단가":   lambda v: f"${v:.5f}" if v is not None else "—",
+                    "평가액(이동평균)": lambda v: f"${v:,.0f}" if v is not None else "—",
+                    "평가액(FIFO)":     lambda v: f"${v:,.0f}" if v is not None else "—",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption("창고 잔량 = 누적 입고 − 임가공 출고 − 직접판매  |  FIFO 잔여 단가 = 미소진 Lot 가중평균  |  임가공사 보유 현황은 ⑥ 참조")
+
+        st.divider()
+
+        # ── Section 6: 임가공사 보유 현황 ───────────────────────────────────────────
+        st.markdown("#### ④ 임가공사 보유 현황")
+        st.caption("임가공 출고 누적 vs B/L 처리 투입 누적 — 차이가 현재 임가공사 보유 중인 스크랩 추정량입니다.")
+        _dr_all = cfg.get("dispatch_records", [])
+        if not _dr_all:
+            st.info("출고 기록 탭에서 임가공 출고를 입력하면 파이프라인 현황이 표시됩니다.")
+        else:
+            # 프로세서 × 스크랩유형 집계
+            _pipe_agg = defaultdict(lambda: {"dispatched": 0.0, "processed": 0.0})
+            for _dr in _dr_all:
+                _k = (_dr.get("processor_id",""), _dr.get("scrap_type_id",""))
+                _pipe_agg[_k]["dispatched"] += float(_dr.get("quantity_kg",0))
+            for _r in _rpt_ph_all:
+                _k = (_r.get("processor_id",""), _r.get("scrap_type_id",""))
+                _pipe_agg[_k]["processed"] += _ph_input_kg(_r)
+
+            _pipe_rows = []
+            for (_pid, _sid), _pv in sorted(_pipe_agg.items(),
+                 key=lambda x: (_rpt_proc_m.get(x[0][0],{}).get("name",""),
+                                _rpt_sc_m.get(x[0][1],{}).get("name",""))):
+                _pr_name = _rpt_proc_m.get(_pid,{}).get("name","—")
+                _sc_name = _rpt_sc_m.get(_sid,{}).get("name","—")
+                _remain  = _pv["dispatched"] - _pv["processed"]
+                _pipe_rows.append({
+                    "임가공사":        _pr_name,
+                    "스크랩 유형":     _sc_name,
+                    "출고 누적(kg)":   round(_pv["dispatched"],0),
+                    "B/L 투입(kg)":    round(_pv["processed"],0),
+                    "임가공사 보유(kg)":round(_remain, 0),
+                })
+            def _hl_pipe(row):
+                v = row.get("임가공사 보유(kg)",0) or 0
+                if v < -1: return ["","","","","color:#b71c1c;font-weight:600"]
+                if v > 0:  return ["","","","","color:#1565c0;font-weight:600"]
+                return [""]*5
+            st.dataframe(pd.DataFrame(_pipe_rows).style
+                .apply(_hl_pipe, axis=1)
+                .format({
+                    "출고 누적(kg)":    "{:,.0f}",
+                    "B/L 투입(kg)":     "{:,.0f}",
+                    "임가공사 보유(kg)": "{:+,.0f}",
+                }), use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── Section 6b: 완제품(BP/BM) 재고 추정 ──────────────────────────────────
+        st.markdown("#### ⑤ 완제품(BP/BM) 재고 추정")
+        st.caption("생산 누계(배치 생산량) − 선적 누계(배치가 연결된 선적건 중량). 미연결 배치 생산량은 전량 재고로 봅니다. "
+                   "계약 이행 탭의 '충당 가능'에는 미연결 배치분만 반영됩니다.")
+        if not _rpt_ph_all:
+            st.info("처리이력을 등록하면 완제품 재고가 표시됩니다.")
+        else:
+            _fg = defaultdict(lambda: {"prod": 0.0, "unlinked": 0.0, "ship_ids": set()})
+            for _r6 in _rpt_ph_all:
+                _sid6  = _r6.get("shipment_id", "")
+                _sh6   = _rpt_ship_m.get(_sid6)
+                _bid6  = _r6.get("buyer_id") or (_sh6 or {}).get("buyer_id", "")
+                _prod6 = (_rpt_buyer_m.get(_bid6, {}).get("product") or "미지정").upper()
+                _out6  = float(_r6.get("output_kg", 0) or 0)
+                _fg[_prod6]["prod"] += _out6
+                if _sh6:
+                    _fg[_prod6]["ship_ids"].add(_sid6)
+                else:
+                    _fg[_prod6]["unlinked"] += _out6
+            _fg_rows = []
+            for _p6, _v6 in sorted(_fg.items()):
+                _shipped6 = sum(float(_rpt_ship_m[_s].get("weight_kg", 0) or 0) for _s in _v6["ship_ids"])
+                _fg_rows.append({"제품": _p6,
+                                 "생산 누계(kg)":        round(_v6["prod"], 0),
+                                 "선적 누계(kg)":        round(_shipped6, 0),
+                                 "미연결 배치 생산(kg)": round(_v6["unlinked"], 0),
+                                 "재고 추정(kg)":        round(_v6["prod"] - _shipped6, 0)})
+            st.dataframe(pd.DataFrame(_fg_rows).style.format(
+                {c: "{:,.0f}" for c in _fg_rows[0] if c != "제품"}),
+                use_container_width=True, hide_index=True)
+            _fg_tot = sum(r["재고 추정(kg)"] for r in _fg_rows)
+            if _fg_tot < -1:
+                st.warning(f"재고 추정이 음수({_fg_tot:,.0f} kg)입니다 — 선적 중량이 배치 생산량보다 큽니다. "
+                           "배치 생산량 누락(시트 동기화 '배치' 탭 참고) 여부를 확인하세요.")
+
+        st.divider()
+
+        # ── Section 7: 보관비 현황 ───────────────────────────────────────────────
+        st.markdown("#### ⑥ 보관비 현황")
+        st.caption("수동 입력(storage_days) 및 FIFO 자동 계산 보관비를 스크랩 유형별로 집계합니다.")
+        if not _rpt_ph_all:
+            st.info("처리이력을 등록하면 보관비 현황이 표시됩니다.")
+        else:
+            _stor7_by_sc  = defaultdict(lambda: {"manual":0.0, "fifo_auto":0.0, "manual_cnt":0, "auto_cnt":0})
+            _stor7_by_mon = defaultdict(lambda: {"manual":0.0, "fifo_auto":0.0})
+            for _r7 in _rpt_ph_all:
+                _scid7 = _r7.get("scrap_type_id","")
+                _sh7   = _rpt_ship_m.get(_r7.get("shipment_id",""), {})
+                _mo7   = (_sh7.get("loading_date") or "미상")[:7]
+                _man7  = _ph_storage_cost(_r7, cfg)
+                _auto7 = _rpt_stor(_r7) if not _man7 else 0.0
+                if _man7:
+                    _stor7_by_sc[_scid7]["manual"]     += _man7
+                    _stor7_by_sc[_scid7]["manual_cnt"] += 1
+                    _stor7_by_mon[_mo7]["manual"]      += _man7
+                elif _auto7:
+                    _stor7_by_sc[_scid7]["fifo_auto"]  += _auto7
+                    _stor7_by_sc[_scid7]["auto_cnt"]   += 1
+                    _stor7_by_mon[_mo7]["fifo_auto"]   += _auto7
+
+            # 스크랩 유형별 합계
+            _stor7_sc_rows = []
+            _tot_man7 = 0.0; _tot_auto7 = 0.0
+            for _scid7, _sv7 in _stor7_by_sc.items():
+                _sc7nm = _rpt_sc_m.get(_scid7, {}).get("name","—")
+                _tot7  = _sv7["manual"] + _sv7["fifo_auto"]
+                _stor7_sc_rows.append({
+                    "스크랩 유형":      _sc7nm,
+                    "수동 보관비(USD)": round(_sv7["manual"],2)    if _sv7["manual"]    else None,
+                    "수동 건수":        _sv7["manual_cnt"]          if _sv7["manual_cnt"] else None,
+                    "FIFO 자동(USD)":   round(_sv7["fifo_auto"],2)  if _sv7["fifo_auto"] else None,
+                    "자동 건수":        _sv7["auto_cnt"]            if _sv7["auto_cnt"]  else None,
+                    "합계(USD)":        round(_tot7, 2),
+                })
+                _tot_man7 += _sv7["manual"]; _tot_auto7 += _sv7["fifo_auto"]
+
+            if _stor7_sc_rows:
+                _s7c1, _s7c2, _s7c3 = st.columns(3)
+                _s7c1.markdown(_kpi_card("🖊️ 수동 보관비 합계",    f"${_tot_man7:,.2f}"), unsafe_allow_html=True)
+                _s7c2.markdown(_kpi_card("🤖 FIFO 자동 보관비 합계", f"${_tot_auto7:,.2f}"), unsafe_allow_html=True)
+                _s7c3.markdown(_kpi_card("🏬 총 보관비",             f"${_tot_man7+_tot_auto7:,.2f}"), unsafe_allow_html=True)
+
+                st.dataframe(
+                    pd.DataFrame(_stor7_sc_rows).style.format(na_rep="—", formatter={
+                        "수동 보관비(USD)": lambda v: f"${v:,.2f}" if v else "—",
+                        "FIFO 자동(USD)":   lambda v: f"${v:,.2f}" if v else "—",
+                        "합계(USD)":        "${:,.2f}",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+
+            # 월별 보관비 집계
+            if _stor7_by_mon:
+                with st.expander("📅 월별 보관비 집계", expanded=False):
+                    _stor7_mon_rows = []
+                    for _mo7 in sorted(_stor7_by_mon.keys()):
+                        _mv7  = _stor7_by_mon[_mo7]
+                        _tot7m = _mv7["manual"] + _mv7["fifo_auto"]
+                        _stor7_mon_rows.append({
+                            "월":             _mo7,
+                            "수동(USD)":      round(_mv7["manual"],2)    if _mv7["manual"]    else None,
+                            "FIFO 자동(USD)": round(_mv7["fifo_auto"],2) if _mv7["fifo_auto"] else None,
+                            "합계(USD)":      round(_tot7m, 2),
+                        })
+                    st.dataframe(
+                        pd.DataFrame(_stor7_mon_rows).style.format(na_rep="—", formatter={
+                            "수동(USD)":      lambda v: f"${v:,.2f}" if v else "—",
+                            "FIFO 자동(USD)": lambda v: f"${v:,.2f}" if v else "—",
+                            "합계(USD)":      "${:,.2f}",
+                        }),
+                        use_container_width=True, hide_index=True,
+                    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 문서 보관함  (bp_documents.json 별도 Drive 파일 사용)
@@ -7224,7 +7243,7 @@ with t_docs:
 # TAB — 계약 이행
 # ══════════════════════════════════════════════════════════════════════════════
 
-with t_contract:
+if _page == PG_CONTRACT:
     st.markdown("### 📋 계약 이행 현황")
 
     _ct_list    = cfg.setdefault("contracts", [])
@@ -7647,3 +7666,7 @@ with t_contract:
                         ]
                         save_cfg(cfg)
                         st.rerun()
+
+# ── 설정·관리 서브탭을 임시 컨테이너에 그린 경우 화면에서 제거 ─────────────────
+if _page != PG_SETTINGS:
+    _void.empty()
