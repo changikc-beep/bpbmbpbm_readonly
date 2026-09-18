@@ -2022,8 +2022,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                "여기 입력한 컨테이너별 원본값도 이 선적건에 함께 저장됩니다. "
                                "잔여 반올림 차이는 기타 조정에 기재하세요.")
                     _ctr_saved = s.get("container_calc", {}).get("containers", [])
-                    _ctr_n = int(st.number_input("컨테이너 수", min_value=2, max_value=8,
-                                                 value=len(_ctr_saved) if _ctr_saved else 2,
+                    # 시트 동기화는 컨테이너 1개짜리 HBL에도 container_calc를 저장하므로 최소 1
+                    _ctr_n = int(st.number_input("컨테이너 수", min_value=1, max_value=12,
+                                                 value=max(1, len(_ctr_saved)) if _ctr_saved else 2,
                                                  step=1, key=f"ctr_n_{real_i}"))
                     _ctr_rows = []
                     for _cj in range(_ctr_n):
