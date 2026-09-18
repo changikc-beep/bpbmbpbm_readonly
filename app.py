@@ -1,5 +1,5 @@
 import streamlit as st
-import json, os, re, uuid
+import json, os, re, uuid, hashlib
 import pandas as pd
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -524,7 +524,16 @@ def _ph_storage_cost(rec, cfg):
     stor_rate = _storage_rate_eur(cfg, rec.get("scrap_type_id",""))
     return round(tb * float(days) * stor_rate * eur_rate, 2)
 
-@st.cache_data(show_spinner=False)
+def _cfg_fingerprint(c):
+    """config dict의 내용 지문(md5). st.cache_data의 hash_funcs로 사용.
+    Streamlit 기본 해셔는 dict를 잎 단위로 순회해 cfg 전체를 매 호출마다 해시하는데,
+    측정 결과 호출당 약 16ms로 FIFO 계산(약 3ms)보다 느렸다. json 직렬화+md5는
+    약 1ms. 내용이 바뀌면 지문이 바뀌므로 캐시 무효화도 자동으로 정확하다."""
+    return hashlib.md5(
+        json.dumps(c, sort_keys=True, default=str, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+@st.cache_data(show_spinner=False, hash_funcs={dict: _cfg_fingerprint})
 def _fifo_lot_trace(cfg, scrap_id):
     """2단계 FIFO Lot 추적.
 
@@ -848,6 +857,14 @@ def _settle_terms(contract, buyer):
         "final_idx":  ct.get("final_index_basis", "final"),
     }
 
+def _eff_content(buyer_val, our_val, src):
+    """최종정산에 적용할 함유량(%) — 정산 기준(매입사값/당사값/평균)에 따라 선택.
+    '평균'은 소수 2자리 반올림. 선적 정산 폼·재계산·요약표가 모두 이 한 함수를 쓴다."""
+    buyer_val = float(buyer_val or 0)
+    our_val   = float(our_val or 0)
+    return {"매입사값": buyer_val, "당사값": our_val,
+            "평균": round((buyer_val + our_val) / 2, 2)}.get(src, buyer_val)
+
 def _resolve_idx_month(basis, loading_date, prov_month, final_month):
     """INDEX 기준월 결정. basis: 'prov'|'final'|'loading'."""
     if basis == "loading":
@@ -875,7 +892,7 @@ def _hm_for(cfg, buyer):
     return {h["month"]: h for h in cfg.get("index_history", [])}
 
 
-def _recompute_final_settlement(cfg, s, hm_all=None, fallback_index=None):
+def _recompute_final_settlement(cfg, s, fallback_index=None):
     """저장된 선적건 데이터 기준으로 '지금 저장하면 나올' 최종정산액을 재계산.
     final_amount_usd 스냅샷과 비교해 재계산 필요 여부를 판단할 때 사용.
     반환: 계산 불가(계약/INDEX월 미비) 시 None, 가능하면 확정산 금액(float).
@@ -885,9 +902,7 @@ def _recompute_final_settlement(cfg, s, hm_all=None, fallback_index=None):
     """
     buyers = {b["id"]: b for b in cfg.get("buyers", [])}
     b = buyers.get(s.get("buyer_id", ""), {})
-    # 매입사별 INDEX 예외(custom_index)를 항상 정확히 반영하기 위해
-    # 전달받은 hm_all은 무시하고 매입사 기준으로 다시 조회한다.
-    hm_all = _hm_for(cfg, b)
+    hm_all = _hm_for(cfg, b)   # 매입사별 INDEX 예외(custom_index) 반영
     final_month = s.get("final_month", "—")
     if not final_month or final_month == "—" or final_month not in hm_all:
         if fallback_index is None:
@@ -912,12 +927,8 @@ def _recompute_final_settlement(cfg, s, hm_all=None, fallback_index=None):
     default_co = float(b.get("co_content", 0) or 0)
     buyer_ni = float(s.get("buyer_ni_content") or default_ni)
     buyer_co = float(s.get("buyer_co_content") or default_co)
-    ni_src = s.get("ni_content_src", "매입사값")
-    co_src = s.get("co_content_src", "매입사값")
-    eff_ni = {"매입사값": buyer_ni, "당사값": default_ni,
-              "평균": round((buyer_ni + default_ni) / 2, 2)}.get(ni_src, buyer_ni)
-    eff_co = {"매입사값": buyer_co, "당사값": default_co,
-              "평균": round((buyer_co + default_co) / 2, 2)}.get(co_src, buyer_co)
+    eff_ni = _eff_content(buyer_ni, default_ni, s.get("ni_content_src", "매입사값"))
+    eff_co = _eff_content(buyer_co, default_co, s.get("co_content_src", "매입사값"))
 
     _, _, _, final_pkg_raw = bp_price(ni_index, co_index,
                                        eff_ni, eff_co,
@@ -1333,7 +1344,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
     shipments = cfg.get("shipments",[])
     buyer_map  = {b["id"]:b for b in cfg["buyers"]}
     buyer_opts = {f"{b['name']} ({b['product']})":b["id"] for b in cfg["buyers"]}
-    hm_all = {h["month"]:h for h in cfg.get("index_history",[])}
 
     # ── 요약 메트릭 ──
     if shipments:
@@ -1369,7 +1379,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             _bst = _settle_terms(_get_contract_for_shipment(cfg, _bs.get("id","")), _bb)
             _b_prov_paid = float(_bs.get("invoice_usd") or 0) * (_bst["prov_pct"] / 100.0)
             _b_snapshot  = _bs.get("final_amount_usd")
-            _b_confirmed = float(_b_snapshot) if _b_snapshot else _recompute_final_settlement(cfg, _bs, hm_all)
+            _b_confirmed = float(_b_snapshot) if _b_snapshot else _recompute_final_settlement(cfg, _bs)
             _b_rec = _by_buyer_settle.setdefault(_bkey, {"건수":0,"가정산 수령액":0.0,"확정산 예상액":0.0,"잔액":0.0,"확정_건수":0})
             _b_rec["건수"] += 1
             _b_rec["가정산 수령액"] += _b_prov_paid
@@ -1408,7 +1418,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         _recalc_candidates = []
         for _rs in shipments:
             if _rs.get("status") in ("final", "paid") and _rs.get("final_amount_usd"):
-                _live = _recompute_final_settlement(cfg, _rs, hm_all)
+                _live = _recompute_final_settlement(cfg, _rs)
                 if _live is not None and abs(_live - float(_rs["final_amount_usd"])) >= 0.01:
                     _recalc_candidates.append((_rs, _live))
         if _recalc_candidates:
@@ -1693,10 +1703,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         help="최종정산 단가 계산에 사용할 Co 함유량 기준")
                     _co_ni = b.get("ni_content",0) if b else 0  # 당사값
                     _co_co = b.get("co_content",0) if b else 0
-                    _eff_ni = {"매입사값": new_buyer_ni, "당사값": _co_ni,
-                               "평균": round((new_buyer_ni + _co_ni) / 2, 2)}[_ni_src]
-                    _eff_co = {"매입사값": new_buyer_co, "당사값": _co_co,
-                               "평균": round((new_buyer_co + _co_co) / 2, 2)}[_co_src]
+                    _eff_ni = _eff_content(new_buyer_ni, _co_ni, _ni_src)
+                    _eff_co = _eff_content(new_buyer_co, _co_co, _co_src)
                     st.caption(f"적용 Ni: **{_eff_ni:.2f}%** / Co: **{_eff_co:.2f}%**")
                 with sa3:
                     st.markdown("**기타 조정**")
@@ -2045,12 +2053,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         net_v = float(_snapped2) - _tprov + (s.get("other_adj_usd") or 0)
                         net_disp = f"${net_v:+,.2f}"
                     elif fm2!="—" and fm2 in hm_all_x:
-                        _src_ni2 = s.get("ni_content_src","매입사값")
-                        _src_co2 = s.get("co_content_src","매입사값")
                         _bni2 = s.get("buyer_ni_content") or bx.get("ni_content",0)
                         _bco2 = s.get("buyer_co_content") or bx.get("co_content",0)
-                        _eni2 = {"매입사값":_bni2,"당사값":bx.get("ni_content",0),"평균":(_bni2+bx.get("ni_content",0))/2}.get(_src_ni2,_bni2)
-                        _eco2 = {"매입사값":_bco2,"당사값":bx.get("co_content",0),"평균":(_bco2+bx.get("co_content",0))/2}.get(_src_co2,_bco2)
+                        _eni2 = _eff_content(_bni2, bx.get("ni_content",0), s.get("ni_content_src","매입사값"))
+                        _eco2 = _eff_content(_bco2, bx.get("co_content",0), s.get("co_content_src","매입사값"))
                         _,_,_,fpkg2=bp_price(hm_all_x[fm2]["ni_index"],hm_all_x[fm2]["co_index"],
                             _eni2, _eco2, _tst["ni_payable"], _tst["co_payable"])
                         mst=s.get("moisture_pct") or 0
@@ -2450,11 +2456,11 @@ with t_pnl:
             for dr in cfg.get("dispatch_records", [])
             if (dr.get("date") or "")[:7] > _eur_latest
         }
-        _ph_months = {
-            _rec_ref_date(r, cfg)[:7]
-            for r in cfg.get("processing_history", [])
-            if _rec_ref_date(r, cfg) and _rec_ref_date(r, cfg)[:7] > _eur_latest
-        }
+        _ph_months = set()
+        for _gr in cfg.get("processing_history", []):
+            _grd = _rec_ref_date(_gr, cfg)
+            if _grd and _grd[:7] > _eur_latest:
+                _ph_months.add(_grd[:7])
         _gap_months = sorted(_dispatch_months | _ph_months)
         if _gap_months:
             st.warning(
@@ -5800,6 +5806,15 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id):
     return buf.getvalue()
 
 
+@st.cache_data(show_spinner=False, max_entries=4, hash_funcs={dict: _cfg_fingerprint})
+def _excel_report_cached(cfg, ni, co, xr, ref_month, sel_buyer_id):
+    """generate_excel_report 결과를 데이터 지문(cfg 내용)·INDEX·환율·기준월로 캐시.
+    요약 보고서 탭 코드는 화면 어디를 조작하든 매번 실행되므로, 캐시가 없으면
+    클릭마다 엑셀 워크북을 새로 만든다(측정 약 0.6초). 데이터가 바뀌면 지문이
+    바뀌어 자동 재생성되므로 st.cache_data.clear()는 필요 없다."""
+    return generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 0 — 요약 보고서
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5814,8 +5829,8 @@ with t_report:
         st.markdown(f"**작성일**: `{date.today()}`  |  **Ni**: `\\${NI:,.2f}/t`  **Co**: `\\${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
     with ro2:
         if active_buyers:
-            xl_bytes = generate_excel_report(cfg, NI, CO, XR, rpt_month,
-                                             active_buyers[0]["id"])
+            xl_bytes = _excel_report_cached(cfg, NI, CO, XR, rpt_month,
+                                            active_buyers[0]["id"])
             st.download_button("📥 Excel 보고서 다운로드", data=xl_bytes,
                                file_name=f"BP_BM_요약보고서_{rpt_month}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -5841,7 +5856,7 @@ with t_report:
     _td_recalc = []
     for _ts in _td_ships:
         if _ts.get("status") in ("final", "paid") and _ts.get("final_amount_usd"):
-            _tl = _recompute_final_settlement(cfg, _ts, _td_hm)
+            _tl = _recompute_final_settlement(cfg, _ts)
             if _tl is not None and abs(_tl - float(_ts["final_amount_usd"])) >= 0.01:
                 _td_recalc.append(_ts)
     if _td_recalc:
@@ -5908,12 +5923,12 @@ with t_report:
         if _csnap:
             _camt, _cbasis = float(_csnap), "확정"
         else:
-            _ccalc = _recompute_final_settlement(cfg, _cs, _td_hm)
+            _ccalc = _recompute_final_settlement(cfg, _cs)
             if _ccalc is not None:
                 _camt, _cbasis = _ccalc, "계산"
             else:
                 # Final월 INDEX 미등록 → 최신 INDEX로 추정 (참고치)
-                _camt   = _recompute_final_settlement(cfg, _cs, _td_hm, fallback_index=(NI, CO))
+                _camt   = _recompute_final_settlement(cfg, _cs, fallback_index=(NI, CO))
                 _cbasis = "추정"
         if _camt is None:
             continue  # 매입사/계약 정보 미비 등 — 전망에서 제외
