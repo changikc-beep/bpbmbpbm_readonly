@@ -355,7 +355,7 @@ def _download_cfg_raw():
 @st.cache_data(ttl=120, show_spinner=False)
 def _load_cfg_drive():
     """config.json (120초 캐시). 앱 내 저장(save_cfg)은 즉시 캐시를 비우므로 본인 작업엔
-    항상 최신이 보임. 다른 기기에서 저장한 직후엔 사이드바 '데이터 새로고침' 버튼 사용."""
+    항상 최신이 보임. 다른 기기에서 저장한 직후엔 상단 상태 바의 '새로고침' 버튼 사용."""
     return _download_cfg_raw()
 
 def _save_cfg_drive(c):
@@ -391,7 +391,7 @@ def save_cfg(c, force=False):
             cur_rev = loaded_rev          # 확인 실패 시 저장은 진행 (가용성 우선)
         if cur_rev != loaded_rev:
             st.error("다른 기기·탭에서 먼저 저장된 변경이 있어 이번 저장을 중단했습니다 (덮어쓰기 방지). "
-                     "사이드바 '데이터 새로고침'을 누른 뒤 방금 입력한 내용을 다시 저장해 주세요.")
+                     "화면 상단의 '새로고침'을 누른 뒤 방금 입력한 내용을 다시 저장해 주세요.")
             st.stop()
     c["_meta"] = {"rev": loaded_rev + 1, "saved_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
     _save_cfg_drive(c)
