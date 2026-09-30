@@ -1314,9 +1314,47 @@ def _pnl_context(cfg):
             "sc_ids": sc_ids, "key": key, "auto_storage": auto_storage,
             "eff_storage": eff_storage, "rmc_fifo": rmc_fifo, "rmc_mavg": rmc_mavg}
 
+def _batch_revenue_map(cfg):
+    """배치별 매출(USD)과 그 기준 — 손익의 매출은 선적 정산 금액에서 가져온다.
+      확정   : 확정액(final_amount_usd) + 기타 조정   (Számla를 확정산에 맞춰 수정 → NAV 보고 금액)
+      가정산 : 가정산 Invoice 금액 + 기타 조정       (확정 전까지 보고되는 금액)
+      단가   : HBL 미연결 배치이거나 Invoice가 없는 선적 → 배치의 BP매각단가 × 생산량
+    한 HBL에 배치가 여러 개면 선적 금액을 배치 생산량 비율로 나눈다.
+    반환: {배치 id → (매출, 기준)}"""
+    ships = {s["id"]: s for s in cfg.get("shipments", []) if s.get("id")}
+    ph    = cfg.get("processing_history", [])
+    out_by, cnt_by = defaultdict(float), defaultdict(int)
+    for r in ph:
+        sid = r.get("shipment_id")
+        if sid in ships:
+            out_by[sid] += float(r.get("output_kg") or 0)
+            cnt_by[sid] += 1
+    res = {}
+    for r in ph:
+        key = r.get("id") or id(r)
+        out = float(r.get("output_kg") or 0)
+        s   = ships.get(r.get("shipment_id"))
+        if s and s.get("final_amount_usd"):
+            total, basis = float(s["final_amount_usd"]), "확정"
+        elif s and float(s.get("invoice_usd") or 0) > 0:
+            total, basis = float(s["invoice_usd"]), "가정산"
+        else:
+            res[key] = (float(r.get("bp_sale_per_kg") or 0) * out, "단가")
+            continue
+        total += float(s.get("other_adj_usd") or 0)
+        sid = s["id"]
+        share = out / out_by[sid] if out_by[sid] > 0 else 1.0 / cnt_by[sid]
+        res[key] = (total * share, basis)
+    return res
+
+def _rev_of(rec, rev_map):
+    """_batch_revenue_map 결과에서 배치 한 건의 매출(USD)."""
+    return rev_map.get(rec.get("id") or id(rec), (0.0, ""))[0]
+
 def _batch_pnl_rows(cfg, ctx, rmc_mode="FIFO 우선", default_rmc=0.0):
     """배치별 손익 레코드 (관리회계 기준: 스크랩 매각·재매입 상계 → 임가공비(순)).
     월별/HBL별/매입사별/임가공사별 집계는 이 결과를 _pnl_agg 로 합산만 한다."""
+    rev_m   = _batch_revenue_map(cfg)
     ship_m  = {s["id"]: s for s in cfg.get("shipments", [])}
     buyer_m = {b["id"]: b for b in cfg.get("buyers", [])}
     proc_m  = {p["id"]: p for p in cfg.get("processors", [])}
@@ -1341,7 +1379,8 @@ def _batch_pnl_rows(cfg, ctx, rmc_mode="FIFO 우선", default_rmc=0.0):
             "scrap_id": r.get("scrap_type_id", ""),
             "sc_nm": sc_m.get(r.get("scrap_type_id", ""), {}).get("name", "—"),
             "out": out, "inp": inp,
-            "bp":  float(r.get("bp_sale_per_kg", 0) or 0) * out,
+            "bp":  _rev_of(r, rev_m),
+            "rev_basis": rev_m.get(r.get("id") or id(r), (0.0, ""))[1],
             "pf":  float(r.get("processing_fee_per_kg", 0) or 0) * inp,
             "sc_rev": float(r.get("scrap_sale_per_kg", 0) or 0) * inp,
             "eu":  _ph_export_usd(r, cfg),
@@ -2853,6 +2892,7 @@ if _page == PG_PNL:
 
     # ── 손익 엔진 바인딩 (모듈 레벨 _pnl_context 공용) ──────────────────────
     _pctx = _pnl_context(cfg)
+    _rev_map = _batch_revenue_map(cfg)   # 매출 = 선적 확정액(없으면 가정산 Invoice) 배분
     _fifo_rmc_map          = _pctx["rmc_map"]
     _fifo_sc_ids_avail     = _pctx["sc_ids"]
     _auto_storage_for_batch = _pctx["auto_storage"]
@@ -2878,7 +2918,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         _tot_pf      = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 임가공비
         _tot_repr    = _tot_sc_rev + _tot_pf   # BP 재매입 원가 합계 (= 스크랩 + 임가공비)
         _tot_eu      = sum(_ph_export_usd(r, cfg) for r in _ph_all)
-        _tot_bp      = sum((r.get("bp_sale_per_kg",0) or 0) * (r.get("output_kg",0) or 0) for r in _ph_all)
+        _tot_bp      = sum(_rev_of(r, _rev_map) for r in _ph_all)
         # 거래 마진 = BP매각 + 스크랩매각 - BP재매입 - 수출비  (스크랩 상계 → 임가공비+수출비만 남음)
         _tot_net  = _tot_bp + _tot_sc_rev - _tot_repr - _tot_eu
         _avg_mg   = _tot_net / _tot_bp * 100 if _tot_bp > 0 else 0
@@ -2931,7 +2971,12 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             f"| **= 영업이익 (실질 손익)** | **\\${_tot_op_s1:+,.0f}** | **{_pl_pct(_tot_op_s1)}** |",
         ]
         st.markdown("| 구분 | 금액 | 매출 대비 |\n|------|-----:|-----:|\n" + "\n".join(_pl_rows))
-        st.caption("스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
+        _rb_cnt = defaultdict(int)
+        for _rb in _rev_map.values():
+            _rb_cnt[_rb[1]] += 1
+        st.caption("매출은 선적 확정액(확정 전이면 가정산 Invoice)에 기타 조정을 더해 배치 생산량 비율로 나눈 금액입니다 "
+                   f"(배치 기준: 확정 {_rb_cnt['확정']} · 가정산 {_rb_cnt['가정산']} · 단가 {_rb_cnt['단가']}). "
+                   "스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
                    "원료 매입비는 FIFO 기준, 간접 판관비·기타는 마스터·동기화 > INDEX·환율·판관비의 월별 등록값 합계입니다.")
 
         # ── 세금계산서 기준 총액 흐름 (상계 전 — 백데이터 검증용) ─────────────
@@ -3129,7 +3174,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             _mi    = _ph_input_kg(_mr)
             _mpf   = (_mr.get("processing_fee_per_kg",0) or 0) * _mi   # 임가공비(순) — 스크랩 상계 후
             _meu   = _ph_export_usd(_mr, cfg)
-            _mbp   = (_mr.get("bp_sale_per_kg",0) or 0) * _mo
+            _mbp   = _rev_of(_mr, _rev_map)
             _mrc, _ = _get_rmc_fifo(_mr, _default_rmc_s1)
             # 보관비: 수동 storage_days 우선, 없으면 FIFO 자동 fallback
             _mstor = _ph_storage_cost(_mr, cfg) or _auto_storage_for_batch(_mr)
@@ -3222,7 +3267,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             _pf_r   = float(_rr.get("processing_fee_per_kg") or 0) * _ip_r
             _sc_r   = float(_rr.get("scrap_sale_per_kg") or 0) * _ip_r
             _eu_r   = _ph_export_usd(_rr, cfg)
-            _bp_r   = float(_rr.get("bp_sale_per_kg") or 0) * _op_r
+            _bp_r   = _rev_of(_rr, _rev_map)
             # 스크랩 매각수익 ↔ 재매입원가의 스크랩 부분은 상계 →
             # 배치 손익 요소 = bp(매출) − pf(임가공비 순) − eu(수출비) − raw − stor
             _trade_r  = _bp_r - _pf_r - _eu_r
@@ -3247,6 +3292,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                     "out":  0.0, "bp_rev": 0.0, "pf": 0.0,
                     "eu":   0.0, "raw":    0.0,  "stor": 0.0,
                     "batches": [],
+                    "basis": _rev_map.get(_rr.get("id") or id(_rr), (0.0, "—"))[1],
                 }
             _h = _hbl_agg[_hid]
             _h["out"]    += _op_r
@@ -3282,6 +3328,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 "임가공사":    "·".join(sorted(_h["procs"])) or "—",
                 "BP생산(kg)":  round(_h["out"], 0),
                 "매출(BP)":    round(_h["bp_rev"], 2),
+                "매출 기준":   _h["basis"],
                 "원료 매입비":  round(_h["raw"], 2),
                 "임가공비(순)": round(_h["pf"], 2),
                 "매출총이익":  round(_hgp, 2),
@@ -3552,7 +3599,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
         # 손익 요약 서브페이지와 같은 합계 (서브페이지가 분리되어 여기서 다시 계산)
         _tot_pf = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)
         _tot_eu = sum(_ph_export_usd(r, cfg) for r in _ph_all)
-        _tot_bp = sum((r.get("bp_sale_per_kg",0) or 0) * (r.get("output_kg",0) or 0) for r in _ph_all)
+        _tot_bp = sum(_rev_of(r, _rev_map) for r in _ph_all)
         st.caption("매출총이익(매출 − 원료 취득원가 − 임가공비 순)에서 수출비·보관비·판관비를 차감한 "
                    "영업이익(실질 손익)입니다. 원료단가 기준은 위 HBL 요약과 동기화됩니다.")
 
@@ -4077,12 +4124,15 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                     else:
                         _e_bps = st.number_input("BP 매각단가 ($/kg)",
                             value=float(rec.get("bp_sale_per_kg") or 0),
-                            step=0.0001, format="%.4f", key=f"slim_bps_{_rk}")
+                            step=0.0001, format="%.4f", key=f"slim_bps_{_rk}",
+                            help="손익 매출은 연결된 선적의 확정액(없으면 가정산 Invoice)을 생산량 비율로 나눠 씁니다. "
+                                 "이 단가는 HBL 미연결 배치나 Invoice가 없는 선적에만 쓰입니다.")
                     _e_scrap_sale = st.number_input(
                         "스크랩 매각단가 ($/kg 투입)",
                         value=float(rec.get("scrap_sale_per_kg") or 0),
                         step=0.0001, format="%.4f", key=f"slim_scs_{_rk}",
-                        help="BP 생산 후 부산물(잔여 스크랩) 매각 단가. 손익 탭 '스크랩 매각수익' 항목에 반영됩니다.",
+                        help="임가공사에 매각한 스크랩 단가. 재매입과 상계되므로 손익에는 영향이 없고, "
+                             "'세금계산서 기준 총액 흐름' 표시에만 쓰입니다.",
                     )
                     _e_note = st.text_input("비고", rec.get("notes",""), key=f"slim_note_{_rk}")
 
@@ -4239,10 +4289,10 @@ if _page == PG_STOCK and _sub == SUB_PROC:
             if _t2_batches:
                 st.markdown("---")
                 _h2_bp=0.0; _h2_pf=0.0
+                _h2_rev = _batch_revenue_map(cfg)
                 for _, _bph2 in _t2_batches:
-                    _h2out = float(_bph2.get("output_kg",0) or 0)
                     _h2inp = _ph_input_kg(_bph2)
-                    _h2_bp += float(_bph2.get("bp_sale_per_kg",0) or 0) * _h2out
+                    _h2_bp += _rev_of(_bph2, _h2_rev)
                     _h2_pf += float(_bph2.get("processing_fee_per_kg",0) or 0) * _h2inp
                 # 수출비: HBL 레벨 값 직접 사용
                 _h2_eu = float(_t2_ship.get("export_cost_usd") or 0)
@@ -5993,6 +6043,7 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, c
     def _xl_raw(r):
         return _xctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
     _xl_stor = _xctx["eff_storage"]
+    _xl_rev  = _batch_revenue_map(cfg)   # 매출 = 선적 확정액(없으면 가정산 Invoice) 배분 — 앱과 동일
 
     pnl_mo = defaultdict(lambda: {"bp":0.0,"pf":0.0,"eu":0.0,"raw":0.0,"stor":0.0,"out":0.0,"cnt":0})
     for r in ph_all_xl:
@@ -6000,7 +6051,7 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, c
         mo = (sh.get("loading_date") or "미연결")[:7]
         out = float(r.get("output_kg",0) or 0)
         inp = _ph_input_kg(r)   # 일관성: 역산 로직 통일
-        pnl_mo[mo]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * out
+        pnl_mo[mo]["bp"]   += _rev_of(r, _xl_rev)
         pnl_mo[mo]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * inp
         pnl_mo[mo]["eu"]   += _ph_export_usd(r, cfg)   # BUG FIX: HBL 레벨 수출비 포함
         pnl_mo[mo]["raw"]  += _xl_raw(r)
@@ -6076,7 +6127,7 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, c
             if not sid: continue
             out = float(r.get("output_kg",0) or 0)
             inp_v = _ph_input_kg(r)   # 일관성: 역산 로직 통일
-            hagg[sid]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0)*out
+            hagg[sid]["bp"]   += _rev_of(r, _xl_rev)
             hagg[sid]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0)*inp_v
             hagg[sid]["eu"]   += _ph_export_usd(r, cfg)   # BUG FIX: HBL 레벨 수출비 포함
             hagg[sid]["raw"]  += _xl_raw(r)
@@ -6650,7 +6701,8 @@ if _page == PG_HOME:
     _yr_ph    = [r for r in _rpt_ph_all
                  if (_rpt_ship_m0.get(r.get("shipment_id",""),{}).get("loading_date","") or "")[:4] == str(_cur_year)]
     _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year)]
-    _yr_bp    = sum(float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0) for r in _yr_ph)
+    _home_rev = _batch_revenue_map(cfg)   # 매출 = 선적 확정액(없으면 가정산 Invoice) 배분
+    _yr_bp    = sum(_rev_of(r, _home_rev) for r in _yr_ph)
     _yr_pf    = sum(float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _yr_ph)
     _yr_eu    = sum(_ph_export_usd(r, cfg) for r in _yr_ph)
     _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
@@ -6668,7 +6720,7 @@ if _page == PG_HOME:
         _mo_key = (_rpt_ship_m0.get(r.get("shipment_id",""), {}).get("loading_date","") or "")[:7]
         if not _mo_key:
             continue
-        _mo_agg[_mo_key]["bp"]   += float(r.get("bp_sale_per_kg",0) or 0) * float(r.get("output_kg",0) or 0)
+        _mo_agg[_mo_key]["bp"]   += _rev_of(r, _home_rev)
         _mo_agg[_mo_key]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
         _mo_agg[_mo_key]["eu"]   += _ph_export_usd(r, cfg)
         _mo_agg[_mo_key]["raw"]  += _rctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
