@@ -4768,12 +4768,16 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
     _ds_list    = cfg["direct_sales"]
 
     if _ds_list:
+        # 단가 칸만 직접 수정 가능 — 저장하면 시트 동기화 때도 유지된다(시트 단가 칸이 비어 있으면 기존 단가 보존)
+        _ds_sorted = sorted(range(len(_ds_list)), key=lambda i: _ds_list[i].get("date", ""), reverse=True)
         _ds_rows = []
-        for ds in sorted(_ds_list, key=lambda x: x.get("date", ""), reverse=True):
+        for _i in _ds_sorted:
+            ds = _ds_list[_i]
             _spkg = ds.get("sale_price_per_kg")
             _dqty = float(ds.get("quantity_kg", 0))
             _ds_rows.append({
                 "판매일":        ds.get("date", ""),
+                "판매처":        ds.get("customer", "") or "—",
                 "스크랩 유형":   _of_sc_rev.get(ds.get("scrap_type_id", ""), "—"),
                 "판매량 (kg)":   _dqty,
                 "톤백 (개)":     int(ds.get("ton_bags", 0) or 0),
@@ -4781,15 +4785,27 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                 "매출액 (USD)":  round(float(_spkg) * _dqty, 2) if _spkg is not None else None,
                 "비고":          ds.get("notes", ""),
             })
-        st.dataframe(
-            pd.DataFrame(_ds_rows).style.format({
-                "판매량 (kg)":  "{:,.0f}",
-                "톤백 (개)":    "{:,.0f}",
-                "단가 ($/kg)":  lambda v: f"${v:.4f}" if v is not None else "—",
-                "매출액 (USD)": lambda v: f"${v:,.2f}" if v is not None else "—",
-            }),
-            use_container_width=True, hide_index=True
-        )
+        _ds_df = pd.DataFrame(_ds_rows)
+        _ds_ed = st.data_editor(
+            _ds_df, use_container_width=True, hide_index=True, key="ds_price_editor",
+            disabled=[c for c in _ds_df.columns if c != "단가 ($/kg)"],
+            column_config={
+                "판매량 (kg)":  st.column_config.NumberColumn(format="%,.0f"),
+                "톤백 (개)":    st.column_config.NumberColumn(format="%d"),
+                "단가 ($/kg)":  st.column_config.NumberColumn(format="$%.4f", min_value=0.0, step=0.01,
+                                                             help="이 칸만 수정할 수 있습니다. 수정 후 아래 '단가 저장'"),
+                "매출액 (USD)": st.column_config.NumberColumn(format="$%,.2f"),
+            })
+        _ds_changed = [(_ds_sorted[k], v) for k, v in enumerate(_ds_ed["단가 ($/kg)"].tolist())
+                       if not (pd.isna(v) and _ds_rows[k]["단가 ($/kg)"] is None)
+                       and v != _ds_rows[k]["단가 ($/kg)"]]
+        if _ds_changed:
+            if st.button(f"단가 저장 ({len(_ds_changed)}건 변경)", type="primary", key="ds_price_save"):
+                for _i, _v in _ds_changed:
+                    cfg["direct_sales"][_i]["sale_price_per_kg"] = None if pd.isna(_v) else float(_v)
+                save_cfg(cfg); st.toast("직접판매 단가 저장"); st.rerun()
+        st.caption("단가는 이 표에서 직접 고치거나, 시트 출고 탭의 '판매단가($/kg)' 열에 넣으면 됩니다. "
+                   "시트 단가 칸이 비어 있으면 동기화해도 여기서 넣은 단가가 유지됩니다.")
 
         _ds_del_opts = [
             f"{ds.get('date','')}  |  {_of_sc_rev.get(ds.get('scrap_type_id',''),'—')}  |  "
@@ -5371,9 +5387,16 @@ def _sync_from_gsheets(cfg_ref):
             new_dr, new_ds = [], []
             seen_dr_sc, seen_ds_sc = set(), set()
             _out_skip_sc, _out_skip_proc = set(), set()
+            # 직접판매 단가 열(선택): 헤더에 '단가'·'판가'가 들어간 열, 없으면 8번째 열.
+            # 비어 있으면 같은 판매건(판매일·스크랩·수량)의 기존 단가를 유지 — 앱에서 넣은 단가가 동기화로 지워지지 않게
+            _oh = [h.replace(" ", "") for h in rows[0]]
+            _o_price_col = next((i for i, h in enumerate(_oh) if "단가" in h or "판가" in h), 7)
+            _ds_old_price = {((r.get("date") or ""), r.get("scrap_type_id"), round(float(r.get("quantity_kg") or 0))):
+                             r.get("sale_price_per_kg") for r in cfg_ref.get("direct_sales", [])}
             for row in rows[1:]:
                 row = [c.strip() for c in row] + [""] * 8
                 otype, dt, sc_nm, proc_nm, qty, tb, notes = row[:7]
+                _o_price = row[_o_price_col] if _o_price_col < len(row) else ""
                 if not otype or not qty:
                     continue
                 scid  = scrap_map.get(sc_nm)
@@ -5398,11 +5421,14 @@ def _sync_from_gsheets(cfg_ref):
                     })
                 elif otype == "직접판매":
                     seen_ds_sc.add(scid)
+                    _ds_price = (_to_float(_o_price) if _o_price else
+                                 _ds_old_price.get((dt, scid, round(qty_f))))
                     new_ds.append({
                         "id": str(uuid.uuid4())[:8],
                         "date": dt, "scrap_type_id": scid,
                         "quantity_kg": qty_f, "ton_bags": tb_i,
-                        "sale_price_per_kg": None, "notes": notes,
+                        "customer": proc_nm,          # 직접판매는 D열(임가공사 칸)에 판매처를 적는다
+                        "sale_price_per_kg": _ds_price or None, "notes": notes,
                     })
             # 시트에 나온 조합만 교체, 나머지는 보존
             cfg_ref["dispatch_records"] = [
