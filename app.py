@@ -1117,6 +1117,15 @@ def _sync_checks(before, after):
     for _lbl, _x, _y in zip(("입고", "임가공 출고", "직접판매"), _cb, _ca):
         if _x != _y:
             res.append(("변경", f"{_lbl} {_x}건 → {_y}건"))
+    # 생산 보고가 바뀌면 제품별 완제품 재고를 함께 보여 준다
+    if before.get("production_monthly", []) != after.get("production_monthly", []):
+        _fgp = defaultdict(float)
+        for _sc in after.get("scrap_types", []):
+            _fgp[_sc_product(_sc)] += _finished_goods_kg(after, _sc["id"])
+        _last = max((r.get("month", "") for r in after.get("production_monthly", [])), default="—")
+        res.append(("변경", f"생산 보고 {len(before.get('production_monthly', []))}행 → "
+                            f"{len(after.get('production_monthly', []))}행 (최근 {_last}) · 완제품 재고 "
+                            + " / ".join(f"{k} {v:,.0f} kg" for k, v in sorted(_fgp.items()) if v)))
     if not res:
         res.append(("변경", "바뀐 내용 없음"))
     return res
@@ -1245,21 +1254,46 @@ def _avg_conv_rate(cfg, scrap_id):
     """스크랩 유형별 전환율(%) — _conv_rate_for 의 값만 (하위호환)."""
     return _conv_rate_for(cfg, scrap_id)[0]
 
+def _sc_product(sc):
+    """스크랩 유형의 제품 구분(BP/BM). 마스터에 product가 없으면 이름으로 추정: '양극' → BP, 그 외 → BM."""
+    sc = sc or {}
+    p = (sc.get("product") or "").upper()
+    if p in ("BP", "BM"):
+        return p
+    return "BP" if "양극" in (sc.get("name") or "") else "BM"
+
+def _prod_combos(cfg):
+    """생산 탭(production_monthly) 자료가 있는 (임가공사 id, 스크랩 id) 조합."""
+    return {(r.get("processor_id"), r.get("scrap_type_id")) for r in cfg.get("production_monthly", [])}
+
+def _prod_sum(cfg, pid, scid, key):
+    """생산 탭의 (임가공사, 스크랩) 누계 — key: received_kg · input_kg · output_kg ..."""
+    return sum(float(r.get(key) or 0) for r in cfg.get("production_monthly", [])
+               if r.get("processor_id") == pid and r.get("scrap_type_id") == scid)
+
 def _finished_goods_kg(cfg, scrap_id=None, processor_id=None):
-    """완제품(BP/BM) 재고 추정(kg) = 선적건에 연결되지 않은 배치의 생산량 합.
-    배치가 HBL에 연결되는 순간 '선적됨'으로 보므로, 미연결 배치 생산량이 곧
-    창고에 쌓인 완제품이다. scrap_id/processor_id 로 범위를 좁힐 수 있다."""
+    """완제품(BP/BM) 재고 추정(kg).
+    · 생산 탭 자료가 있는 임가공사·스크랩: 누적 생산 − HBL에 연결된 배치 생산 (음수는 계량차로 보고 0)
+    · 자료가 없는 조합(1회성 임가공 등): 선적건에 연결되지 않은 배치의 생산량
+    scrap_id/processor_id 로 범위를 좁힐 수 있다."""
     valid_sids = {s.get("id") for s in cfg.get("shipments", [])}
-    total = 0.0
+    combos = _prod_combos(cfg)
+    ok = lambda pid, scid: (not scrap_id or scid == scrap_id) and (not processor_id or pid == processor_id)
+    total, shipped = 0.0, defaultdict(float)
     for r in cfg.get("processing_history", []):
-        if scrap_id and r.get("scrap_type_id") != scrap_id:
+        pid, scid = r.get("processor_id"), r.get("scrap_type_id")
+        if not ok(pid, scid):
             continue
-        if processor_id and r.get("processor_id") != processor_id:
-            continue
-        sid = r.get("shipment_id", "")
-        if sid and sid in valid_sids:
-            continue
-        total += float(r.get("output_kg", 0) or 0)
+        out = float(r.get("output_kg", 0) or 0)
+        linked = bool(r.get("shipment_id")) and r.get("shipment_id") in valid_sids
+        if (pid, scid) in combos:
+            if linked:
+                shipped[(pid, scid)] += out
+        elif not linked:
+            total += out
+    for pid, scid in combos:
+        if ok(pid, scid):
+            total += max(0.0, _prod_sum(cfg, pid, scid, "output_kg") - shipped[(pid, scid)])
     return total
 
 def _sga_totals(cfg):
@@ -1269,19 +1303,51 @@ def _sga_totals(cfg):
             sum(float(r.get("other") or 0) for r in rows))
 
 def _at_processor_raw_kg(cfg, scrap_id, processor_id=None):
-    """임가공사에 있는 미처리 원료 추정량(kg) = 출하 누계 − 처리 이력 투입 누계."""
-    def _pr_ok(pid): return processor_id is None or pid == processor_id
-    dispatched = sum(
-        float(dr.get("quantity_kg") or 0)
-        for dr in cfg.get("dispatch_records", [])
-        if dr.get("scrap_type_id") == scrap_id and _pr_ok(dr.get("processor_id"))
-    )
-    processed = sum(
-        _ph_input_kg(r)
-        for r in cfg.get("processing_history", [])
-        if r.get("scrap_type_id") == scrap_id and _pr_ok(r.get("processor_id"))
-    )
-    return max(0.0, dispatched - processed)
+    """임가공사에 있는 미처리 원료 추정량(kg) = 당사 출고 누계 − 투입 누계 (임가공사별 합산).
+    투입은 생산 탭 자료가 있으면 임가공사 실제 투입, 없으면 배치 투입(전환율 역산 포함)."""
+    combos = _prod_combos(cfg)
+    disp, used_b = defaultdict(float), defaultdict(float)
+    for dr in cfg.get("dispatch_records", []):
+        if dr.get("scrap_type_id") == scrap_id:
+            disp[dr.get("processor_id")] += float(dr.get("quantity_kg") or 0)
+    for r in cfg.get("processing_history", []):
+        if r.get("scrap_type_id") == scrap_id:
+            used_b[r.get("processor_id")] += _ph_input_kg(r)
+    pids = set(disp) | set(used_b) | {p for p, s in combos if s == scrap_id}
+    if processor_id is not None:
+        pids = {processor_id}
+    total = 0.0
+    for pid in pids:
+        used = (_prod_sum(cfg, pid, scrap_id, "input_kg") if (pid, scrap_id) in combos
+                else used_b.get(pid, 0.0))
+        total += max(0.0, disp.get(pid, 0.0) - used)
+    return total
+
+def _production_recon(cfg):
+    """생산·재고 대사 — 생산 탭 자료가 있는 (임가공사, 스크랩)마다 한 행.
+    당사 출고 vs 임가공사 입고(계량차), 투입·생산·회수율, 선적(배치) 대비 완제품 재고를 한눈에."""
+    valid_sids = {s.get("id") for s in cfg.get("shipments", [])}
+    P  = {p["id"]: p.get("name", "?") for p in cfg.get("processors", [])}
+    SC = {s["id"]: s for s in cfg.get("scrap_types", [])}
+    rows = []
+    for pid, scid in sorted(_prod_combos(cfg), key=lambda k: (P.get(k[0], ""), SC.get(k[1], {}).get("name", ""))):
+        disp = sum(float(d.get("quantity_kg") or 0) for d in cfg.get("dispatch_records", [])
+                   if d.get("processor_id") == pid and d.get("scrap_type_id") == scid)
+        rec, inp, out = (_prod_sum(cfg, pid, scid, k) for k in ("received_kg", "input_kg", "output_kg"))
+        shipped = sum(float(r.get("output_kg") or 0) for r in cfg.get("processing_history", [])
+                      if r.get("processor_id") == pid and r.get("scrap_type_id") == scid
+                      and r.get("shipment_id") in valid_sids)
+        last_m = max((r.get("month", "") for r in cfg.get("production_monthly", [])
+                      if r.get("processor_id") == pid and r.get("scrap_type_id") == scid), default="")
+        rows.append({
+            "임가공사": P.get(pid, "?"), "스크랩": SC.get(scid, {}).get("name", "?"),
+            "제품": _sc_product(SC.get(scid)), "자료 기준월": last_m,
+            "당사 출고": round(disp), "임가공사 입고": round(rec), "계량차(입고−출고)": round(rec - disp),
+            "투입": round(inp), "미투입 원료(입고−투입)": round(rec - inp),
+            "생산": round(out), "회수율(%)": round(out / inp * 100, 1) if inp else None,
+            "선적(배치)": round(shipped), "완제품 재고(생산−선적)": round(out - shipped),
+        })
+    return rows
 
 def _ship_in_period(ship, start, end):
     ld = ship.get("loading_date", "")
@@ -4072,20 +4138,45 @@ if _page == PG_STOCK and _sub == SUB_PROC:
     # 서브탭 1 — 전체 내역 : 계약 조건 + 누적 실적
     # ══════════════════════════════════════════════════════════════════════════
     with proc_tab1:
-        # ── 배치 누락 경고 ───────────────────────────────────────────────────
-        _dr_list_warn = cfg.get("dispatch_records", [])
-        _ph_list_warn = cfg.get("processing_history", [])
+        # ── 생산·재고 대사 (시트 '생산' 탭 = 임가공사 월별 생산 보고) ─────────────
+        _recon = _production_recon(cfg)
+        if _recon:
+            st.markdown("#### 생산·재고 대사")
+            st.caption("임가공사 생산 보고(시트 '생산' 탭) 기준. 완제품 재고 = 누적 생산 − HBL에 연결된 배치 생산, "
+                       "미투입 원료 = 임가공사 입고 − 투입. 계량차는 당사 출고 중량과 임가공사 입고 중량의 차이입니다. "
+                       "완제품 재고가 음수면 선적 중량이 생산보다 많은 것(계량차)으로, 재고 합계에서는 0으로 봅니다.")
+            _rc_df = pd.DataFrame(_recon)
+            _kgc = [c for c in _rc_df.columns if c not in ("임가공사", "스크랩", "제품", "자료 기준월", "회수율(%)")]
+            _rc_cfg = _cc_money(kg=tuple(_kgc))
+            _rc_cfg["회수율(%)"] = st.column_config.NumberColumn(format="%.1f%%")
+            st.dataframe(_rc_df, use_container_width=True, hide_index=True, column_config=_rc_cfg)
+            with st.expander("월별 생산 보고", expanded=False):
+                _pm_P = {p["id"]: p["name"] for p in cfg.get("processors", [])}
+                _pm_S = {s["id"]: s["name"] for s in cfg.get("scrap_types", [])}
+                _pm_df = pd.DataFrame([{
+                    "월": r["month"], "임가공사": _pm_P.get(r["processor_id"], "?"), "스크랩": _pm_S.get(r["scrap_type_id"], "?"),
+                    "입고": r.get("received_kg"), "투입": r.get("input_kg"), "생산": r.get("output_kg"),
+                    "회수율(%)": round(r["output_kg"] / r["input_kg"] * 100, 1) if r.get("input_kg") else None,
+                    "부산물": r.get("byproduct_kg"), "불량": r.get("defect_kg"), "비고": r.get("notes", ""),
+                } for r in cfg.get("production_monthly", [])])
+                _pm_cfg = _cc_money(kg=("입고", "투입", "생산", "부산물", "불량"))
+                _pm_cfg["회수율(%)"] = st.column_config.NumberColumn(format="%.1f%%")
+                st.dataframe(_pm_df, use_container_width=True, hide_index=True, column_config=_pm_cfg)
+            st.divider()
+
+        # ── 배치 누락 경고 (생산 탭 자료가 없는 임가공사·스크랩만 — 출고 대비 배치 투입) ──
+        _combos_w = _prod_combos(cfg)
         _warn_msgs = []
         for _sc_w in scrap_list:
-            _scid_w  = _sc_w["id"]
-            _dr_qty  = sum(float(r.get("quantity_kg",0)) for r in _dr_list_warn if r.get("scrap_type_id")==_scid_w)
-            _ph_inp  = sum(_ph_input_kg(r) for r in _ph_list_warn if r.get("scrap_type_id")==_scid_w)
-            _remain  = _dr_qty - _ph_inp
-            if _remain > 100:   # 100kg 초과 미처리 시 경고
-                _warn_msgs.append(f"**{_sc_w['name']}** — 출고 {_dr_qty:,.0f}kg 중 투입 미기록 {_remain:,.0f}kg (임가공사 보유 추정)")
+            for _pr_w in cfg.get("processors", []):
+                if (_pr_w["id"], _sc_w["id"]) in _combos_w:
+                    continue
+                _remain = _at_processor_raw_kg(cfg, _sc_w["id"], _pr_w["id"])
+                if _remain > 100:   # 100kg 초과 미처리 시 경고
+                    _warn_msgs.append(f"**{_pr_w['name']} · {_sc_w['name']}** — 출고 대비 배치 투입 미기록 {_remain:,.0f}kg (임가공사 보유 추정)")
         if _warn_msgs:
             with st.expander(f"임가공사 작업 중 (처리 결과 미입력) {len(_warn_msgs)}건", expanded=True):
-                st.caption("출고 기록 대비 처리 결과(배치)가 아직 없는 스크랩입니다. 임가공이 완료되면 HBL별 탭에서 배치를 추가하세요.")
+                st.caption("생산 보고가 없는 임가공사·스크랩 중 출고 대비 배치가 아직 없는 물량입니다. 임가공이 끝나면 배치를 추가하세요.")
                 for _wm in _warn_msgs:
                     st.markdown(f"- {_wm}")
 
@@ -5617,6 +5708,40 @@ def _sync_from_gsheets(cfg_ref):
         except Exception as e:
             log.append(f"INDEX 탭 오류: {e}")
 
+    # ── ⑤-2 생산 탭 (선택): 월 / 임가공사 / 스크랩유형 / 입고 / 투입 / 생산 / 부산물 / 불량 / 비고 ──
+    # 임가공사 월별 생산 보고의 월 합계. 탭 전체로 교체한다(월 중 갱신 시 같은 월 행 값을 고쳐 쓰면 됨).
+    # 이 자료가 있는 임가공사·스크랩은 완제품 재고 = 누적 생산 − 선적 배치, 보유 원료 = 출고 − 실제 투입.
+    try:
+        rows = sh.worksheet("생산").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _pm_new, _pm_skip = [], set()
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 9
+                mo, pn, sn, rec, inp, out, byp, dfc, nt = row[:9]
+                if not mo or not pn or not sn:
+                    continue
+                try:
+                    datetime.strptime(mo, "%Y-%m")
+                except ValueError:
+                    _pm_skip.add(mo); continue
+                pid, scid = proc_map.get(pn.lower()), scrap_map.get(sn)
+                if not pid or not scid:
+                    _pm_skip.add(f"{pn}/{sn}"); continue
+                _pm_new.append({"month": mo, "processor_id": pid, "scrap_type_id": scid,
+                                "received_kg": _to_float(rec), "input_kg": _to_float(inp),
+                                "output_kg": _to_float(out), "byproduct_kg": _to_float(byp),
+                                "defect_kg": _to_float(dfc), "notes": nt})
+            cfg_ref["production_monthly"] = sorted(_pm_new, key=lambda r: (r["month"], r["processor_id"], r["scrap_type_id"]))
+            _pm_msg = f"생산: {len(_pm_new)}행 (완제품 재고 {_finished_goods_kg(cfg_ref):,.0f} kg)"
+            if _pm_skip:
+                _pm_msg += f" ⚠️ 월 형식·임가공사·스크랩명 오류 스킵: {', '.join(sorted(_pm_skip)[:5])}"
+            log.append(_pm_msg)
+        except Exception as e:
+            log.append(f"생산 탭 오류: {e}")
+
     # ── ⑥ 환율 탭 (선택): 기준월 / EUR-USD / USD-KRW ──────────────────────────
     try:
         rows = sh.worksheet("환율").get_all_values()
@@ -5806,6 +5931,8 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
             "- 배치(선택): (HBL, 임가공사, 스크랩) 조합 기준 upsert — 시트에 없는 배치는 유지  \n"
             "- 컨테이너(선택): HBL별 중량·Invoice 합산, Ni·Co·수분 가중평균 → 선적건 반영  \n"
             "- INDEX / 환율 / 판관비 / 기초재고(선택): 월·유형 기준 upsert  \n"
+            "- 생산(선택): 월 / 임가공사 / 스크랩유형 / 입고 / 투입 / 생산 / 부산물 / 불량 / 비고 — 탭 전체 교체. "
+            "자료가 있는 임가공사·스크랩은 완제품 재고·보유 원료를 이 값으로 계산  \n"
             "  \n"
             "**선적 탭 (12열 + 확장 12열, 빈칸=기존값 유지)**  \n"
             "HBL / Invoice No / 출하일 / 매입사 / 중량 / Invoice금액 / Prov월 / Final월 / 상태 / ETD / ETA / 수출비 / "
@@ -6488,26 +6615,31 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, c
         cell(ROW, 7, "합계", bold=True, bg="F0F2F6")
         cell(ROW, 8, sum(float(r.get("확정산 잔액", 0) or 0) for r in cash), bold=True, bg="F0F2F6", fmt='"$"#,##0')
         ROW += 2
-    _fgx = defaultdict(lambda: {"prod": 0.0, "unlinked": 0.0, "ship_ids": set()})
+    # 제품(BP/BM)별: 생산 누계 = 생산 탭(있는 임가공사·스크랩) + 그 외 배치 생산, 선적 = HBL 연결 배치 생산,
+    # 재고 = _finished_goods_kg (앱 화면과 같은 기준 — 음수 계량차는 0)
+    _fg_sc  = {s["id"]: _sc_product(s) for s in cfg.get("scrap_types", [])}
+    _fg_cmb = _prod_combos(cfg)
+    _fgx = defaultdict(lambda: {"prod": 0.0, "shipped": 0.0, "stock": 0.0})
+    for r in cfg.get("production_monthly", []):
+        _fgx[_fg_sc.get(r.get("scrap_type_id"), "미지정")]["prod"] += float(r.get("output_kg") or 0)
     for r in ph_all_xl:
-        sh   = ship_map_xl.get(r.get("shipment_id", ""))
-        bid  = r.get("buyer_id") or (sh or {}).get("buyer_id", "")
-        prod = (buyer_map_l.get(bid, {}).get("product") or "미지정").upper()
+        prod = _fg_sc.get(r.get("scrap_type_id"), "미지정")
         out  = float(r.get("output_kg", 0) or 0)
-        _fgx[prod]["prod"] += out
-        if sh:
-            _fgx[prod]["ship_ids"].add(r["shipment_id"])
-        else:
-            _fgx[prod]["unlinked"] += out
+        if (r.get("processor_id"), r.get("scrap_type_id")) not in _fg_cmb:
+            _fgx[prod]["prod"] += out
+        if r.get("shipment_id") in ship_map_xl:
+            _fgx[prod]["shipped"] += out
+    for scid, prod in _fg_sc.items():
+        if prod in _fgx:
+            _fgx[prod]["stock"] += _finished_goods_kg(cfg, scid)
     if _fgx:
-        merge_cell(ROW, 1, 5, "  ⑨ 완제품(BP/BM) 재고 추정 = 생산 누계 − 선적 누계 (미연결 배치는 전량 재고)", bg="2E75B6"); ROW += 1
-        for ci, h in enumerate(["제품", "생산 누계(kg)", "선적 누계(kg)", "미연결 배치 생산(kg)", "재고 추정(kg)"], 1):
+        merge_cell(ROW, 1, 5, "  ⑨ 완제품(BP/BM) 재고 추정 = 생산 누계 − 선적 누계 (임가공사 생산 보고 기준, 음수 계량차는 0)", bg="2E75B6"); ROW += 1
+        for ci, h in enumerate(["제품", "생산 누계(kg)", "선적 누계(kg)", "차이(kg)", "재고 추정(kg)"], 1):
             cell(ROW, ci, h, bold=True, color="FFFFFF", bg="4472C4", size=9)
         ROW += 1
         for prod, v in sorted(_fgx.items()):
-            shipped = sum(float(ship_map_xl[s].get("weight_kg", 0) or 0) for s in v["ship_ids"])
-            for ci, val in enumerate([prod, round(v["prod"]), round(shipped), round(v["unlinked"]),
-                                      round(v["prod"] - shipped)], 1):
+            for ci, val in enumerate([prod, round(v["prod"]), round(v["shipped"]),
+                                      round(v["prod"] - v["shipped"]), round(v["stock"])], 1):
                 cell(ROW, ci, val, fmt="#,##0" if ci > 1 else None)
             ROW += 1
 
