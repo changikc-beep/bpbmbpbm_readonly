@@ -240,14 +240,22 @@ div[data-testid="stMarkdown"] table tbody tr:hover td{
 .b-wn{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
 /* ── 페이지 내비게이션 (상위: 채워진 필 스트립 / 하위: 밑줄 탭) ── */
 .st-key-nav_top div[data-testid="stSegmentedControl"]{margin-top:-4px}
+/* 컨테이너가 자식을 내용 폭으로 줄이지 않고 화면 폭 전체로 늘리게 */
+.st-key-nav_top, .st-key-nav_sub{align-items:stretch !important}
+.st-key-nav_top div[data-testid="stElementContainer"],
+.st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
 .st-key-nav_top div[data-testid="stButtonGroup"]{
-    background:#252525;border:1px solid #333;border-radius:12px;padding:4px;gap:3px;
+    width:100%;background:#252525;border:1px solid #333;border-radius:14px;padding:5px;
     box-shadow:0 1px 3px rgba(0,0,0,.35)
 }
+/* 버튼 줄을 화면 폭 전체로 늘리고 5개 메뉴를 같은 폭으로 */
+.st-key-nav_top div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
+    display:flex;gap:4px;flex-wrap:nowrap}
 .st-key-nav_top div[data-testid="stButtonGroup"] button{
-    border-radius:9px !important;border:none !important;background:transparent !important;
-    color:#9b9b9b !important;font-size:.92rem !important;font-weight:600 !important;
-    padding:8px 20px !important;transition:background .15s,color .15s;box-shadow:none !important
+    flex:1 1 0 !important;min-height:46px;justify-content:center;
+    border-radius:10px !important;border:none !important;background:transparent !important;
+    color:#9b9b9b !important;font-size:1.02rem !important;font-weight:600 !important;
+    padding:10px 16px !important;transition:background .15s,color .15s;box-shadow:none !important
 }
 .st-key-nav_top div[data-testid="stButtonGroup"] button:hover{
     background:rgba(255,255,255,.06) !important;color:#e5e5e5 !important
@@ -259,24 +267,26 @@ div[data-testid="stMarkdown"] table tbody tr:hover td{
 }
 .st-key-nav_top div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
 
-.st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:2px;margin-bottom:6px}
+.st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
 .st-key-nav_sub div[data-testid="stButtonGroup"]{
-    background:transparent;border:none;border-bottom:1px solid #333;border-radius:0;
-    padding:0;gap:0;width:100%
+    background:transparent;border:none;border-bottom:1px solid #3a3a3a;border-radius:0;
+    padding:0;width:100%
 }
+.st-key-nav_sub div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
+    display:flex;gap:6px;flex-wrap:wrap}
 .st-key-nav_sub div[data-testid="stButtonGroup"] button{
-    border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
-    background:transparent !important;color:#8a8a8a !important;
-    font-size:.8rem !important;font-weight:500 !important;padding:6px 14px 7px !important;
+    border:none !important;border-bottom:3px solid transparent !important;border-radius:0 !important;
+    background:transparent !important;color:#8a8a8a !important;min-height:42px;
+    font-size:.93rem !important;font-weight:500 !important;padding:8px 22px 9px !important;
     margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
 }
 .st-key-nav_sub div[data-testid="stButtonGroup"] button:hover{color:#e5e5e5 !important}
 .st-key-nav_sub div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
 .st-key-nav_sub div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
-    color:#e5e5e5 !important;font-weight:600 !important;border-bottom:2px solid #2383e2 !important
+    color:#e5e5e5 !important;font-weight:600 !important;border-bottom:3px solid #2383e2 !important
 }
 .st-key-nav_sub div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
-.nav-crumb{font-size:.72rem;color:#7a7a7a;letter-spacing:.02em;margin:2px 0 0 2px}
+.nav-crumb{font-size:.78rem;color:#7a7a7a;letter-spacing:.02em;margin:4px 0 0 2px}
 .nav-crumb b{color:#c5c5c5;font-weight:600}
 .b-ng{background:rgba(239,68,68,.15);color:#f87171;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(239,68,68,.25)}
 
@@ -887,6 +897,16 @@ def _settle_terms(contract, buyer):
         "final_idx":  ct.get("final_index_basis", "final"),
     }
 
+def _pay_at(terms, row):
+    """적용 지불율(payable) — 매입사 INDEX 월 행(QP 표)에 payable이 있으면 그 값,
+    없으면 계약·매입사 값(_settle_terms). payable이 QP 월마다 바뀌는 매입사를 위해
+    INDEX와 payable을 같은 행에 둔다. 반환: (ni_payable, co_payable) 소수 형태."""
+    r  = row or {}
+    ni = r.get("ni_payable")
+    co = r.get("co_payable")
+    return (float(ni) if ni else terms["ni_payable"],
+            float(co) if co else terms["co_payable"])
+
 def _eff_content(buyer_val, our_val, src):
     """최종정산에 적용할 함유량(%) — 정산 기준(매입사값/당사값/평균)에 따라 선택.
     '평균'은 소수 2자리 반올림. 선적 정산 폼·재계산·요약표가 모두 이 한 함수를 쓴다."""
@@ -944,6 +964,7 @@ def _recompute_final_settlement(cfg, s, fallback_index=None):
     if final_month is None:
         # 추정 모드: fallback_index를 그대로 사용
         ni_index, co_index = fallback_index
+        ni_pay, co_pay = st_terms["ni_payable"], st_terms["co_payable"]
     else:
         ld = s.get("loading_date", "")
         prov_month = s.get("prov_month", "—")
@@ -952,6 +973,7 @@ def _recompute_final_settlement(cfg, s, fallback_index=None):
             final_idx_month = final_month
         fm_data = hm_all[final_idx_month]
         ni_index, co_index = fm_data["ni_index"], fm_data["co_index"]
+        ni_pay, co_pay = _pay_at(st_terms, fm_data)
 
     default_ni = float(b.get("ni_content", 0) or 0)
     default_co = float(b.get("co_content", 0) or 0)
@@ -962,7 +984,7 @@ def _recompute_final_settlement(cfg, s, fallback_index=None):
 
     _, _, _, final_pkg_raw = bp_price(ni_index, co_index,
                                        eff_ni, eff_co,
-                                       st_terms["ni_payable"], st_terms["co_payable"])
+                                       ni_pay, co_pay)
     weight_kg = float(s.get("weight_kg", 0) or 0)
     moisture  = float(s.get("moisture_pct") or 0)
     final_w   = weight_kg * (1 - moisture / 100)
@@ -987,14 +1009,16 @@ def _prov_invoice_calc(cfg, s):
         return None
     _, _, _, pkg = bp_price(row["ni_index"], row["co_index"],
                             b.get("ni_content", 0), b.get("co_content", 0),
-                            terms["ni_payable"], terms["co_payable"])
+                            *_pay_at(terms, row))
     return round(round(pkg, 2) * float(s.get("weight_kg", 0) or 0), 2)
 
 
 def _inv_mismatch(cfg, s, tol=0.01):
-    """Invoice 금액이 가정산 계산값과 tol(기본 1%) 넘게 다르면 (계산값, 차이율%) 반환, 아니면 None."""
+    """Invoice 금액이 가정산 계산값과 tol(기본 1%) 넘게 다르면 (계산값, 차이율%) 반환, 아니면 None.
+    가정산(provisional) 선적만 점검한다 — 목적은 가정산 입력 실수 발견이고, 확정된 건은
+    매출이 확정액 기준이라 Invoice 차이가 손익에 영향을 주지 않는다 (혼합 단가 등 예외도 있음)."""
     iv = float(s.get("invoice_usd") or 0)
-    if iv <= 0:
+    if iv <= 0 or (s.get("status") or "provisional") != "provisional":
         return None
     calc = _prov_invoice_calc(cfg, s)
     if calc and abs(calc - iv) / iv > tol:
@@ -1015,7 +1039,7 @@ def _prov_month_hint(cfg, s):
     for m, row in sorted(_hm_for(cfg, b).items()):
         _, _, _, pkg = bp_price(row["ni_index"], row["co_index"],
                                 b.get("ni_content", 0), b.get("co_content", 0),
-                                terms["ni_payable"], terms["co_payable"])
+                                *_pay_at(terms, row))
         if abs(round(round(pkg, 2) * w, 2) - iv) <= max(1.0, iv * 0.0005):
             out.append(m)
     return out
@@ -1023,7 +1047,10 @@ def _prov_month_hint(cfg, s):
 def _inv_hint_text(cfg, s):
     """불일치 건 한 줄 설명: 'Prov월 2026-06 · 2026-07 INDEX로 계산하면 일치' 형태."""
     pm = s.get("prov_month") or "—"
-    hint = [m for m in _prov_month_hint(cfg, s) if m != pm]
+    _all = _prov_month_hint(cfg, s)
+    hint = [m for m in _all if m != pm]
+    if pm in _all:
+        return f"Prov월 {pm} INDEX로 계산하면 Invoice와 일치"
     if hint:
         return f"Prov월 {pm} · {', '.join(hint)} INDEX로 계산하면 Invoice와 일치"
     return f"Prov월 {pm} · 일치하는 INDEX 월 없음 (중량·Invoice 금액 확인)"
@@ -1553,7 +1580,10 @@ if _latest_idx:
 _sb_parts.append(f"USD/KRW {XR:,.0f}")
 if st.session_state.get("last_sync_time"):
     _sb_parts.append(f"마지막 동기화 {st.session_state['last_sync_time'][5:16]}")
-_hb1, _hb2, _hb3 = st.columns([7, 1.3, 1.3])
+try:
+    _hb1, _hb2, _hb3 = st.columns([7, 1.3, 1.3], vertical_alignment="center")
+except TypeError:   # 구버전 Streamlit
+    _hb1, _hb2, _hb3 = st.columns([7, 1.3, 1.3])
 with _hb1:
     st.caption("  ·  ".join(_sb_parts))
 with _hb2:
@@ -2065,7 +2095,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             eta_disp  = _eta_raw[5:] if _eta_raw and len(_eta_raw) >= 7 else (_eta_raw or "TBD")
             _inv_hdr    = f"  ·  \\${float(s.get('invoice_usd') or 0):,.0f}" if s.get("invoice_usd") else ""
             _settle_hdr = f"  ·  {settle_preview}" if settle_preview else ""
-            _eu_hdr     = "  ·  수출비 미입력" if not s.get("export_cost_usd") else ""
+            _eu_hdr     = "  ·  수출비 미입력" if s.get("export_cost_usd") is None else ""
             hdr = (f"#{i+1}  ·  {stat_txt}"
                    f"  │  {s.get('hbl','—')}  ·  {buyer_lbl}"
                    f"  │  {ld_disp} → ETA {eta_disp}"
@@ -2293,7 +2323,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     if pm_data:
                         _,_,_,_prov_pkg_raw=bp_price(pm_data["ni_index"],pm_data["co_index"],
                             b.get("ni_content",0),b.get("co_content",0),
-                            _ni_pay, _co_pay)
+                            *_pay_at(_st, pm_data))
                         prov_pkg = round(_prov_pkg_raw, 2)
                     else:
                         prov_pkg = None
@@ -2301,7 +2331,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     prov_paid = new_iusd * (_prov_pct_val / 100.0)
                     st.markdown("---")
                     # Invoice 금액 검증 — 가정산 단가 × 중량과 1% 이상 어긋나면 오타·기준월 오류 경고
-                    if prov_pkg is not None and new_wkg > 0 and new_iusd > 0:
+                    if new_stat == "provisional" and prov_pkg is not None and new_wkg > 0 and new_iusd > 0:
                         _inv_calc = round(prov_pkg * new_wkg, 2)
                         _inv_gap  = (_inv_calc - new_iusd) / new_iusd * 100
                         if abs(_inv_gap) > 1.0:
@@ -2321,6 +2351,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         if _prov_idx_b != "prov": _ct_hint.append(f"INDEX 기준: {_prov_idx_month}")
                         if _ct_hint:
                             st.caption(f"📋 계약 조건 적용: {', '.join(_ct_hint)}")
+                    if pm_data and pm_data.get("ni_payable"):
+                        _qp_ni, _qp_co = _pay_at(_st, pm_data)
+                        st.caption(f"QP 표 payable 적용 ({_prov_idx_month}): Ni {_qp_ni*100:.1f}% · Co {_qp_co*100:.1f}%")
 
                     if not pm_data and b.get("custom_index"):
                         st.warning(f"⚠️ {b.get('name','')} 전용 INDEX 이력에 {_prov_idx_month}월 값이 없습니다 — "
@@ -2338,7 +2371,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         # 확정산 계산 (INDEX 값 조회 가능)
                         _,_,_,_final_pkg_raw=bp_price(fm_data["ni_index"],fm_data["co_index"],
                             _eff_ni,_eff_co,
-                            _ni_pay, _co_pay)
+                            *_pay_at(_st, fm_data))
                         final_pkg = round(_final_pkg_raw, 2)  # 화면 표시용
                         final_w=new_wkg*(1-new_moisture/100)
                         # 매입사에 따라 단가 반올림 시점이 다름: 기본은 원단가 사용, 매입사 설정 시 반올림 단가 사용
@@ -2517,7 +2550,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                     _sfmd = hm_all_b[_snap_fidx]
                                     _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
                                                             _eff_ni, _eff_co,
-                                                            _snap_st["ni_payable"], _snap_st["co_payable"])
+                                                            *_pay_at(_snap_st, _sfmd))
                                     _snap_rbm = b.get("round_price_before_moisture", False) if b else False
                                     _snap_price = round(_sfpkg_raw, 2) if _snap_rbm else _sfpkg_raw
                                     _snap_final = round(_snap_price * new_wkg * (1 - new_moisture/100), 2)
@@ -2527,7 +2560,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 "hbl":new_hbl,"invoice_no":new_inv,
                                 "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
                                 "weight_kg":new_wkg,"invoice_usd":new_iusd,
-                                "export_cost_usd":new_eusd if new_eusd > 0 else None,
+                                # 0은 '수출비 없음'(예: 임가공비에 포함) — 이미 0으로 입력된 건은 0을 유지
+                                "export_cost_usd":(new_eusd if new_eusd > 0
+                                                   else (0.0 if s.get("export_cost_usd") == 0 else None)),
                                 "prov_month":new_pm,"final_month":new_fm,
                                 "status":new_stat,"etd":new_etd,"eta":new_eta,"notes":new_note,
                                 "moisture_pct":new_moisture if new_moisture > 0 else None,
@@ -2573,7 +2608,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _eni2 = _eff_content(_bni2, bx.get("ni_content",0), s.get("ni_content_src","매입사값"))
                         _eco2 = _eff_content(_bco2, bx.get("co_content",0), s.get("co_content_src","매입사값"))
                         _,_,_,fpkg2=bp_price(hm_all_x[fm2]["ni_index"],hm_all_x[fm2]["co_index"],
-                            _eni2, _eco2, _tst["ni_payable"], _tst["co_payable"])
+                            _eni2, _eco2, *_pay_at(_tst, hm_all_x[fm2]))
                         mst=s.get("moisture_pct") or 0
                         fw2=s.get("weight_kg",0)*(1-mst/100)
                         net_v=fpkg2*fw2 - _tprov + (s.get("other_adj_usd") or 0)
@@ -3318,10 +3353,45 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                 except (ImportError, Exception):
                     pass
 
-                st.dataframe(_df_mon2, use_container_width=True, hide_index=True,
-                             column_config=_cc_money("매출(BP)", "원료 매입비", "임가공비(순)", "매출총이익",
-                                                     "수출비", "보관비", "실질 손익",
-                                                     kg=("생산(kg)",), small=("HBL수",)))
+                # 표 보기: 금액(월 합계 + 월평균 행) / BP 1kg당 비용(단가 수준 비교 — 물량 변동과 분리)
+                _mon_view = st.radio("표 보기", ["금액", "BP 1kg당 비용"], horizontal=True, key="pnl_mon_view",
+                                     help="금액: 월별 합계와 월평균.  BP 1kg당: 비용을 생산량으로 나눈 단가 — "
+                                          "선적이 몰린 달과 없는 달의 물량 차이를 걷어내고 비용 수준을 비교합니다.")
+                _mon_real = [r for r in _mon_rows2 if r["월"] != "미상"]
+                _mk_cols  = ["매출(BP)", "원료 매입비", "임가공비(순)", "매출총이익", "수출비", "보관비", "실질 손익"]
+                if _mon_view == "금액":
+                    _tbl_rows = list(_mon_rows2)
+                    for _lbl, _grp in (("최근 3개월 월평균", _mon_real[-3:]), ("전체 월평균", _mon_real)):
+                        if len(_grp) >= 2:
+                            _avg = {"월": _lbl, "HBL수": round(sum(r["HBL수"] for r in _grp) / len(_grp), 1),
+                                    "생산(kg)": round(sum(r["생산(kg)"] for r in _grp) / len(_grp), 0)}
+                            _avg.update({k: round(sum(r[k] for r in _grp) / len(_grp), 2) for k in _mk_cols})
+                            _tbl_rows.append(_avg)
+                    st.dataframe(pd.DataFrame(_tbl_rows), use_container_width=True, hide_index=True,
+                                 column_config=_cc_money(*_mk_cols, kg=("생산(kg)",)))
+                else:
+                    def _perkg(lbl, grp):
+                        _o = sum(r["생산(kg)"] for r in grp)
+                        _s = {k: sum(r[k] for r in grp) for k in _mk_cols}
+                        _base = _s["매출(BP)"] - _s["원료 매입비"]   # 임가공비 전 마진
+                        _row = {"월": lbl, "생산(kg)": _o}
+                        _row.update({f"{k}/kg": (round(_s[k] / _o, 4) if _o else None)
+                                     for k in ("매출(BP)", "원료 매입비", "임가공비(순)", "수출비", "보관비", "실질 손익")})
+                        _row["임가공비 비중(%)"] = round(_s["임가공비(순)"] / _base * 100, 1) if _base > 0 else None
+                        return _row
+                    _tbl_rows = [_perkg(r["월"], [r]) for r in _mon_rows2]
+                    for _lbl, _grp in (("최근 3개월", _mon_real[-3:]), ("전체", _mon_real)):
+                        if len(_grp) >= 2:
+                            _tbl_rows.append(_perkg(_lbl, _grp))
+                    _pk_cols = [c for c in _tbl_rows[0] if c.endswith("/kg")]
+                    _pk_cfg  = {c: st.column_config.NumberColumn(c, format="$%.4f") for c in _pk_cols}
+                    _pk_cfg.update(_cc_money(kg=("생산(kg)",)))
+                    _pk_cfg["임가공비 비중(%)"] = st.column_config.NumberColumn(
+                        "임가공비 비중(%)", format="%.1f%%",
+                        help="임가공비 ÷ (매출 − 원료 매입비). 임가공비가 원료비 차감 후 마진에서 차지하는 비율")
+                    st.dataframe(pd.DataFrame(_tbl_rows), use_container_width=True, hide_index=True,
+                                 column_config=_pk_cfg)
+                    st.caption("평균 행은 기간 합계를 생산량 합계로 나눈 가중평균입니다 (월별 단가의 단순 평균이 아님).")
                 st.caption("매출총이익 = 매출 − 원료 매입비(FIFO 우선) − 임가공비(순)  |  "
                            "실질 손익 = 매출총이익 − 수출비 − 보관비  |  "
                            "스크랩 매각·BP 재매입은 상계, 간접 판관비·기타(기간 합계)는 월별 배분에서 제외. "
@@ -5478,9 +5548,16 @@ def _sync_from_gsheets(cfg_ref):
         try:
             _ix_std = _ix_alt = 0; _ix_skip = set(); _ix_hint = set()
             _buyer_by_id = {b["id"]: b for b in buyers}
+            def _pay_cell(v):
+                """payable 셀 → 소수(1.18). '118', '118%', '1.18' 모두 허용, 빈칸 → None."""
+                v = (v or "").replace("%", "").strip()
+                if not v:
+                    return None
+                f = _to_float(v)
+                return round(f / 100.0, 6) if f > 3 else f
             for row in rows[1:]:
-                row = [c.strip() for c in row] + [""] * 4
-                mo, ni, co, byr = row[:4]
+                row = [c.strip() for c in row] + [""] * 6
+                mo, ni, co, byr, npay, cpay = row[:6]
                 if not mo or not ni or not co:
                     continue
                 try:
@@ -5488,6 +5565,10 @@ def _sync_from_gsheets(cfg_ref):
                 except ValueError:
                     _ix_skip.add(mo); continue
                 rec = {"month": mo, "ni_index": _to_float(ni), "co_index": _to_float(co)}
+                # 5·6열(선택): 그 월(QP)의 Ni·Co payable — 매입사별 행에만 적용. 비우면 계약·매입사 값 사용
+                if byr and _pay_cell(npay):
+                    rec["ni_payable"] = _pay_cell(npay)
+                    rec["co_payable"] = _pay_cell(cpay) or _pay_cell(npay)
                 if byr:
                     bid = _match_buyer_id(byr, buyers)
                     if not bid:
@@ -5765,10 +5846,17 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
         _cix_bid = next(bid for bid, lbl in _cix_names.items() if lbl == _cix_sel_lbl)
         _cix_hist = cfg["index_history_alt"].get(_cix_bid, [])
         if _cix_hist:
-            _df_cix = pd.DataFrame(sorted(_cix_hist, key=lambda x: x["month"], reverse=True))
-            _df_cix.columns = ["기준월", "Ni INDEX($/ton)", "Co INDEX($/ton)"]
-            st.dataframe(_df_cix.style.format({"Ni INDEX($/ton)": "${:,.2f}", "Co INDEX($/ton)": "${:,.2f}"}),
-                         use_container_width=True, hide_index=True)
+            _df_cix = pd.DataFrame([{
+                "기준월": h["month"], "Ni INDEX($/ton)": h["ni_index"], "Co INDEX($/ton)": h["co_index"],
+                "Ni payable(%)": (h["ni_payable"] * 100 if h.get("ni_payable") else None),
+                "Co payable(%)": (h["co_payable"] * 100 if h.get("co_payable") else None),
+            } for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)])
+            st.dataframe(_df_cix, use_container_width=True, hide_index=True,
+                         column_config={"Ni INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
+                                        "Co INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
+                                        "Ni payable(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                                        "Co payable(%)": st.column_config.NumberColumn(format="%.2f%%")})
+            st.caption("payable이 빈 월은 계약·매입사 기본 지불율을 씁니다. 값이 있으면 그 월(QP)의 정산에 우선 적용됩니다.")
             _cix_del_c1, _cix_del_c2 = st.columns([4, 1])
             with _cix_del_c1:
                 _cix_dm = st.selectbox("삭제할 월", [h["month"] for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)], key="idx_alt_del_m")
@@ -5786,16 +5874,24 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
         with st.expander("매입사별 INDEX 추가 / 수정", expanded=False):
             with st.form("add_idx_alt"):
                 st.caption(f"대상: {_cix_sel_lbl}  ·  표준 INDEX와 동일한 월이어도 반드시 이 매입사 값을 별도로 입력하세요.")
-                j1, j2, j3 = st.columns(3)
+                j1, j2, j3, j4, j5 = st.columns(5)
                 with j1: jm = st.text_input("기준월 (YYYY-MM)", placeholder="2026-04", key="idx_alt_m")
                 with j2: jni = st.number_input("Ni INDEX($/ton)", value=_cix_dflt_ni, step=10.0, format="%.2f", key="idx_alt_ni")
                 with j3: jco = st.number_input("Co INDEX($/ton)", value=_cix_dflt_co, step=10.0, format="%.2f", key="idx_alt_co")
+                with j4: jnp = st.number_input("Ni payable(%)", value=0.0, step=0.5, format="%.2f", key="idx_alt_np",
+                                               help="0이면 계약·매입사 기본 지불율 사용")
+                with j5: jcp = st.number_input("Co payable(%)", value=0.0, step=0.5, format="%.2f", key="idx_alt_cp",
+                                               help="0이면 Ni payable과 같게 처리")
                 if st.form_submit_button("저장"):
                     try: datetime.strptime(jm, "%Y-%m")
                     except: st.error("YYYY-MM 형식으로 입력하세요.")
                     else:
                         _jrest = [h for h in cfg["index_history_alt"].get(_cix_bid, []) if h["month"] != jm]
-                        _jrest.append({"month": jm, "ni_index": jni, "co_index": jco})
+                        _jrec = {"month": jm, "ni_index": jni, "co_index": jco}
+                        if jnp > 0:
+                            _jrec["ni_payable"] = round(jnp / 100.0, 6)
+                            _jrec["co_payable"] = round((jcp or jnp) / 100.0, 6)
+                        _jrest.append(_jrec)
                         cfg["index_history_alt"][_cix_bid] = sorted(_jrest, key=lambda x: x["month"])
                         save_cfg(cfg); st.success(f"{_cix_sel_lbl}  {jm} 저장 — Ni \\${jni:,.2f} / Co \\${jco:,.2f}"); st.rerun()
 
@@ -6494,8 +6590,8 @@ if _page == PG_HOME:
         _todo.append(("🟡", f"확정산 진행 가능 {len(_td_ready)}건",
                       _td_hbls(_td_ready), "선적·계약 > 선적 정산"))
 
-    # 5) 수출비 미입력
-    _td_no_eu = [s for s in _td_ships if not s.get("export_cost_usd")]
+    # 5) 수출비 미입력 — 빈칸만. 0은 '수출비 없음'(예: ISBM처럼 임가공비에 포함)으로 입력된 것으로 본다
+    _td_no_eu = [s for s in _td_ships if s.get("export_cost_usd") is None]
     if _td_no_eu:
         _todo.append(("🟡", f"수출비 미입력 {len(_td_no_eu)}건",
                       _td_hbls(_td_no_eu), "선적·계약 > 선적 정산"))
