@@ -403,12 +403,22 @@ def save_cfg(c, force=False):
             st.error("다른 기기·탭에서 먼저 저장된 변경이 있어 이번 저장을 중단했습니다 (덮어쓰기 방지). "
                      "화면 상단의 '새로고침'을 누른 뒤 방금 입력한 내용을 다시 저장해 주세요.")
             st.stop()
-    c["_meta"] = {"rev": loaded_rev + 1, "saved_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+    c["_meta"] = {"rev": loaded_rev + 1, "saved_at": _now().strftime("%Y-%m-%dT%H:%M:%S")}
     _save_cfg_drive(c)
     # 로컬 개발 편의용: Drive와 별도로 로컬 백업 유지
     if _HAS_LOCAL_CREDS and os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(c, f, ensure_ascii=False, indent=2)
+
+def _now():
+    """현재 한국 시간(KST, UTC+9 — 서머타임 없음). 서버(Streamlit Cloud)는 UTC로 돌기 때문에
+    저장 시각·'오늘' 기준·ETA/입금 지연 판단을 모두 이 함수로 통일한다. tz 없는 datetime 반환."""
+    from datetime import timezone as _tz
+    return datetime.now(_tz(timedelta(hours=9))).replace(tzinfo=None)
+
+def _today():
+    """오늘 날짜 (한국 시간 기준)."""
+    return _now().date()
 
 def bp_price(ni_i,co_i,ni_c,co_c,ni_p,co_p):
     nv=ni_i*(ni_c/100)*ni_p; cv=co_i*(co_c/100)*co_p; t=nv+cv
@@ -1271,6 +1281,17 @@ def _prod_sum(cfg, pid, scid, key):
     return sum(float(r.get(key) or 0) for r in cfg.get("production_monthly", [])
                if r.get("processor_id") == pid and r.get("scrap_type_id") == scid)
 
+def _prod_recovery(cfg, pid, scid, upto=None):
+    """생산 탭 기준 누적 회수율(생산 ÷ 투입, 소수). upto='YYYY-MM'이면 그 월까지만 누적.
+    그 기간에 투입이 없으면 전체 기간, 그래도 없으면 None."""
+    rows = [r for r in cfg.get("production_monthly", [])
+            if r.get("processor_id") == pid and r.get("scrap_type_id") == scid]
+    for sel in ([r for r in rows if upto and r.get("month", "") <= upto], rows):
+        inp = sum(float(r.get("input_kg") or 0) for r in sel)
+        if inp > 0:
+            return sum(float(r.get("output_kg") or 0) for r in sel) / inp
+    return None
+
 def _finished_goods_kg(cfg, scrap_id=None, processor_id=None):
     """완제품(BP/BM) 재고 추정(kg).
     · 생산 탭 자료가 있는 임가공사·스크랩: 누적 생산 − HBL에 연결된 배치 생산 (음수는 계량차로 보고 0)
@@ -1334,9 +1355,14 @@ def _production_recon(cfg):
         disp = sum(float(d.get("quantity_kg") or 0) for d in cfg.get("dispatch_records", [])
                    if d.get("processor_id") == pid and d.get("scrap_type_id") == scid)
         rec, inp, out = (_prod_sum(cfg, pid, scid, k) for k in ("received_kg", "input_kg", "output_kg"))
-        shipped = sum(float(r.get("output_kg") or 0) for r in cfg.get("processing_history", [])
-                      if r.get("processor_id") == pid and r.get("scrap_type_id") == scid
-                      and r.get("shipment_id") in valid_sids)
+        _linked = [r for r in cfg.get("processing_history", [])
+                   if r.get("processor_id") == pid and r.get("scrap_type_id") == scid
+                   and r.get("shipment_id") in valid_sids]
+        shipped = sum(float(r.get("output_kg") or 0) for r in _linked)
+        _b_inp  = sum(_ph_input_kg(r) for r in _linked)
+        # 선적분 생산에 해당하는 실제 투입(누적 회수율 기준) — 배치 투입 합계와 비교해 원가·임가공비 과다/과소 확인
+        _rec_all = out / inp if inp else None
+        _real_inp_shipped = shipped / _rec_all if _rec_all else None
         last_m = max((r.get("month", "") for r in cfg.get("production_monthly", [])
                       if r.get("processor_id") == pid and r.get("scrap_type_id") == scid), default="")
         rows.append({
@@ -1346,6 +1372,8 @@ def _production_recon(cfg):
             "투입": round(inp), "미투입 원료(입고−투입)": round(rec - inp),
             "생산": round(out), "회수율(%)": round(out / inp * 100, 1) if inp else None,
             "선적(배치)": round(shipped), "완제품 재고(생산−선적)": round(out - shipped),
+            "배치 투입 합계": round(_b_inp),
+            "배치 투입 − 회수율 환산 투입": (round(_b_inp - _real_inp_shipped) if _real_inp_shipped else None),
         })
     return rows
 
@@ -1617,6 +1645,11 @@ if not READ_ONLY:
         if not _cmig.get("contract_status"):
             _cmig["contract_status"] = "active"
             _dmig_changed = True
+    # 스크랩 유형의 제품 구분(BP/BM)이 비어 있으면 한 번 채워 저장 — 재고·완제품 집계가 이름 추정에 기대지 않게
+    for _smig in cfg.get("scrap_types", []):
+        if (_smig.get("product") or "").upper() not in ("BP", "BM"):
+            _smig["product"] = _sc_product(_smig)
+            _dmig_changed = True
     if _dmig_changed:
         save_cfg(cfg)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1653,14 +1686,14 @@ except TypeError:   # 구버전 Streamlit
 with _hb1:
     st.caption("  ·  ".join(_sb_parts))
 with _hb2:
-    if st.button("새로고침", use_container_width=True, key="hdr_refresh",
+    if st.button("새로고침", width="stretch", key="hdr_refresh",
                  help="Google Drive에서 최신 데이터를 다시 불러옵니다 (다른 기기에서 저장한 변경 반영)"):
         _load_cfg_drive.clear()
         _fifo_lot_trace.clear()
         st.rerun()
 with _hb3:
     if not READ_ONLY:
-        st.button("시트 동기화", type="primary", use_container_width=True, key="hdr_sync",
+        st.button("시트 동기화", type="primary", width="stretch", key="hdr_sync",
                   on_click=lambda: st.session_state.__setitem__("_do_sync", True),
                   help="Google 시트 내용을 바로 반영합니다. 결과와 전후 점검이 이 아래에 표시됩니다.")
 _sync_rep = st.session_state.get("_sync_report")
@@ -1719,11 +1752,13 @@ if st.query_params.get("page") != _PAGE_SLUGS[_page]:
     st.query_params["page"] = _PAGE_SLUGS[_page]
 
 # ── 서브 페이지 (페이지별 2단계 내비게이션) — 선택한 서브 페이지의 코드만 실행된다 ──
+SUB_DASH, SUB_CLOSE = "대시보드", "월 마감"
 SUB_SHIP, SUB_CONTRACT = "선적 정산", "계약 이행"
 SUB_PNL_SUM, SUB_PNL_UNIT, SUB_PNL_DS, SUB_SENS = "손익 요약", "HBL·매입사·임가공사별", "직접 판매", "민감도"
 SUB_INOUT, SUB_PROC = "원료 입출고", "임가공사·배치"
 SUB_BUYER, SUB_SCRAP, SUB_FWD, SUB_INDEX, SUB_SYNC = "매입사", "스크랩 유형", "포워더 운임", "INDEX·환율·판관비", "동기화·백업"
 _SUBS = {
+    PG_HOME:   [SUB_DASH, SUB_CLOSE],
     PG_SHIP:   [SUB_SHIP, SUB_CONTRACT],
     PG_PNL:    [SUB_PNL_SUM, SUB_PNL_UNIT, SUB_PNL_DS, SUB_SENS],
     PG_STOCK:  [SUB_INOUT, SUB_PROC],
@@ -1788,7 +1823,7 @@ if _page == PG_PNL and _sub == SUB_SENS:
         st.dataframe(df_s.style.apply(hl_base,axis=1).format({
             "Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}",
             "단가($/kg)":"${:.4f}","단가(원/kg)":"₩{:,.2f}"}),
-            use_container_width=True,hide_index=True)
+            width="stretch",hide_index=True)
         try:
             import plotly.graph_objects as go
             _sx  = [r["변동률"] for r in srows]
@@ -1810,7 +1845,7 @@ if _page == PG_PNL and _sub == SUB_SENS:
                 ))
             st.plotly_chart(_fig_style(_fig_s, height=280, y_fmt="$,.2f",
                                        title=f"{sens_b} — {sens_t} 변동 시 매각 단가"),
-                            use_container_width=True)
+                            width="stretch")
         except ImportError:
             st.line_chart(df_s.set_index("변동률")[["단가($/kg)"]])
 
@@ -1868,7 +1903,7 @@ if _page == PG_PNL and _sub == SUB_SENS:
                         "매출총이익": "${:,.0f}",
                         "GP율(%)": lambda v: f"{v:.2f}%" if v is not None else "—",
                         "매출 대비 임가공비(%)": lambda v: f"{v:.2f}%" if v is not None else "—",
-                    }), use_container_width=True, hide_index=True)
+                    }), width="stretch", hide_index=True)
                     # 스크랩 유형별 원가 구성(원료비+임가공비) 중 임가공비 비중
                     _sc_mix = []
                     for _sn, _sv in _pnl_agg(_sc_rows, lambda x: x["sc_nm"]).items():
@@ -1882,7 +1917,7 @@ if _page == PG_PNL and _sub == SUB_SENS:
                         _sc_mix.append(_mix)
                     if _sc_mix:
                         st.markdown("**원가 구성(원료비+임가공비) 중 임가공비 비중 — 단가 단계별**")
-                        st.dataframe(pd.DataFrame(_sc_mix), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(_sc_mix), width="stretch", hide_index=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1973,7 +2008,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         "확정산 예상액": "${:,.2f}",
                         "잔액":         "${:+,.2f}",
                     }),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
 
         # ── 확정 스냅샷 재계산 필요 목록 ──────────────────────────────────────
@@ -2056,7 +2091,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 "중량(kg)": _s.get("weight_kg",0),
                 "상태":   {"provisional":"🟡 Provisional","final":"🟢 최종","paid":"🔵 입금"}.get(_s.get("status","provisional"),"—"),
             })
-        st.dataframe(pd.DataFrame(_tl), use_container_width=True, hide_index=True,
+        st.dataframe(pd.DataFrame(_tl), width="stretch", hide_index=True,
                      column_config=_cc_money(kg=("중량(kg)",), small=("No.",)))
 
         # Gantt 차트 — 기본은 미정산(provisional·final)만, 입금완료는 토글
@@ -2078,7 +2113,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         "ETA":    _e_dt,
                         "상태":   _r["상태"],
                     })
-                except: pass
+                except ValueError:
+                    pass   # 선적일·ETA 형식이 아닌 행은 일정 차트에서만 제외 (표에는 그대로 표시)
             if _gantt:
                 _df_g = pd.DataFrame(_gantt)
                 # 막대 안 라벨: 매입사 약칭 + 항해일수
@@ -2094,7 +2130,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     hover_data={"매입사":True,"ETD":True,"ETA":True,"라벨":False,"상태":False},
                     color_discrete_map=_cmap,
                 )
-                _today_dt = datetime.today()
+                _today_dt = _now()
                 _fig.update_traces(
                     textposition="inside", insidetextanchor="middle",
                     textfont=dict(color="white", size=10),
@@ -2105,7 +2141,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     _tr.marker.opacity = [0.45 if _e < _today_dt else 1.0
                                           for _e in pd.to_datetime(_df_g.loc[_df_g["상태"] == _tr.name, "ETA"])]
                 _fig.add_vline(
-                    x=_today_dt.timestamp()*1000,
+                    # plotly는 tz 없는 날짜를 그대로(UTC 표기로) 그리므로, 서버 시간대와 무관하게 epoch ms로 변환
+                    x=(_today_dt - datetime(1970, 1, 1)).total_seconds() * 1000,
                     line_dash="dot", line_color=_C_NEG, line_width=2,
                     annotation_text=f"오늘 {_today_dt.strftime('%m/%d')}",
                     annotation_font=dict(color=_C_NEG, size=10),
@@ -2115,7 +2152,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 _fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor=_GRID,
                                   tickfont=dict(size=11, color="#D0D0E8"))
                 _fig.update_xaxes(showgrid=True, gridcolor=_GRID, tickformat="%m/%d")
-                st.plotly_chart(_fig, use_container_width=True)
+                st.plotly_chart(_fig, width="stretch")
         except ImportError:
             st.caption("plotly 설치 시 Gantt 차트 표시 — `pip install plotly`")
 
@@ -2646,9 +2683,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 "final_amount_usd": _snap_final})
                             save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with cb:
-                    with st.popover("삭제", use_container_width=True):
+                    with st.popover("삭제", width="stretch"):
                         st.warning(f"**{s.get('hbl','?')}** 선적건을 삭제합니다.")
-                        if st.button("삭제 확인", key=f"sh_del_cfm_{real_i}", type="primary", use_container_width=True):
+                        if st.button("삭제 확인", key=f"sh_del_cfm_{real_i}", type="primary", width="stretch"):
                             cfg["shipments"].pop(real_i); save_cfg(cfg); st.rerun()
 
         # ── 전체 요약 테이블 ──
@@ -2690,15 +2727,15 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     "추가정산(USD)":net_disp,
                     "상태":s.get("status","provisional")})
             st.dataframe(pd.DataFrame(tbl_rows).style.format({"중량(kg)":"{:,.0f}","Invoice(USD)":"${:,.2f}"}),
-                         use_container_width=True,hide_index=True)
+                         width="stretch",hide_index=True)
             st.download_button("CSV",pd.DataFrame(tbl_rows).to_csv(index=False,encoding="utf-8-sig"),
-                f"선적정산_{date.today():%Y%m%d}.csv","text/csv")
+                f"선적정산_{_today():%Y%m%d}.csv","text/csv")
 
         # ── 채권 Aging 보고서 (입금 기록 기준) ───────────────────────────────
         # 미수 = (가정산 예정액 − 가정산 입금액) + (확정산 청구액 − 확정산 입금액, final/paid 건만).
         # 만기 = 가정산: 선적일 + 매입사 가정산 입금 조건 / 확정산: (ETA, 없으면 선적일+60일) + 확정산 조건.
         # (예전엔 입금 기록이 없어 선적일 경과일수로 근사했음)
-        _today_d = date.today()
+        _today_d = _today()
         _aging_rows = []
         for _as in shipments:
             _ab  = buyer_map.get(_as.get("buyer_id",""), {})
@@ -2762,7 +2799,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     pd.DataFrame(_aging_rows).style.format(na_rep="—", formatter={
                         "가정산 미수": "${:,.2f}", "확정산 미수": "${:,.2f}", "미수 합계": "${:,.2f}",
                         "경과일": lambda v: f"{v:+.0f}일" if pd.notna(v) else "—"}),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
 
     st.divider()
@@ -2829,7 +2866,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         # ETA
         _eta = _lc_ship.get("eta", "")
         if _eta:
-            _arrived = _eta <= date.today().isoformat()
+            _arrived = _eta <= _today().isoformat()
             _lc_events.append({
                 "sort": _eta, "icon": "⚓" if _arrived else "🕐",
                 "title": f"{'입항 (도착)' if _arrived else 'ETA (예정)'}",
@@ -2950,7 +2987,7 @@ if _page == PG_MASTER and _sub == SUB_FWD:
 
                     qs1, qs2 = st.columns(2)
                     with qs1:
-                        if st.button("견적 저장", key=f"fwd_qsave_{fi}_{qi}", use_container_width=True):
+                        if st.button("견적 저장", key=f"fwd_qsave_{fi}_{qi}", width="stretch"):
                             cfg["forwarders"][fi]["quotes"][qi].update({
                                 "destination":q_dest, "label":q_label, "container_type":q_cntr, "capacity_kg":q_cap,
                                 "currency":q_curr, "pickup_rail":q_pr, "ocean_freight":q_of,
@@ -2958,16 +2995,16 @@ if _page == PG_MASTER and _sub == SUB_FWD:
                                 "documentation":q_dc, "terminal_handling":q_th, "notes":q_notes})
                             save_cfg(cfg); st.success("견적 저장됨"); st.rerun()
                     with qs2:
-                        with st.popover("", use_container_width=True):
+                        with st.popover("", width="stretch"):
                             st.warning(f"견적 **{q.get('label','?')}** 삭제")
-                            if st.button("삭제 확인", key=f"fwd_qdel_cfm_{fi}_{qi}", type="primary", use_container_width=True):
+                            if st.button("삭제 확인", key=f"fwd_qdel_cfm_{fi}_{qi}", type="primary", width="stretch"):
                                 cfg["forwarders"][fi]["quotes"].pop(qi)
                                 save_cfg(cfg); st.rerun()
 
             st.markdown("---")
             fb1, fb2, fb3 = st.columns(3)
             with fb1:
-                if st.button("견적 추가", key=f"fwd_qadd_{fi}", use_container_width=True):
+                if st.button("견적 추가", key=f"fwd_qadd_{fi}", width="stretch"):
                     cfg["forwarders"][fi].setdefault("quotes", []).append({
                         "id":str(uuid.uuid4())[:8], "destination":"", "label":"새 견적",
                         "container_type":"20ft", "capacity_kg":20000, "currency":"USD",
@@ -2975,13 +3012,13 @@ if _page == PG_MASTER and _sub == SUB_FWD:
                         "fuel_surcharge":0, "documentation":0, "terminal_handling":0, "notes":""})
                     save_cfg(cfg); st.rerun()
             with fb2:
-                if st.button("포워더 저장", key=f"fwd_save_{fi}", use_container_width=True):
+                if st.button("포워더 저장", key=f"fwd_save_{fi}", width="stretch"):
                     cfg["forwarders"][fi].update({"name":fnm, "active":fact})
                     save_cfg(cfg); st.toast("✅ 저장됨"); st.rerun()
             with fb3:
-                with st.popover("포워더 삭제", use_container_width=True):
+                with st.popover("포워더 삭제", width="stretch"):
                     st.warning(f"포워더 **{fwd.get('name','?')}** 전체 삭제 (견적 포함)")
-                    if st.button("삭제 확인", key=f"fwd_del_cfm_{fi}", type="primary", use_container_width=True):
+                    if st.button("삭제 확인", key=f"fwd_del_cfm_{fi}", type="primary", width="stretch"):
                         cfg["forwarders"].pop(fi)
                         save_cfg(cfg); st.rerun()
 
@@ -3040,7 +3077,7 @@ if _page == PG_MASTER and _sub == SUB_FWD:
             df_cmp.style.apply(_hl_best, axis=1).format({
                 "용량(kg)":"{:,.0f}", "수출비합계":"{:,.0f}",
                 "USD 환산":"${:,.2f}", "$/kg":"${:.4f}"}),
-            use_container_width=True, hide_index=True)
+            width="stretch", hide_index=True)
         st.caption("🟢 목적지별 최저 수출비")
 
         # 목적지 × 포워더 피벗 매트릭스
@@ -3055,7 +3092,7 @@ if _page == PG_MASTER and _sub == SUB_FWD:
 
             st.dataframe(
                 _pivot.style.apply(_hl_row_min, axis=1).format("${:.4f}", na_rep="—"),
-                use_container_width=True)
+                width="stretch")
             st.caption("셀 값: 해당 포워더·목적지의 최저 $/kg  |  🟢 행 최저값")
         except Exception:
             st.info("목적지 및 포워더가 2개 이상 등록되면 매트릭스가 표시됩니다.")
@@ -3240,7 +3277,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                         "전환율(%)": "{:.1f}", "단가($/kg투입)": "${:.4f}",
                         "총 임가공비($)": "${:,.2f}", "임가공비/kg BP": "${:.4f}",
                     }),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
                 # 임가공사별 소계
                 st.markdown("**임가공사별 소계**")
@@ -3257,7 +3294,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                         "투입": "{:,.1f}", "생산": "{:,.1f}", "전환율(%)": "{:.1f}",
                         "임가공비": "${:,.2f}", "단가/kg투입": "${:.4f}", "단가/kg BP": "${:.4f}",
                     }),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
                 st.caption("💡 '단가($/kg투입)' = 계약서 기준 단가. '임가공비/kg BP' = 전환율 반영 후 BP 생산량 기준 환산값")
 
@@ -3288,7 +3325,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             ))
             _fig_style(_wf, height=380, legend=False,
                        title=f"매출 ${_tot_bp:,.0f}  →  영업이익 {_op_sign} ${_tot_op_s1:+,.0f}  (원료비 FIFO 기준)")
-            st.plotly_chart(_wf, use_container_width=True)
+            st.plotly_chart(_wf, width="stretch")
         except ImportError:
             pass
 
@@ -3357,7 +3394,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                     "이동평균 기준 ($/kg BP)": _fmt_pk,
                     "차이":                    _fmt_diff,
                 }),
-                use_container_width=True, hide_index=True,
+                width="stretch", hide_index=True,
             )
             _conv_avg = _tot_out / _tot_inp * 100 if _tot_inp > 0 else 0
             _rmc_gap  = abs(_rf_pk - _rm_pk)
@@ -3415,9 +3452,9 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                 # ── 트렌드 차트 (매출 ↑ / 비용 ↓ 쌓기 + 실질 손익 선) ──
                 try:
                     st.plotly_chart(_fig_monthly_pnl([r for r in _mon_rows2 if r["월"] != "미상"], height=320),
-                                    use_container_width=True)
-                except (ImportError, Exception):
-                    pass
+                                    width="stretch")
+                except Exception as _e_ch:
+                    st.caption(f"월별 차트를 그리지 못했습니다: {_e_ch}")
 
                 # 표 보기: 금액(월 합계 + 월평균 행) / BP 1kg당 비용(단가 수준 비교 — 물량 변동과 분리)
                 _mon_view = st.radio("표 보기", ["금액", "BP 1kg당 비용"], horizontal=True, key="pnl_mon_view",
@@ -3433,7 +3470,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                                     "생산(kg)": round(sum(r["생산(kg)"] for r in _grp) / len(_grp), 0)}
                             _avg.update({k: round(sum(r[k] for r in _grp) / len(_grp), 2) for k in _mk_cols})
                             _tbl_rows.append(_avg)
-                    st.dataframe(pd.DataFrame(_tbl_rows), use_container_width=True, hide_index=True,
+                    st.dataframe(pd.DataFrame(_tbl_rows), width="stretch", hide_index=True,
                                  column_config=_cc_money(*_mk_cols, kg=("생산(kg)",)))
                 else:
                     def _perkg(lbl, grp):
@@ -3455,7 +3492,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                     _pk_cfg["임가공비 비중(%)"] = st.column_config.NumberColumn(
                         "임가공비 비중(%)", format="%.1f%%",
                         help="임가공비 ÷ (매출 − 원료 매입비). 임가공비가 원료비 차감 후 마진에서 차지하는 비율")
-                    st.dataframe(pd.DataFrame(_tbl_rows), use_container_width=True, hide_index=True,
+                    st.dataframe(pd.DataFrame(_tbl_rows), width="stretch", hide_index=True,
                                  column_config=_pk_cfg)
                     st.caption("평균 행은 기간 합계를 생산량 합계로 나눈 가중평균입니다 (월별 단가의 단순 평균이 아님).")
                 st.caption("매출총이익 = 매출 − 원료 매입비(FIFO 우선) − 임가공비(순)  |  "
@@ -3581,7 +3618,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             })
 
         st.dataframe(
-            pd.DataFrame(_sum_rows), use_container_width=True, hide_index=True,
+            pd.DataFrame(_sum_rows), width="stretch", hide_index=True,
             column_config=_cc_money("매출(BP)", "원료 매입비", "임가공비(순)", "매출총이익", "수출비",
                                     "보관비", "실질 손익", kg=("BP생산(kg)",), pct=("마진율(%)",)),
         )
@@ -3595,11 +3632,11 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             st.download_button(
                 "📥 Excel 다운로드",
                 data=_xl_buf,
-                file_name=f"HBL_손익요약_{date.today():%Y%m%d}.xlsx",
+                file_name=f"HBL_손익요약_{_today():%Y%m%d}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-        except Exception:
-            pass
+        except Exception as _e_xl:
+            st.caption(f"엑셀 파일을 만들지 못했습니다: {_e_xl}")
 
         _tot_real_hbl = sum(
             (_h["bp_rev"] - _h["pf"] - _h["eu"]) - _h["raw"] - _h["stor"]
@@ -3657,7 +3694,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                         st.dataframe(
                             _wf_df.style.apply(_hl_wf, axis=1)
                                   .format({"금액 (USD)": "${:+,.2f}"}),
-                            use_container_width=True, hide_index=True, height=280,
+                            width="stretch", hide_index=True, height=280,
                         )
                         _mk1, _mk2 = st.columns(2)
                         _mg_col = "#4ade80" if _hreal >= 0 else "#f87171"
@@ -3692,7 +3729,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                                 "보관비":   lambda v: f"${v:,.2f}" if v else "—",
                                 "실질손익": "${:+,.2f}",
                             }),
-                            use_container_width=True, hide_index=True,
+                            width="stretch", hide_index=True,
                         )
 
                         # ── 원료 Lot 구성 ──────────────────────────────────────
@@ -3732,10 +3769,10 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                                             "비중(%)":    "{:.1f}%",
                                             "원료단가":   lambda v: f"${v:.4f}" if v is not None else "—",
                                         }),
-                                        use_container_width=True, hide_index=True,
+                                        width="stretch", hide_index=True,
                                     )
-                            except Exception:
-                                pass
+                            except Exception as _e_lot:
+                                st.caption(f"FIFO Lot 상세를 계산하지 못했습니다: {_e_lot}")
                         if not _lot_any:
                             st.caption("FIFO Lot 정보 없음 (원료 입출고 서브페이지에서 출고 기록 입력 필요)")
 
@@ -3777,7 +3814,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             _by_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
 
             st.dataframe(
-                pd.DataFrame(_by_rows), use_container_width=True, hide_index=True,
+                pd.DataFrame(_by_rows), width="stretch", hide_index=True,
                 column_config=_cc_money("매출(BP)", "매출총이익", "실질 손익",
                                         kg=("BP생산(kg)",), pct=("마진율(%)",),
                                         perkg=("매출단가/kg", "실질손익/kg")),
@@ -3799,7 +3836,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                     _fig_by.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
                     st.plotly_chart(_fig_style(_fig_by, height=280, legend=False, y_fmt="$,.2f",
                                                title="실질 손익 ($/kg BP) — 매입사별"),
-                                    use_container_width=True)
+                                    width="stretch")
             except ImportError:
                 pass
 
@@ -3825,7 +3862,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 })
             _pr_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
             if _pr_rows:
-                st.dataframe(pd.DataFrame(_pr_rows), use_container_width=True, hide_index=True,
+                st.dataframe(pd.DataFrame(_pr_rows), width="stretch", hide_index=True,
                              column_config=_cc_money("임가공비(순)", "매출총이익", "실질 손익",
                                                      kg=("투입(kg)", "생산(kg)"),
                                                      perkg=("임가공비/kg BP", "실질손익/kg"),
@@ -4012,7 +4049,7 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
                     "거래 마진 (USD)":   "${:+,.2f}",
                     "거래 마진률 (%)":   lambda v: f"{v:+.2f}%" if v is not None else "—",
                 }),
-                use_container_width=True, hide_index=True,
+                width="stretch", hide_index=True,
             )
             _ds_tot_rev  = sum(r["매출액 (USD)"]      for r in _ds_rows_pnl)
             _ds_tot_net  = sum(r["거래 마진 (USD)"]     for r in _ds_rows_pnl)
@@ -4077,22 +4114,22 @@ if _page == PG_MASTER and _sub == SUB_BUYER:
             with bb:
                 s1,s2,s3,s4=st.columns(4)
                 with s1:
-                    if st.button("▲",key=f"b_up_{i}",disabled=(i==0),use_container_width=True):
+                    if st.button("▲",key=f"b_up_{i}",disabled=(i==0),width="stretch"):
                         cfg["buyers"][i-1],cfg["buyers"][i]=cfg["buyers"][i],cfg["buyers"][i-1]
                         save_cfg(cfg); st.rerun()
                 with s2:
-                    if st.button("▽",key=f"b_dn_{i}",disabled=(i==len(cfg["buyers"])-1),use_container_width=True):
+                    if st.button("▽",key=f"b_dn_{i}",disabled=(i==len(cfg["buyers"])-1),width="stretch"):
                         cfg["buyers"][i+1],cfg["buyers"][i]=cfg["buyers"][i],cfg["buyers"][i+1]
                         save_cfg(cfg); st.rerun()
                 with s3:
-                    if st.button("저장",key=f"bsave_{i}",use_container_width=True):
+                    if st.button("저장",key=f"bsave_{i}",width="stretch"):
                         cfg["buyers"][i].update({"name":nn,"product":np_,"ni_payable":nnp,"co_payable":ncp,"ni_content":nnc,"co_content":ncc,"active":na,"round_price_before_moisture":nrbm,"custom_index":ncix,
                                                  "prov_pay_days":int(npd),"final_pay_days":int(nfd)})
                         save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with s4:
-                    with st.popover("", use_container_width=True):
+                    with st.popover("", width="stretch"):
                         st.warning(f"매입사 **{b['name']}** 삭제")
-                        if st.button("삭제 확인", key=f"bdel_cfm_{i}", type="primary", use_container_width=True):
+                        if st.button("삭제 확인", key=f"bdel_cfm_{i}", type="primary", width="stretch"):
                             cfg["buyers"].pop(i); save_cfg(cfg); st.rerun()
     st.divider()
     st.subheader("새 매입사 추가")
@@ -4149,7 +4186,7 @@ if _page == PG_STOCK and _sub == SUB_PROC:
             _kgc = [c for c in _rc_df.columns if c not in ("임가공사", "스크랩", "제품", "자료 기준월", "회수율(%)")]
             _rc_cfg = _cc_money(kg=tuple(_kgc))
             _rc_cfg["회수율(%)"] = st.column_config.NumberColumn(format="%.1f%%")
-            st.dataframe(_rc_df, use_container_width=True, hide_index=True, column_config=_rc_cfg)
+            st.dataframe(_rc_df, width="stretch", hide_index=True, column_config=_rc_cfg)
             with st.expander("월별 생산 보고", expanded=False):
                 _pm_P = {p["id"]: p["name"] for p in cfg.get("processors", [])}
                 _pm_S = {s["id"]: s["name"] for s in cfg.get("scrap_types", [])}
@@ -4161,7 +4198,7 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                 } for r in cfg.get("production_monthly", [])])
                 _pm_cfg = _cc_money(kg=("입고", "투입", "생산", "부산물", "불량"))
                 _pm_cfg["회수율(%)"] = st.column_config.NumberColumn(format="%.1f%%")
-                st.dataframe(_pm_df, use_container_width=True, hide_index=True, column_config=_pm_cfg)
+                st.dataframe(_pm_df, width="stretch", hide_index=True, column_config=_pm_cfg)
             st.divider()
 
         # ── 배치 누락 경고 (생산 탭 자료가 없는 임가공사·스크랩만 — 출고 대비 배치 투입) ──
@@ -4218,7 +4255,7 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                     "누적 생산(kg)":       lambda v: f"{v:,.0f}" if v is not None else "—",
                     "실제 전환율(%)":      lambda v: f"{v:.2f}%" if v is not None else "—",
                     "BP 재매입가($/kg)":   lambda v: f"${v:.4f}" if v is not None else "—",
-                }), use_container_width=True, hide_index=True)
+                }), width="stretch", hide_index=True)
                 st.divider()
 
         # ── 계약 조건 편집 (접힘) ────────────────────────────────────────
@@ -4247,21 +4284,21 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                     cond["impurity_rate"]   = _ni(rc[3], cond.get("impurity_rate"),   f"pim_{pi}_{sid}")
                 pc1, pc2, pc3, pc4 = st.columns(4)
                 with pc1:
-                    if st.button("▲", key=f"p_up_{pi}", disabled=(pi==0), use_container_width=True):
+                    if st.button("▲", key=f"p_up_{pi}", disabled=(pi==0), width="stretch"):
                         cfg["processors"][pi-1], cfg["processors"][pi] = cfg["processors"][pi], cfg["processors"][pi-1]
                         save_cfg(cfg); st.rerun()
                 with pc2:
-                    if st.button("▽", key=f"p_dn_{pi}", disabled=(pi==len(cfg["processors"])-1), use_container_width=True):
+                    if st.button("▽", key=f"p_dn_{pi}", disabled=(pi==len(cfg["processors"])-1), width="stretch"):
                         cfg["processors"][pi+1], cfg["processors"][pi] = cfg["processors"][pi], cfg["processors"][pi+1]
                         save_cfg(cfg); st.rerun()
                 with pc3:
-                    if st.button("저장", key=f"psave_{pi}", use_container_width=True):
+                    if st.button("저장", key=f"psave_{pi}", width="stretch"):
                         cfg["processors"][pi].update({"name": pnm, "active": pact, "conditions": new_conds})
                         save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
                 with pc4:
-                    with st.popover("", use_container_width=True):
+                    with st.popover("", width="stretch"):
                         st.warning(f"임가공사 **{proc['name']}** 삭제")
-                        if st.button("삭제 확인", key=f"pdel_cfm_{pi}", type="primary", use_container_width=True):
+                        if st.button("삭제 확인", key=f"pdel_cfm_{pi}", type="primary", width="stretch"):
                             cfg["processors"].pop(pi); save_cfg(cfg); st.rerun()
                 st.markdown("---")
 
@@ -4405,7 +4442,7 @@ if _page == PG_STOCK and _sub == SUB_PROC:
 
                 _es1, _es2 = st.columns(2)
                 with _es1:
-                    if st.button("저장", key=f"slim_save_{_rk}", use_container_width=True):
+                    if st.button("저장", key=f"slim_save_{_rk}", width="stretch"):
                         ph_list_ref[idx].update({
                             "shipment_id":         _save_hbl_sid,
                             "processor_id":        _pp_opts_t2[_e_pp],
@@ -4419,9 +4456,9 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                         })
                         save_cfg(cfg); st.toast("✅ 저장"); st.rerun()
                 with _es2:
-                    with st.popover("", use_container_width=True):
+                    with st.popover("", width="stretch"):
                         st.warning(f"배치 **{_bpo.get('name','?')} × {_bso.get('name','?')}** 삭제")
-                        if st.button("삭제 확인", key=f"slim_del_cfm_{_rk}", type="primary", use_container_width=True):
+                        if st.button("삭제 확인", key=f"slim_del_cfm_{_rk}", type="primary", width="stretch"):
                             ph_list_ref.pop(idx); save_cfg(cfg); st.rerun()
 
         # ── 뷰 분기 ──────────────────────────────────────────────────────────
@@ -4464,10 +4501,10 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                                 ph_list[_ori]["shipment_id"] = _ship_opts_t2[_o_relink_sel]
                                 save_cfg(cfg); st.toast("✅ 재연결 완료"); st.rerun()
                         with _oc2:
-                            with st.popover("배치 삭제", use_container_width=True):
+                            with st.popover("배치 삭제", width="stretch"):
                                 st.warning("이 고아 배치를 삭제합니다. 되돌릴 수 없습니다.")
                                 if st.button("삭제 확인", key=f"orphan_del_cfm_{_op.get('id','')}",
-                                             type="primary", use_container_width=True):
+                                             type="primary", width="stretch"):
                                     ph_list.pop(_ori); save_cfg(cfg); st.rerun()
 
         else:
@@ -4601,24 +4638,24 @@ if _page == PG_MASTER and _sub == SUB_SCRAP:
                     help="FIFO 자동 창고비 계산에 사용. 양극=1.3, 젤리롤=1.0 등 유형별로 설정")
             sa,sb,sc_btn,sd=d6,d7,d8,st.empty()
             with sa:
-                if st.button("▲",key=f"st_up_{si}",disabled=(si==0),use_container_width=True):
+                if st.button("▲",key=f"st_up_{si}",disabled=(si==0),width="stretch"):
                     cfg["scrap_types"][si-1],cfg["scrap_types"][si]=cfg["scrap_types"][si],cfg["scrap_types"][si-1]
                     save_cfg(cfg); st.rerun()
             with sb:
-                if st.button("▽",key=f"st_dn_{si}",disabled=(si==len(cfg["scrap_types"])-1),use_container_width=True):
+                if st.button("▽",key=f"st_dn_{si}",disabled=(si==len(cfg["scrap_types"])-1),width="stretch"):
                     cfg["scrap_types"][si+1],cfg["scrap_types"][si]=cfg["scrap_types"][si],cfg["scrap_types"][si+1]
                     save_cfg(cfg); st.rerun()
             with sc_btn:
-                if st.button("저장",key=f"st_save_{si}",use_container_width=True):
+                if st.button("저장",key=f"st_save_{si}",width="stretch"):
                     cfg["scrap_types"][si].update({"name":snm,"ni_content":sni,"co_content":sco,
                                                    "active":sact,"storage_rate_eur":float(srate),
                                                    "product":sprod})
                     save_cfg(cfg); st.toast("✅ 저장 완료"); st.rerun()
             _sdd1,_sdd2=st.columns([1,3])
             with _sdd1:
-                with st.popover("", use_container_width=True):
+                with st.popover("", width="stretch"):
                     st.warning(f"스크랩 유형 **{sc['name']}** 삭제")
-                    if st.button("삭제 확인", key=f"st_del_cfm_{si}", type="primary", use_container_width=True):
+                    if st.button("삭제 확인", key=f"st_del_cfm_{si}", type="primary", width="stretch"):
                         cfg["scrap_types"].pop(si); save_cfg(cfg); st.rerun()
     st.divider()
     st.subheader("새 스크랩 유형 추가")
@@ -4707,7 +4744,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     value=float(_op_i.get("unit_cost") or 0), step=0.00001, format="%.5f", key=f"inv_op_cost_{_isid}")
             with _ic4:
                 st.markdown("&nbsp;", unsafe_allow_html=True)
-                if st.button("저장", key=f"inv_op_save_{_isid}", use_container_width=True):
+                if st.button("저장", key=f"inv_op_save_{_isid}", width="stretch"):
                     if _op_date_i and _op_qty_i > 0 and _op_cost_i > 0:
                         cfg["raw_material_inventory"][_isid]["opening"] = {
                             "date": _op_date_i, "quantity_kg": float(_op_qty_i), "unit_cost": float(_op_cost_i)}
@@ -4734,7 +4771,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                 } for p in _purs_i])
                 st.dataframe(_df_pur_i.style.format({
                     "입고량 (kg)": "{:,.0f}", "톤백 (개)": "{:,.0f}", "원료단가 ($/kg)": "${:.4f}",
-                }), use_container_width=True, hide_index=True)
+                }), width="stretch", hide_index=True)
                 _del_lbls_i = [
                     f"{p.get('date','')}  {float(p.get('quantity_kg',0)):,.0f} kg "
                     f"({int(p.get('ton_bags',0) or 0)}백) @ ${float(p.get('unit_cost',0)):.4f}"
@@ -4746,9 +4783,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                                          format_func=lambda i: _del_lbls_i[i], key=f"inv_del_sel_{_isid}")
                 with _deld2:
                     st.markdown("&nbsp;", unsafe_allow_html=True)
-                    with st.popover("", use_container_width=True):
+                    with st.popover("", width="stretch"):
                         st.warning(f"입고 건 삭제:\n{_del_lbls_i[_di_i]}")
-                        if st.button("삭제 확인", key=f"inv_del_cfm_{_isid}", type="primary", use_container_width=True):
+                        if st.button("삭제 확인", key=f"inv_del_cfm_{_isid}", type="primary", width="stretch"):
                             _pur_copy_i = list(_purs_i); _pur_copy_i.pop(_di_i)
                             cfg["raw_material_inventory"][_isid]["purchases"] = _pur_copy_i
                             save_cfg(cfg); st.rerun()
@@ -4767,7 +4804,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                 _new_cost_i = st.number_input("원료단가 ($/kg)", value=0.0, step=0.00001, format="%.5f", key=f"inv_add_cost_{_isid}")
             with _ac5:
                 st.markdown("&nbsp;", unsafe_allow_html=True)
-                if st.button("추가", key=f"inv_add_btn_{_isid}", use_container_width=True):
+                if st.button("추가", key=f"inv_add_btn_{_isid}", width="stretch"):
                     if _new_dt_i and _new_qty_i > 0 and _new_cost_i > 0:
                         cfg["raw_material_inventory"][_isid]["purchases"].append({
                             "date": _new_dt_i, "quantity_kg": float(_new_qty_i),
@@ -4800,7 +4837,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
             })
         st.dataframe(
             pd.DataFrame(_dr_rows).style.format({"출고량 (kg)": "{:,.0f}", "톤백 (개)": "{:,.0f}"}),
-            use_container_width=True, hide_index=True
+            width="stretch", hide_index=True
         )
 
         _dr_del_opts = [
@@ -4815,9 +4852,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                                  format_func=lambda i: _dr_del_opts[i], key="dr_del_sel")
         with _drd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", use_container_width=True):
+            with st.popover("", width="stretch"):
                 st.warning(f"임가공 출고 삭제:\n{_dr_del_opts[_dri]}")
-                if st.button("삭제 확인", key="dr_del_cfm", type="primary", use_container_width=True):
+                if st.button("삭제 확인", key="dr_del_cfm", type="primary", width="stretch"):
                     cfg["dispatch_records"].pop(_dri)
                     save_cfg(cfg); st.rerun()
     else:
@@ -4878,7 +4915,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
             })
         _ds_df = pd.DataFrame(_ds_rows)
         _ds_ed = st.data_editor(
-            _ds_df, use_container_width=True, hide_index=True, key="ds_price_editor",
+            _ds_df, width="stretch", hide_index=True, key="ds_price_editor",
             disabled=[c for c in _ds_df.columns if c != "단가 ($/kg)"],
             column_config={
                 "판매량 (kg)":  st.column_config.NumberColumn(format="%,.0f"),
@@ -4910,9 +4947,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                                  format_func=lambda i: _ds_del_opts[i], key="ds_del_sel")
         with _dsd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", use_container_width=True):
+            with st.popover("", width="stretch"):
                 st.warning(f"직접 판매 삭제:\n{_ds_del_opts[_dsi]}")
-                if st.button("삭제 확인", key="ds_del_cfm", type="primary", use_container_width=True):
+                if st.button("삭제 확인", key="ds_del_cfm", type="primary", width="stretch"):
                     cfg["direct_sales"].pop(_dsi)
                     save_cfg(cfg); st.rerun()
     else:
@@ -5021,7 +5058,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     "보관일수":       lambda v: f"{int(v)}일" if v is not None else "—",
                     "원료단가($/kg)": lambda v: f"${v:.4f}" if v is not None else "—",
                     "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
-                }), use_container_width=True, hide_index=True)
+                }), width="stretch", hide_index=True)
             else:
                 st.info("출고 이벤트가 없습니다.")
             _lt_rem_rows = [{"Lot": l["label"], "잔량 (kg)": round(l["remain"], 1),
@@ -5031,7 +5068,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                 st.markdown("**📦 미소진 Lot 잔량** (모든 출고 차감 후)")
                 st.dataframe(pd.DataFrame(_lt_rem_rows).style.format({
                     "잔량 (kg)": "{:,.1f}", "원료단가": "${:.4f}"}),
-                    use_container_width=True, hide_index=True)
+                    width="stretch", hide_index=True)
 
         # ── 직접 판매 ─────────────────────────────────────────────────────────
         elif _lt_view_id == "__direct__":
@@ -5052,7 +5089,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     "소진량 (kg)":    "{:,.1f}",
                     "원료단가($/kg)": lambda v: f"${v:.4f}" if v is not None else "—",
                     "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
-                }), use_container_width=True, hide_index=True)
+                }), width="stretch", hide_index=True)
             else:
                 st.info("직접 판매 이력이 없습니다.")
 
@@ -5098,7 +5135,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
                     "보관일수 (평균)":lambda v: f"{v:.0f}일" if v is not None else "—",
                     "보관비 (USD)":   lambda v: f"${v:,.2f}" if v is not None else "—",
-                }), use_container_width=True, hide_index=True)
+                }), width="stretch", hide_index=True)
                 st.caption("보관일수 = Lot 입고일 → 임가공 출고일 (기초재고 Lot은 기준일부터 기산)  "
                            "| 복수 출고에 걸친 Lot은 가중평균으로 표시")
 
@@ -5152,7 +5189,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     "B/L 투입 누적 (kg)":      "{:,.0f}",
                     "임가공사 보유 추정 (kg)":  "{:+,.0f}",
                 }),
-                use_container_width=True, hide_index=True
+                width="stretch", hide_index=True
             )
             st.caption(
                 "ℹ️ **창고 미출고 잔량** + **임가공사 보유 추정** = 원료 재고 관리의 추정 잔량  \n"
@@ -5539,6 +5576,40 @@ def _sync_from_gsheets(cfg_ref):
     except Exception as e:
         log.append(f"출고 탭 오류: {e}")
 
+    # ── ③-2 생산 탭 (선택): 월 / 임가공사 / 스크랩유형 / 입고 / 투입 / 생산 / 부산물 / 불량 / 비고 ──
+    # 임가공사 월별 생산 보고의 월 합계. 탭 전체로 교체한다(월 중 갱신 시 같은 월 행 값을 고쳐 쓰면 됨).
+    # 이 자료가 있는 임가공사·스크랩은 완제품 재고 = 누적 생산 − 선적 배치, 보유 원료 = 출고 − 실제 투입.
+    try:
+        rows = sh.worksheet("생산").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _pm_new, _pm_skip = [], set()
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 9
+                mo, pn, sn, rec, inp, out, byp, dfc, nt = row[:9]
+                if not mo or not pn or not sn:
+                    continue
+                try:
+                    datetime.strptime(mo, "%Y-%m")
+                except ValueError:
+                    _pm_skip.add(mo); continue
+                pid, scid = proc_map.get(pn.lower()), scrap_map.get(sn)
+                if not pid or not scid:
+                    _pm_skip.add(f"{pn}/{sn}"); continue
+                _pm_new.append({"month": mo, "processor_id": pid, "scrap_type_id": scid,
+                                "received_kg": _to_float(rec), "input_kg": _to_float(inp),
+                                "output_kg": _to_float(out), "byproduct_kg": _to_float(byp),
+                                "defect_kg": _to_float(dfc), "notes": nt})
+            cfg_ref["production_monthly"] = sorted(_pm_new, key=lambda r: (r["month"], r["processor_id"], r["scrap_type_id"]))
+            _pm_msg = f"생산: {len(_pm_new)}행 (최근 {max((r['month'] for r in _pm_new), default='—')})"
+            if _pm_skip:
+                _pm_msg += f" ⚠️ 월 형식·임가공사·스크랩명 오류 스킵: {', '.join(sorted(_pm_skip)[:5])}"
+            log.append(_pm_msg)
+        except Exception as e:
+            log.append(f"생산 탭 오류: {e}")
+
     # ── ④ 배치 탭 (선택) ─────────────────────────────────────────────────────
     # 열: HBL / 임가공사 / 스크랩 유형 / 투입(kg) / 생산(kg) / 임가공비($/kg) /
     #     BP매각단가($/kg) / 스크랩매각단가($/kg) / 비고   (9열)
@@ -5593,15 +5664,23 @@ def _sync_from_gsheets(cfg_ref):
                     "scs": _to_float(scs) if scs else None,
                     "notes": notes,
                 })
-            b_add = b_upd = b_adopt = 0
+            b_add = b_upd = b_adopt = b_recv = 0
             for (sid, pid, scid), srows in _grouped.items():
                 cond     = (_proc_cond.get(pid, {}) or {}).get(scid, {}) or {}
                 existing = [r for r in ph_ref if r.get("shipment_id") == sid
                             and r.get("processor_id") == pid and r.get("scrap_type_id") == scid]
                 for i, sr in enumerate(srows):
                     inp_v, out_v = sr["inp"], sr["out"]
+                    _rec_r = (_prod_recovery(cfg_ref, pid, scid,
+                                             (_ship_by_id.get(sid, {}).get("loading_date") or "")[:7] or None)
+                              if (pid, scid) in _prod_combos(cfg_ref) else None)
                     if inp_v > 0 and out_v > 0:
                         conv = round(out_v / inp_v * 100, 2)
+                    elif _rec_r:
+                        # 투입 미기재 + 임가공사 생산 보고 있음 → 선적월까지의 실제 누적 회수율로 역산
+                        conv  = round(_rec_r * 100, 2)
+                        inp_v = out_v / _rec_r
+                        b_recv += 1
                     elif cond.get("conversion_rate"):
                         conv  = float(cond["conversion_rate"])          # 투입 미기재 → 계약 전환율로 역산
                         inp_v = out_v / (conv / 100) if conv > 0 else 0.0
@@ -5649,6 +5728,8 @@ def _sync_from_gsheets(cfg_ref):
             _b_msg = f"배치: 추가 {b_add}건 / 업데이트 {b_upd}건"
             if b_adopt:
                 _b_msg += f" / 미연결 배치 {b_adopt}건을 HBL에 연결"
+            if b_recv:
+                _b_msg += f" / 투입 {b_recv}건은 생산 보고 회수율로 계산"
             _b_msg += " (시트에 없는 기존 배치는 유지)"
             if _b_skip:
                 _b_msg += f" ⚠️ HBL·임가공사·스크랩명 매핑 실패 {len(_b_skip)}건: {', '.join(_b_skip[:5])}"
@@ -5707,40 +5788,6 @@ def _sync_from_gsheets(cfg_ref):
             log.append(_ix_msg)
         except Exception as e:
             log.append(f"INDEX 탭 오류: {e}")
-
-    # ── ⑤-2 생산 탭 (선택): 월 / 임가공사 / 스크랩유형 / 입고 / 투입 / 생산 / 부산물 / 불량 / 비고 ──
-    # 임가공사 월별 생산 보고의 월 합계. 탭 전체로 교체한다(월 중 갱신 시 같은 월 행 값을 고쳐 쓰면 됨).
-    # 이 자료가 있는 임가공사·스크랩은 완제품 재고 = 누적 생산 − 선적 배치, 보유 원료 = 출고 − 실제 투입.
-    try:
-        rows = sh.worksheet("생산").get_all_values()
-    except Exception:
-        rows = []
-    if len(rows) > 1:
-        try:
-            _pm_new, _pm_skip = [], set()
-            for row in rows[1:]:
-                row = [c.strip() for c in row] + [""] * 9
-                mo, pn, sn, rec, inp, out, byp, dfc, nt = row[:9]
-                if not mo or not pn or not sn:
-                    continue
-                try:
-                    datetime.strptime(mo, "%Y-%m")
-                except ValueError:
-                    _pm_skip.add(mo); continue
-                pid, scid = proc_map.get(pn.lower()), scrap_map.get(sn)
-                if not pid or not scid:
-                    _pm_skip.add(f"{pn}/{sn}"); continue
-                _pm_new.append({"month": mo, "processor_id": pid, "scrap_type_id": scid,
-                                "received_kg": _to_float(rec), "input_kg": _to_float(inp),
-                                "output_kg": _to_float(out), "byproduct_kg": _to_float(byp),
-                                "defect_kg": _to_float(dfc), "notes": nt})
-            cfg_ref["production_monthly"] = sorted(_pm_new, key=lambda r: (r["month"], r["processor_id"], r["scrap_type_id"]))
-            _pm_msg = f"생산: {len(_pm_new)}행 (완제품 재고 {_finished_goods_kg(cfg_ref):,.0f} kg)"
-            if _pm_skip:
-                _pm_msg += f" ⚠️ 월 형식·임가공사·스크랩명 오류 스킵: {', '.join(sorted(_pm_skip)[:5])}"
-            log.append(_pm_msg)
-        except Exception as e:
-            log.append(f"생산 탭 오류: {e}")
 
     # ── ⑥ 환율 탭 (선택): 기준월 / EUR-USD / USD-KRW ──────────────────────────
     try:
@@ -5830,22 +5877,21 @@ def _run_sync_and_report(cfg_ref):
     """시트 동기화 → 저장 → 전후 점검 결과를 session_state['_sync_report']에 남긴다.
     상단 '시트 동기화' 버튼과 동기화·백업 페이지의 '지금 동기화'가 같이 쓴다. 성공 여부 반환."""
     import copy as _copy
-    from datetime import datetime as _dt
     st.toast("시트 동기화 중...")
     _before = _copy.deepcopy(cfg_ref)
-    _now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    _ts = _now().strftime("%Y-%m-%d %H:%M:%S")
     with st.spinner("Google Sheets에서 데이터 가져오는 중..."):
         _ok, _msg = _sync_from_gsheets(cfg_ref)
     if not _ok:
-        st.session_state["_sync_report"] = {"time": _now, "error": _msg}
+        st.session_state["_sync_report"] = {"time": _ts, "error": _msg}
         return False
     save_cfg(cfg_ref)
     try:
         _checks = _sync_checks(_before, cfg_ref)
     except Exception as e:          # 점검 실패가 동기화 자체를 막지 않도록
         _checks = [("확인", f"전후 점검 중 오류: {e}")]
-    st.session_state["_sync_report"] = {"time": _now, "checks": _checks, "log": _msg}
-    st.session_state["last_sync_time"] = _now
+    st.session_state["_sync_report"] = {"time": _ts, "checks": _checks, "log": _msg}
+    st.session_state["last_sync_time"] = _ts
     st.session_state["last_sync_log"] = _msg
     st.session_state["sync_preview_ready"] = False
     st.session_state["sync_preview_log"] = None
@@ -5872,7 +5918,7 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
     _gs_c1, _gs_c2 = st.columns([2, 3])
     with _gs_c1:
         # ── 미리보기 ──────────────────────────────────────────────────────
-        if st.button("미리보기", use_container_width=True,
+        if st.button("미리보기", width="stretch",
                      help="실제 데이터를 변경하지 않고 동기화될 내용을 확인합니다"):
             import copy as _copy
             _preview_cfg = _copy.deepcopy(cfg)
@@ -5907,7 +5953,7 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
 
         # ── 실제 동기화 ───────────────────────────────────────────────────
         st.markdown("---")
-        if st.button("지금 동기화", type="primary", use_container_width=True):
+        if st.button("지금 동기화", type="primary", width="stretch"):
             if not st.session_state.get("sync_preview_ready"):
                 st.warning("⚠️ 동기화 전에 **미리보기**를 먼저 확인하세요. (미리보기 없이 바로 하려면 상단 '시트 동기화' 버튼)")
             else:
@@ -5955,15 +6001,15 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
         df_h=pd.DataFrame(sorted(history,key=lambda x:x["month"],reverse=True))
         df_h.columns=["기준월","Ni INDEX($/ton)","Co INDEX($/ton)"]
         st.dataframe(df_h.style.format({"Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}"}),
-                     use_container_width=True,hide_index=True)
+                     width="stretch",hide_index=True)
         _idx_del_c1, _idx_del_c2 = st.columns([4, 1])
         with _idx_del_c1:
             dm=st.selectbox("삭제할 월",[h["month"] for h in sorted(history,key=lambda x:x["month"],reverse=True)])
         with _idx_del_c2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", use_container_width=True):
+            with st.popover("", width="stretch"):
                 st.warning(f"INDEX **{dm}** 삭제")
-                if st.button("삭제 확인", key="idx_del_cfm", type="primary", use_container_width=True):
+                if st.button("삭제 확인", key="idx_del_cfm", type="primary", width="stretch"):
                     cfg["index_history"]=[h for h in history if h["month"]!=dm]
                     save_cfg(cfg); st.toast(f"✅ {dm} 삭제"); st.rerun()
     else: st.info("저장된 INDEX 이력이 없습니다.")
@@ -6004,7 +6050,7 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
                 "Ni payable(%)": (h["ni_payable"] * 100 if h.get("ni_payable") else None),
                 "Co payable(%)": (h["co_payable"] * 100 if h.get("co_payable") else None),
             } for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)])
-            st.dataframe(_df_cix, use_container_width=True, hide_index=True,
+            st.dataframe(_df_cix, width="stretch", hide_index=True,
                          column_config={"Ni INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
                                         "Co INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
                                         "Ni payable(%)": st.column_config.NumberColumn(format="%.2f%%"),
@@ -6015,9 +6061,9 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
                 _cix_dm = st.selectbox("삭제할 월", [h["month"] for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)], key="idx_alt_del_m")
             with _cix_del_c2:
                 st.markdown("&nbsp;", unsafe_allow_html=True)
-                with st.popover("", use_container_width=True):
+                with st.popover("", width="stretch"):
                     st.warning(f"{_cix_sel_lbl} 전용 INDEX **{_cix_dm}** 삭제")
-                    if st.button("삭제 확인", key="idx_alt_del_cfm", type="primary", use_container_width=True):
+                    if st.button("삭제 확인", key="idx_alt_del_cfm", type="primary", width="stretch"):
                         cfg["index_history_alt"][_cix_bid] = [h for h in _cix_hist if h["month"] != _cix_dm]
                         save_cfg(cfg); st.toast(f"✅ {_cix_dm} 삭제"); st.rerun()
         else:
@@ -6060,7 +6106,7 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
         _df_eur.columns = ["기준월", "EUR/USD"]
         st.dataframe(
             _df_eur.style.format({"EUR/USD": "{:.4f}"}),
-            use_container_width=True, hide_index=True
+            width="stretch", hide_index=True
         )
         _eur_del_c1, _eur_del_c2 = st.columns([4, 1])
         with _eur_del_c1:
@@ -6071,9 +6117,9 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
             )
         with _eur_del_c2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", use_container_width=True):
+            with st.popover("", width="stretch"):
                 st.warning(f"EUR/USD **{_eur_del_m}** 삭제")
-                if st.button("삭제 확인", key="eur_del_cfm", type="primary", use_container_width=True):
+                if st.button("삭제 확인", key="eur_del_cfm", type="primary", width="stretch"):
                     cfg["eur_usd_rates"] = [r for r in eur_rates if r["month"] != _eur_del_m]
                     save_cfg(cfg); st.toast(f"✅ {_eur_del_m} 삭제"); st.rerun()
     else:
@@ -6097,11 +6143,11 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
                                  help="체크 해제 시 이미 등록된 월은 유지합니다.")
     with _af3:
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        if st.button("자동 조회 & 저장", use_container_width=True, type="primary"):
+        if st.button("자동 조회 & 저장", width="stretch", type="primary"):
             import requests as _req
             _existing_months = {r["month"] for r in cfg.get("eur_usd_rates", [])}
             _saved, _skipped, _failed = [], [], []
-            _today = date.today()
+            _today = _today()
             for _mi in range(int(_fetch_months)):
                 # N개월 전부터 이번 달까지 역순 순회
                 _y = _today.year
@@ -6177,15 +6223,15 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
     _krw_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"], reverse=True)
     if _krw_rates:
         st.dataframe(pd.DataFrame([{"기준월": r["month"], "USD/KRW": float(r["rate"])} for r in _krw_rates])
-                     .style.format({"USD/KRW": "{:,.0f}"}), use_container_width=True, hide_index=True)
+                     .style.format({"USD/KRW": "{:,.0f}"}), width="stretch", hide_index=True)
         _kd1, _kd2 = st.columns([4, 1])
         with _kd1:
             _krw_dm = st.selectbox("삭제할 월", [r["month"] for r in _krw_rates], key="krw_del_sel")
         with _kd2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", use_container_width=True):
+            with st.popover("", width="stretch"):
                 st.warning(f"USD/KRW **{_krw_dm}** 삭제")
-                if st.button("삭제 확인", key="krw_del_cfm", type="primary", use_container_width=True):
+                if st.button("삭제 확인", key="krw_del_cfm", type="primary", width="stretch"):
                     cfg["usd_krw_rates"] = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_dm]
                     save_cfg(cfg); st.rerun()
     else:
@@ -6215,15 +6261,15 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
                                     "간접 판관비(USD)": float(r.get("sga") or 0),
                                     "기타 원가(USD)":   float(r.get("other") or 0)} for r in _sga_rows])
                      .style.format({"간접 판관비(USD)": "${:,.2f}", "기타 원가(USD)": "${:,.2f}"}),
-                     use_container_width=True, hide_index=True)
+                     width="stretch", hide_index=True)
         _sga_d1, _sga_d2 = st.columns([4, 1])
         with _sga_d1:
             _sga_dm = st.selectbox("삭제할 월", [r["month"] for r in _sga_rows], key="sga_del_sel")
         with _sga_d2:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", use_container_width=True):
+            with st.popover("", width="stretch"):
                 st.warning(f"판관비 **{_sga_dm}** 삭제")
-                if st.button("삭제 확인", key="sga_del_cfm", type="primary", use_container_width=True):
+                if st.button("삭제 확인", key="sga_del_cfm", type="primary", width="stretch"):
                     cfg["sga_monthly"] = [r for r in cfg.get("sga_monthly", []) if r["month"] != _sga_dm]
                     save_cfg(cfg); st.rerun()
     else:
@@ -6252,8 +6298,8 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
     with _bk1:
         st.download_button("백업 다운로드 (JSON)",
                            data=json.dumps(cfg, ensure_ascii=False, indent=2).encode("utf-8"),
-                           file_name=f"bp_config_backup_{date.today():%Y%m%d}.json",
-                           mime="application/json", use_container_width=True)
+                           file_name=f"bp_config_backup_{_today():%Y%m%d}.json",
+                           mime="application/json", width="stretch")
     with _bk2:
         _bk_file = st.file_uploader("복원할 백업 파일", type=["json"], key="bk_upload")
     if _bk_file is not None:
@@ -6326,7 +6372,7 @@ def generate_excel_report(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, c
     # ── 기준 정보 ──
     ws.merge_cells(start_row=ROW, start_column=1, end_row=ROW, end_column=COLS)
     info = (f"기준월: {ref_month}   |   Ni INDEX: ${ni:,.2f}/ton   |   "
-            f"Co INDEX: ${co:,.2f}/ton   |   환율: {xr:,.0f} KRW/USD   |   작성일: {date.today()}")
+            f"Co INDEX: ${co:,.2f}/ton   |   환율: {xr:,.0f} KRW/USD   |   작성일: {_today()}")
     t2 = ws.cell(row=ROW, column=1, value=info)
     t2.font = Font(name="Arial", size=10, color="FFFFFF")
     t2.fill = PatternFill("solid", fgColor="2E75B6")
@@ -6667,19 +6713,23 @@ def _excel_report_cached(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, ca
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 0 — 요약 보고서
 # ══════════════════════════════════════════════════════════════════════════════
-if _page == PG_HOME:
-    st.subheader("홈")
+if _page == PG_HOME and _sub == SUB_DASH:
 
     # ── 헤더 바 ──────────────────────────────────────────────────────────────
-    ro1, ro2 = st.columns([2, 1])
+    ro1, ro2, _ro3 = st.columns([1, 1, 2], vertical_alignment="bottom")
     with ro1:
-        _rpt_month_opts = hist_opts if hist_opts else [f"{date.today().year}-{date.today().month:02d}"]
-        rpt_month = st.selectbox("기준월", _rpt_month_opts, key="rpt_month_sel")
-        st.markdown(f"**작성일**: `{date.today()}`  |  **Ni**: `\\${NI:,.2f}/t`  **Co**: `\\${CO:,.2f}/t`  **KRW**: `{XR:,.0f}`")
+        _rpt_month_opts = hist_opts if hist_opts else [f"{_today().year}-{_today().month:02d}"]
+        rpt_month = st.selectbox("보고서 기준월", _rpt_month_opts, key="rpt_month_sel",
+                                 help="엑셀 보고서의 INDEX 기준월입니다. 화면 수치에는 영향이 없습니다.")
     with ro2:
-        st.caption("엑셀 보고서 다운로드는 아래 '미수 현금 전망' 다음에 있습니다 (할 일·현금 전망을 포함해 생성).")
+        _slot_xl = st.container()      # 엑셀 보고서 다운로드 (아래에서 채움)
 
-    st.divider()
+    # ── 화면 배치: 계산 순서와 무관하게 표시 위치를 고정 ──
+    #    KPI → (할 일 | 미수 현금 전망) → 간이 현금 전망 → 월별 손익 구성
+    _slot_kpi   = st.container()
+    _hl, _hr    = st.columns(2, gap="medium")
+    _slot_cash  = st.container()
+    _slot_chart = st.container()
 
     # ══════════════════════════════════════════════════════════════════════════
     # 할 일 패널 — 앱 곳곳에 흩어진 경고를 한 곳에 모은 액션 목록
@@ -6687,7 +6737,7 @@ if _page == PG_HOME:
     _td_ships  = cfg.get("shipments", [])
     _td_buyers = {b["id"]: b for b in cfg["buyers"]}
     _td_hm     = {h["month"]: h for h in cfg.get("index_history", [])}
-    _td_today  = date.today()
+    _td_today  = _today()
 
     from urllib.parse import quote as _urlq
     def _td_link(hbl):
@@ -6792,12 +6842,13 @@ if _page == PG_HOME:
         _todo.append(("🟡", f"입금완료 상태인데 입금 기록 없음 {len(_td_paid_norec)}건",
                       _td_hbls(_td_paid_norec) + " — 입금일·금액 입력", "선적·계약 > 선적 정산"))
 
-    if _todo:
-        with st.expander(f"할 일 — {len(_todo)}개 항목", expanded=True):
+    with _hl, st.container(border=True):
+        st.markdown(f"#### 할 일  ·  {len(_todo)}개" if _todo else "#### 할 일")
+        if _todo:
             for _dot, _title, _detail, _tab in _todo:
                 st.markdown(f"{_dot} **{_title}** — {_td_linkify(_detail)}  ·  {_td_loc(_tab)}")
-    else:
-        st.caption("📌 할 일: 처리할 항목이 없습니다.")
+        else:
+            st.caption("처리할 항목이 없습니다.")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 미수 현금 전망 — 미입금 선적건의 확정산 잔액 (청구 가능 vs INDEX 대기)
@@ -6854,48 +6905,49 @@ if _page == PG_HOME:
             "예상 입금월": _cexp[:7] or "미정",
         })
 
-    st.markdown("#### 미수 현금 전망")
-    if not _cf_rows:
-        st.caption("미입금 선적건이 없습니다.")
-    else:
-        _cf_now  = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] == "청구 가능")
-        _cf_wait = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] != "청구 가능")
-        _cf_tot  = _cf_now + _cf_wait
-        _cfc1, _cfc2, _cfc3 = st.columns(3)
-        _cfc1.markdown(_kpi_card("청구 가능 (INDEX 확정)", f"${_cf_now:+,.0f}",
-                                 f"{sum(1 for r in _cf_rows if r['구분'] == '청구 가능')}건",
-                                 val_color="#4ade80" if _cf_now >= 0 else "#f87171"),
-                       unsafe_allow_html=True)
-        _cfc2.markdown(_kpi_card("INDEX 대기 (추정)", f"${_cf_wait:+,.0f}",
-                                 "최신 INDEX 기준 추정 — Final월 INDEX 등록 시 변동",
-                                 val_color="#9b9b9b"),
-                       unsafe_allow_html=True)
-        _cfc3.markdown(_kpi_card("합계 (미수 확정산)", f"${_cf_tot:+,.0f}",
-                                 f"KRW ₩{_cf_tot*XR:+,.0f}",
-                                 val_color="#4ade80" if _cf_tot >= 0 else "#f87171"),
-                       unsafe_allow_html=True)
-        # 월별 예상 입금 일정
-        _cf_by_mon = defaultdict(lambda: {"건수": 0, "금액": 0.0})
-        for _r in _cf_rows:
-            _cf_by_mon[_r["예상 입금월"]]["건수"] += 1
-            _cf_by_mon[_r["예상 입금월"]]["금액"] += _r["확정산 잔액"]
-        _cf_this_m = date.today().strftime("%Y-%m")
-        _cf_mon_rows = [{"예상 입금월": _k, "건수": _v["건수"], "예상 입금액": round(_v["금액"], 0),
-                         "비고": "지연" if (_k != "미정" and _k < _cf_this_m) else ""}
-                        for _k, _v in sorted(_cf_by_mon.items())]
-        st.markdown("**월별 예상 입금 (확정산 잔액)**")
-        st.caption("예상 입금일 = (ETA, 없으면 선적일+60일) + 매입사별 확정산 입금 조건(매입사 관리에서 설정, 미설정 시 30일). "
-                   "'지연'은 예상월이 이미 지난 건입니다.")
-        st.dataframe(pd.DataFrame(_cf_mon_rows).style.format({"예상 입금액": "${:+,.0f}"}),
-                     use_container_width=True, hide_index=True)
-        with st.expander("선적건별 상세", expanded=False):
-            st.caption("가정산은 수령 완료로 간주합니다. '추정'은 최신 INDEX로 계산한 참고치이며 "
-                       "실제 입금 시기는 매입사 정산 관행에 따라 다릅니다. 음수는 반환 예정액입니다.")
-            _cf_rows.sort(key=lambda r: (r["구분"] != "청구 가능", r["Final월"]))
-            st.dataframe(
-                pd.DataFrame(_cf_rows), use_container_width=True, hide_index=True,
-                column_config=_cc_money("가정산 수령", "확정산 잔액", dec=0),
-            )
+    with _hr, st.container(border=True):
+        st.markdown("#### 미수 현금 전망")
+        if not _cf_rows:
+            st.caption("미입금 선적건이 없습니다.")
+        else:
+            _cf_now  = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] == "청구 가능")
+            _cf_wait = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] != "청구 가능")
+            _cf_tot  = _cf_now + _cf_wait
+            _cfc1, _cfc2, _cfc3 = st.columns(3)
+            _cfc1.markdown(_kpi_card("청구 가능 (INDEX 확정)", f"${_cf_now:+,.0f}",
+                                     f"{sum(1 for r in _cf_rows if r['구분'] == '청구 가능')}건",
+                                     val_color="#4ade80" if _cf_now >= 0 else "#f87171"),
+                           unsafe_allow_html=True)
+            _cfc2.markdown(_kpi_card("INDEX 대기 (추정)", f"${_cf_wait:+,.0f}",
+                                     "최신 INDEX 기준 추정 — Final월 INDEX 등록 시 변동",
+                                     val_color="#9b9b9b"),
+                           unsafe_allow_html=True)
+            _cfc3.markdown(_kpi_card("합계 (미수 확정산)", f"${_cf_tot:+,.0f}",
+                                     f"KRW ₩{_cf_tot*XR:+,.0f}",
+                                     val_color="#4ade80" if _cf_tot >= 0 else "#f87171"),
+                           unsafe_allow_html=True)
+            # 월별 예상 입금 일정
+            _cf_by_mon = defaultdict(lambda: {"건수": 0, "금액": 0.0})
+            for _r in _cf_rows:
+                _cf_by_mon[_r["예상 입금월"]]["건수"] += 1
+                _cf_by_mon[_r["예상 입금월"]]["금액"] += _r["확정산 잔액"]
+            _cf_this_m = _today().strftime("%Y-%m")
+            _cf_mon_rows = [{"예상 입금월": _k, "건수": _v["건수"], "예상 입금액": round(_v["금액"], 0),
+                             "비고": "지연" if (_k != "미정" and _k < _cf_this_m) else ""}
+                            for _k, _v in sorted(_cf_by_mon.items())]
+            st.markdown("**월별 예상 입금 (확정산 잔액)**")
+            st.caption("예상 입금일 = (ETA, 없으면 선적일+60일) + 매입사별 확정산 입금 조건(매입사 관리에서 설정, 미설정 시 30일). "
+                       "'지연'은 예상월이 이미 지난 건입니다.")
+            st.dataframe(pd.DataFrame(_cf_mon_rows).style.format({"예상 입금액": "${:+,.0f}"}),
+                         width="stretch", hide_index=True)
+            with st.expander("선적건별 상세", expanded=False):
+                st.caption("가정산은 수령 완료로 간주합니다. '추정'은 최신 INDEX로 계산한 참고치이며 "
+                           "실제 입금 시기는 매입사 정산 관행에 따라 다릅니다. 음수는 반환 예정액입니다.")
+                _cf_rows.sort(key=lambda r: (r["구분"] != "청구 가능", r["Final월"]))
+                st.dataframe(
+                    pd.DataFrame(_cf_rows), width="stretch", hide_index=True,
+                    column_config=_cc_money("가정산 수령", "확정산 잔액", dec=0),
+                )
 
     # ══════════════════════════════════════════════════════════════════════════
     # 간이 현금 전망 — 기초 현금(월 1회 입력) + 예상 입금 − 예상 지출 → 3개월 월말 잔액
@@ -6903,185 +6955,186 @@ if _page == PG_HOME:
     #   지출: 임가공비(배치 기준일 + 지급 조건일이 아직 안 지난 건) + 원료 매입(입고일 + 지급 조건일)
     #         + 월 고정 지출(입력값, 없으면 등록된 월별 판관비 평균)
     # ══════════════════════════════════════════════════════════════════════════
-    st.divider()
-    st.markdown("#### 간이 현금 전망 (3개월)")
-    _cs = cfg.get("cash_forecast", {}) or {}
-    _cs_month   = _cs.get("month") or date.today().strftime("%Y-%m")
-    _cs_balance = float(_cs.get("balance_usd") or 0)
-    _cs_proc_d  = int(_cs.get("proc_pay_days") or 45)
-    _cs_raw_d   = int(_cs.get("raw_pay_days") or 30)
-    _cs_fixed   = _cs.get("fixed_monthly_usd")
-    _sga_list   = cfg.get("sga_monthly", [])
-    _sga_avg    = (sum(float(r.get("sga") or 0) + float(r.get("other") or 0) for r in _sga_list[-3:])
-                   / len(_sga_list[-3:])) if _sga_list else 0.0
-    _fixed_m    = float(_cs_fixed) if _cs_fixed not in (None, "") else _sga_avg
-    _fixed_src  = "입력값" if _cs_fixed not in (None, "") else (f"판관비 최근 {len(_sga_list[-3:])}개월 평균" if _sga_list else "미설정 (0)")
+    with _slot_cash, st.container(border=True):
+        st.markdown("#### 간이 현금 전망 (3개월)")
+        _cs = cfg.get("cash_forecast", {}) or {}
+        _cs_month   = _cs.get("month") or _today().strftime("%Y-%m")
+        _cs_balance = float(_cs.get("balance_usd") or 0)
+        _cs_proc_d  = int(_cs.get("proc_pay_days") or 45)
+        _cs_raw_d   = int(_cs.get("raw_pay_days") or 30)
+        _cs_fixed   = _cs.get("fixed_monthly_usd")
+        _sga_list   = cfg.get("sga_monthly", [])
+        _sga_avg    = (sum(float(r.get("sga") or 0) + float(r.get("other") or 0) for r in _sga_list[-3:])
+                       / len(_sga_list[-3:])) if _sga_list else 0.0
+        _fixed_m    = float(_cs_fixed) if _cs_fixed not in (None, "") else _sga_avg
+        _fixed_src  = "입력값" if _cs_fixed not in (None, "") else (f"판관비 최근 {len(_sga_list[-3:])}개월 평균" if _sga_list else "미설정 (0)")
 
-    with st.expander("전망 설정 — 기초 현금 · 지급 조건 · 월 고정 지출", expanded=not _cs.get("balance_usd")):
-        st.caption("월초에 은행 잔액 하나만 USD 환산으로 넣어 주면 됩니다. 나머지는 기본값으로도 방향이 맞습니다.")
-        with st.form("cash_forecast_form"):
-            _cf1, _cf2, _cf3 = st.columns(3)
-            with _cf1:
-                _in_month = st.text_input("기준월 (YYYY-MM)", value=_cs_month)
-                _in_bal   = st.number_input("기초 현금 (USD 환산)", value=_cs_balance, step=1000.0, format="%.0f")
-            with _cf2:
-                _in_proc  = st.number_input("임가공비 지급 조건 (배치일 후 일수)", value=_cs_proc_d, min_value=0, max_value=180, step=5)
-                _in_raw   = st.number_input("원료 매입 지급 조건 (입고일 후 일수)", value=_cs_raw_d, min_value=0, max_value=180, step=5)
-            with _cf3:
-                _in_fixed = st.number_input("월 고정 지출 (USD, 0이면 판관비 평균 사용)",
-                                            value=float(_cs_fixed) if _cs_fixed not in (None, "") else 0.0,
-                                            step=500.0, format="%.0f")
-                st.caption(f"현재 적용: ${_fixed_m:,.0f}/월 ({_fixed_src})")
-            if st.form_submit_button("저장", disabled=READ_ONLY):
-                cfg["cash_forecast"] = {
-                    "month": _in_month.strip(), "balance_usd": float(_in_bal),
-                    "proc_pay_days": int(_in_proc), "raw_pay_days": int(_in_raw),
-                    "fixed_monthly_usd": (float(_in_fixed) if _in_fixed > 0 else None),
-                }
-                save_cfg(cfg); st.rerun()
+        with st.expander("전망 설정 — 기초 현금 · 지급 조건 · 월 고정 지출", expanded=not _cs.get("balance_usd")):
+            st.caption("월초에 은행 잔액 하나만 USD 환산으로 넣어 주면 됩니다. 나머지는 기본값으로도 방향이 맞습니다.")
+            with st.form("cash_forecast_form"):
+                _cf1, _cf2, _cf3 = st.columns(3)
+                with _cf1:
+                    _in_month = st.text_input("기준월 (YYYY-MM)", value=_cs_month)
+                    _in_bal   = st.number_input("기초 현금 (USD 환산)", value=_cs_balance, step=1000.0, format="%.0f")
+                with _cf2:
+                    _in_proc  = st.number_input("임가공비 지급 조건 (배치일 후 일수)", value=_cs_proc_d, min_value=0, max_value=180, step=5)
+                    _in_raw   = st.number_input("원료 매입 지급 조건 (입고일 후 일수)", value=_cs_raw_d, min_value=0, max_value=180, step=5)
+                with _cf3:
+                    _in_fixed = st.number_input("월 고정 지출 (USD, 0이면 판관비 평균 사용)",
+                                                value=float(_cs_fixed) if _cs_fixed not in (None, "") else 0.0,
+                                                step=500.0, format="%.0f")
+                    st.caption(f"현재 적용: ${_fixed_m:,.0f}/월 ({_fixed_src})")
+                if st.form_submit_button("저장", disabled=READ_ONLY):
+                    cfg["cash_forecast"] = {
+                        "month": _in_month.strip(), "balance_usd": float(_in_bal),
+                        "proc_pay_days": int(_in_proc), "raw_pay_days": int(_in_raw),
+                        "fixed_monthly_usd": (float(_in_fixed) if _in_fixed > 0 else None),
+                    }
+                    save_cfg(cfg); st.rerun()
 
-    _sc_pct = st.slider("INDEX 시나리오 (%) — Final월 INDEX가 없는 '추정' 건에만 적용", -20, 20, 0, 5, key="cash_idx_pct")
+        _sc_pct = st.slider("INDEX 시나리오 (%) — Final월 INDEX가 없는 '추정' 건에만 적용", -20, 20, 0, 5, key="cash_idx_pct")
 
-    # ── 월 축: 기준월부터 3개월 ──
-    def _m_add(ym, n):
-        _y, _m = int(ym[:4]), int(ym[5:7]); _m += n
-        return f"{_y + (_m - 1) // 12}-{(_m - 1) % 12 + 1:02d}"
-    try:
-        _cash_months = [_m_add(_cs_month, i) for i in range(3)]
-    except Exception:
-        _cs_month = date.today().strftime("%Y-%m"); _cash_months = [_m_add(_cs_month, i) for i in range(3)]
-    _today_c  = date.today()
-    _flows    = defaultdict(lambda: defaultdict(float))   # month → {항목: 금액}
-    _flow_det = []                                          # 상세 행
+        # ── 월 축: 기준월부터 3개월 ──
+        def _m_add(ym, n):
+            _y, _m = int(ym[:4]), int(ym[5:7]); _m += n
+            return f"{_y + (_m - 1) // 12}-{(_m - 1) % 12 + 1:02d}"
+        try:
+            _cash_months = [_m_add(_cs_month, i) for i in range(3)]
+        except Exception:
+            _cs_month = _today().strftime("%Y-%m"); _cash_months = [_m_add(_cs_month, i) for i in range(3)]
+        _today_c  = _today()
+        _flows    = defaultdict(lambda: defaultdict(float))   # month → {항목: 금액}
+        _flow_det = []                                          # 상세 행
 
-    def _bucket(ym):
-        """기준월 이전 → 기준월(지연분), 3개월 초과 → None(제외)."""
-        if ym < _cash_months[0]: return _cash_months[0]
-        return ym if ym in _cash_months else None
+        def _bucket(ym):
+            """기준월 이전 → 기준월(지연분), 3개월 초과 → None(제외)."""
+            if ym < _cash_months[0]: return _cash_months[0]
+            return ym if ym in _cash_months else None
 
-    # 입금 1) 확정산 잔액 — 미수 현금 전망과 동일 (시나리오는 '추정' 건만 재계산)
-    _ship_by_hbl = {s.get("hbl", "").strip(): s for s in _td_ships}
-    for _r in _cf_rows:
-        _amt = float(_r["확정산 잔액"])
-        if _sc_pct and _r["기준"] == "추정":
-            _s0 = _ship_by_hbl.get(_r["HBL"])
-            if _s0:
-                _f = 1 + _sc_pct / 100.0
-                _re = _recompute_final_settlement(cfg, _s0, fallback_index=(NI * _f, CO * _f))
-                if _re is not None:
-                    _b0  = _td_buyers.get(_s0.get("buyer_id", ""), {})
-                    _st0 = _settle_terms(_get_contract_for_shipment(cfg, _s0.get("id", "")), _b0)
-                    _amt = (_re - float(_s0.get("invoice_usd") or 0) * _st0["prov_pct"] / 100.0
-                            + float(_s0.get("other_adj_usd") or 0) - float(_s0.get("final_paid_usd") or 0))
-        _bk = _bucket(_r["예상 입금월"]) if _r["예상 입금월"] != "미정" else _cash_months[-1]
-        if _bk:
-            _flows[_bk]["확정산 입금"] += _amt
-            _flow_det.append({"월": _bk, "구분": "확정산 입금", "항목": f"{_r['HBL']} ({_r['매입사']}, {_r['기준']})", "금액": round(_amt, 0)})
-    # 입금 2) 가정산 미입금 — 입금 기록이 없고 입금 조건일이 아직 안 지난 건 (지난 건은 수령으로 간주)
-    for _s in _td_ships:
-        if _s.get("status") != "provisional" or _s.get("prov_paid_date") or not _valid_date_str(_s.get("loading_date", "")):
-            continue
-        _b1  = _td_buyers.get(_s.get("buyer_id", ""), {})
-        _due = date.fromisoformat(_s["loading_date"]) + timedelta(days=int(_b1.get("prov_pay_days") or 0) or 30)
-        if _due < _today_c:
-            continue
-        _st1 = _settle_terms(_get_contract_for_shipment(cfg, _s.get("id", "")), _b1)
-        _pamt = float(_s.get("invoice_usd") or 0) * _st1["prov_pct"] / 100.0
-        _bk = _bucket(_due.strftime("%Y-%m"))
-        if _bk and _pamt:
-            _flows[_bk]["가정산 입금"] += _pamt
-            _flow_det.append({"월": _bk, "구분": "가정산 입금", "항목": f"{_s.get('hbl','')} ({_b1.get('name','?')}) 만기 {_due}", "금액": round(_pamt, 0)})
-    # 지출 1) 임가공비 — 배치 기준일 + 지급 조건일이 아직 안 지난 건
-    _proc_m = {p["id"]: p for p in cfg.get("processors", [])}
-    for _r in cfg.get("processing_history", []):
-        _rd = _rec_ref_date(_r, cfg)
-        if not _rd:
-            continue
-        _due = date.fromisoformat(_rd) + timedelta(days=_cs_proc_d)
-        if _due < _today_c:
-            continue
-        _fee = float(_r.get("processing_fee_per_kg") or 0) * _ph_input_kg(_r)
-        _bk = _bucket(_due.strftime("%Y-%m"))
-        if _bk and _fee:
-            _flows[_bk]["임가공비 지급"] -= _fee
-            _flow_det.append({"월": _bk, "구분": "임가공비 지급", "항목": f"{_proc_m.get(_r.get('processor_id',''),{}).get('name','?')} 배치 {_rd} 만기 {_due}", "금액": round(-_fee, 0)})
-    # 지출 2) 원료 매입 — 입고일 + 지급 조건일이 아직 안 지난 건
-    for _scid, _inv in (cfg.get("raw_material_inventory", {}) or {}).items():
-        for _pu in _inv.get("purchases", []):
-            if not _valid_date_str(_pu.get("date", "")):
+        # 입금 1) 확정산 잔액 — 미수 현금 전망과 동일 (시나리오는 '추정' 건만 재계산)
+        _ship_by_hbl = {s.get("hbl", "").strip(): s for s in _td_ships}
+        for _r in _cf_rows:
+            _amt = float(_r["확정산 잔액"])
+            if _sc_pct and _r["기준"] == "추정":
+                _s0 = _ship_by_hbl.get(_r["HBL"])
+                if _s0:
+                    _f = 1 + _sc_pct / 100.0
+                    _re = _recompute_final_settlement(cfg, _s0, fallback_index=(NI * _f, CO * _f))
+                    if _re is not None:
+                        _b0  = _td_buyers.get(_s0.get("buyer_id", ""), {})
+                        _st0 = _settle_terms(_get_contract_for_shipment(cfg, _s0.get("id", "")), _b0)
+                        _amt = (_re - float(_s0.get("invoice_usd") or 0) * _st0["prov_pct"] / 100.0
+                                + float(_s0.get("other_adj_usd") or 0) - float(_s0.get("final_paid_usd") or 0))
+            _bk = _bucket(_r["예상 입금월"]) if _r["예상 입금월"] != "미정" else _cash_months[-1]
+            if _bk:
+                _flows[_bk]["확정산 입금"] += _amt
+                _flow_det.append({"월": _bk, "구분": "확정산 입금", "항목": f"{_r['HBL']} ({_r['매입사']}, {_r['기준']})", "금액": round(_amt, 0)})
+        # 입금 2) 가정산 미입금 — 입금 기록이 없고 입금 조건일이 아직 안 지난 건 (지난 건은 수령으로 간주)
+        for _s in _td_ships:
+            if _s.get("status") != "provisional" or _s.get("prov_paid_date") or not _valid_date_str(_s.get("loading_date", "")):
                 continue
-            _due = date.fromisoformat(_pu["date"]) + timedelta(days=_cs_raw_d)
+            _b1  = _td_buyers.get(_s.get("buyer_id", ""), {})
+            _due = date.fromisoformat(_s["loading_date"]) + timedelta(days=int(_b1.get("prov_pay_days") or 0) or 30)
             if _due < _today_c:
                 continue
-            _cost = float(_pu.get("quantity_kg") or 0) * float(_pu.get("unit_cost") or 0)
+            _st1 = _settle_terms(_get_contract_for_shipment(cfg, _s.get("id", "")), _b1)
+            _pamt = float(_s.get("invoice_usd") or 0) * _st1["prov_pct"] / 100.0
             _bk = _bucket(_due.strftime("%Y-%m"))
-            if _bk and _cost:
-                _flows[_bk]["원료 매입 지급"] -= _cost
-                _flow_det.append({"월": _bk, "구분": "원료 매입 지급", "항목": f"입고 {_pu['date']} {float(_pu.get('quantity_kg') or 0):,.0f} kg 만기 {_due}", "금액": round(-_cost, 0)})
-    # 지출 3) 월 고정 지출
-    for _mth in _cash_months:
-        _flows[_mth]["고정 지출"] -= _fixed_m
+            if _bk and _pamt:
+                _flows[_bk]["가정산 입금"] += _pamt
+                _flow_det.append({"월": _bk, "구분": "가정산 입금", "항목": f"{_s.get('hbl','')} ({_b1.get('name','?')}) 만기 {_due}", "금액": round(_pamt, 0)})
+        # 지출 1) 임가공비 — 배치 기준일 + 지급 조건일이 아직 안 지난 건
+        _proc_m = {p["id"]: p for p in cfg.get("processors", [])}
+        for _r in cfg.get("processing_history", []):
+            _rd = _rec_ref_date(_r, cfg)
+            if not _rd:
+                continue
+            _due = date.fromisoformat(_rd) + timedelta(days=_cs_proc_d)
+            if _due < _today_c:
+                continue
+            _fee = float(_r.get("processing_fee_per_kg") or 0) * _ph_input_kg(_r)
+            _bk = _bucket(_due.strftime("%Y-%m"))
+            if _bk and _fee:
+                _flows[_bk]["임가공비 지급"] -= _fee
+                _flow_det.append({"월": _bk, "구분": "임가공비 지급", "항목": f"{_proc_m.get(_r.get('processor_id',''),{}).get('name','?')} 배치 {_rd} 만기 {_due}", "금액": round(-_fee, 0)})
+        # 지출 2) 원료 매입 — 입고일 + 지급 조건일이 아직 안 지난 건
+        for _scid, _inv in (cfg.get("raw_material_inventory", {}) or {}).items():
+            for _pu in _inv.get("purchases", []):
+                if not _valid_date_str(_pu.get("date", "")):
+                    continue
+                _due = date.fromisoformat(_pu["date"]) + timedelta(days=_cs_raw_d)
+                if _due < _today_c:
+                    continue
+                _cost = float(_pu.get("quantity_kg") or 0) * float(_pu.get("unit_cost") or 0)
+                _bk = _bucket(_due.strftime("%Y-%m"))
+                if _bk and _cost:
+                    _flows[_bk]["원료 매입 지급"] -= _cost
+                    _flow_det.append({"월": _bk, "구분": "원료 매입 지급", "항목": f"입고 {_pu['date']} {float(_pu.get('quantity_kg') or 0):,.0f} kg 만기 {_due}", "금액": round(-_cost, 0)})
+        # 지출 3) 월 고정 지출
+        for _mth in _cash_months:
+            _flows[_mth]["고정 지출"] -= _fixed_m
 
-    _cash_rows = []; _bal = _cs_balance
-    for _mth in _cash_months:
-        _fl = _flows[_mth]
-        _in  = _fl["확정산 입금"] + _fl["가정산 입금"]
-        _out = _fl["임가공비 지급"] + _fl["원료 매입 지급"] + _fl["고정 지출"]
-        _open = _bal; _bal = _bal + _in + _out
-        _cash_rows.append({"월": _mth, "기초 잔액": round(_open, 0),
-                           "확정산 입금": round(_fl["확정산 입금"], 0), "가정산 입금": round(_fl["가정산 입금"], 0),
-                           "임가공비 지급": round(_fl["임가공비 지급"], 0), "원료 매입 지급": round(_fl["원료 매입 지급"], 0),
-                           "고정 지출": round(_fl["고정 지출"], 0), "순증감": round(_in + _out, 0), "월말 잔액": round(_bal, 0)})
-    _min_row = min(_cash_rows, key=lambda r: r["월말 잔액"])
-    _k1, _k2, _k3, _k4 = st.columns(4)
-    _k1.markdown(_kpi_card("기초 현금", f"${_cs_balance:,.0f}", f"{_cs_month} 월초 · 설정에서 입력"), unsafe_allow_html=True)
-    _k2.markdown(_kpi_card("3개월 예상 입금", f"${sum(r['확정산 입금'] + r['가정산 입금'] for r in _cash_rows):,.0f}",
-                           "확정산 잔액 + 가정산 미입금"), unsafe_allow_html=True)
-    _k3.markdown(_kpi_card("3개월 예상 지출", f"${-sum(r['임가공비 지급'] + r['원료 매입 지급'] + r['고정 지출'] for r in _cash_rows):,.0f}",
-                           f"임가공비·원료·고정 ${_fixed_m:,.0f}/월"), unsafe_allow_html=True)
-    _k4.markdown(_kpi_card("최저 월말 잔액", f"${_min_row['월말 잔액']:,.0f}", f"{_min_row['월']} · 3개월 후 ${_cash_rows[-1]['월말 잔액']:,.0f}",
-                           val_color=(_C_NEG if _min_row["월말 잔액"] < 0 else "#e5e5e5"),
-                           left_border=(_C_NEG if _min_row["월말 잔액"] < 0 else "")), unsafe_allow_html=True)
-    if not _cs.get("balance_usd"):
-        st.warning("기초 현금이 입력되지 않아 잔액이 0에서 시작합니다. 위 '전망 설정'에서 월초 잔액을 넣어 주세요.")
-    st.dataframe(pd.DataFrame(_cash_rows), use_container_width=True, hide_index=True,
-                 column_config=_cc_money("기초 잔액", "확정산 입금", "가정산 입금", "임가공비 지급",
-                                         "원료 매입 지급", "고정 지출", "순증감", "월말 잔액", dec=0))
-    try:
-        import plotly.graph_objects as go
-        _fig_c = go.Figure()
-        _fig_c.add_trace(go.Bar(x=_cash_months, y=[r["확정산 입금"] + r["가정산 입금"] for r in _cash_rows],
-                                name="입금", marker_color=_C_POS))
-        _fig_c.add_trace(go.Bar(x=_cash_months, y=[r["임가공비 지급"] + r["원료 매입 지급"] + r["고정 지출"] for r in _cash_rows],
-                                name="지출", marker_color=_C_NEG))
-        _fig_c.add_trace(go.Scatter(x=_cash_months, y=[r["월말 잔액"] for r in _cash_rows], name="월말 잔액",
-                                    mode="lines+markers+text", line=dict(color=_C_LINE, width=2),
-                                    text=[f"${r['월말 잔액']:,.0f}" for r in _cash_rows], textposition="top center",
-                                    textfont=dict(size=9, color=_C_LINE)))
-        _fig_c.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
-        _fig_c.update_layout(barmode="relative", bargap=0.4)
-        _fig_style(_fig_c, height=280); _fig_c.update_xaxes(type="category")
-        st.plotly_chart(_fig_c, use_container_width=True)
-    except ImportError:
-        pass
-    with st.expander("입출금 상세 (건별)", expanded=False):
-        st.caption("기준월 이전 만기분은 기준월로 몰아서 계산합니다. 3개월 밖 만기는 제외되고, 예상 입금월이 '미정'인 확정산은 마지막 달에 넣습니다. "
-                   "입금 조건일이 이미 지난 가정산·임가공비·원료 매입은 결제 완료로 간주합니다.")
-        if _flow_det:
-            st.dataframe(pd.DataFrame(sorted(_flow_det, key=lambda r: (r["월"], r["구분"]))),
-                         use_container_width=True, hide_index=True, column_config=_cc_money("금액", dec=0))
-        else:
-            st.caption("해당 기간에 예정된 입출금이 없습니다.")
+        _cash_rows = []; _bal = _cs_balance
+        for _mth in _cash_months:
+            _fl = _flows[_mth]
+            _in  = _fl["확정산 입금"] + _fl["가정산 입금"]
+            _out = _fl["임가공비 지급"] + _fl["원료 매입 지급"] + _fl["고정 지출"]
+            _open = _bal; _bal = _bal + _in + _out
+            _cash_rows.append({"월": _mth, "기초 잔액": round(_open, 0),
+                               "확정산 입금": round(_fl["확정산 입금"], 0), "가정산 입금": round(_fl["가정산 입금"], 0),
+                               "임가공비 지급": round(_fl["임가공비 지급"], 0), "원료 매입 지급": round(_fl["원료 매입 지급"], 0),
+                               "고정 지출": round(_fl["고정 지출"], 0), "순증감": round(_in + _out, 0), "월말 잔액": round(_bal, 0)})
+        _min_row = min(_cash_rows, key=lambda r: r["월말 잔액"])
+        _k1, _k2, _k3, _k4 = st.columns(4)
+        _k1.markdown(_kpi_card("기초 현금", f"${_cs_balance:,.0f}", f"{_cs_month} 월초 · 설정에서 입력"), unsafe_allow_html=True)
+        _k2.markdown(_kpi_card("3개월 예상 입금", f"${sum(r['확정산 입금'] + r['가정산 입금'] for r in _cash_rows):,.0f}",
+                               "확정산 잔액 + 가정산 미입금"), unsafe_allow_html=True)
+        _k3.markdown(_kpi_card("3개월 예상 지출", f"${-sum(r['임가공비 지급'] + r['원료 매입 지급'] + r['고정 지출'] for r in _cash_rows):,.0f}",
+                               f"임가공비·원료·고정 ${_fixed_m:,.0f}/월"), unsafe_allow_html=True)
+        _k4.markdown(_kpi_card("최저 월말 잔액", f"${_min_row['월말 잔액']:,.0f}", f"{_min_row['월']} · 3개월 후 ${_cash_rows[-1]['월말 잔액']:,.0f}",
+                               val_color=(_C_NEG if _min_row["월말 잔액"] < 0 else "#e5e5e5"),
+                               left_border=(_C_NEG if _min_row["월말 잔액"] < 0 else "")), unsafe_allow_html=True)
+        if not _cs.get("balance_usd"):
+            st.warning("기초 현금이 입력되지 않아 잔액이 0에서 시작합니다. 위 '전망 설정'에서 월초 잔액을 넣어 주세요.")
+        st.dataframe(pd.DataFrame(_cash_rows), width="stretch", hide_index=True,
+                     column_config=_cc_money("기초 잔액", "확정산 입금", "가정산 입금", "임가공비 지급",
+                                             "원료 매입 지급", "고정 지출", "순증감", "월말 잔액", dec=0))
+        try:
+            import plotly.graph_objects as go
+            _fig_c = go.Figure()
+            _fig_c.add_trace(go.Bar(x=_cash_months, y=[r["확정산 입금"] + r["가정산 입금"] for r in _cash_rows],
+                                    name="입금", marker_color=_C_POS))
+            _fig_c.add_trace(go.Bar(x=_cash_months, y=[r["임가공비 지급"] + r["원료 매입 지급"] + r["고정 지출"] for r in _cash_rows],
+                                    name="지출", marker_color=_C_NEG))
+            _fig_c.add_trace(go.Scatter(x=_cash_months, y=[r["월말 잔액"] for r in _cash_rows], name="월말 잔액",
+                                        mode="lines+markers+text", line=dict(color=_C_LINE, width=2),
+                                        text=[f"${r['월말 잔액']:,.0f}" for r in _cash_rows], textposition="top center",
+                                        textfont=dict(size=9, color=_C_LINE)))
+            _fig_c.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+            _fig_c.update_layout(barmode="relative", bargap=0.4)
+            _fig_style(_fig_c, height=280); _fig_c.update_xaxes(type="category")
+            st.plotly_chart(_fig_c, width="stretch")
+        except ImportError:
+            pass
+        with st.expander("입출금 상세 (건별)", expanded=False):
+            st.caption("기준월 이전 만기분은 기준월로 몰아서 계산합니다. 3개월 밖 만기는 제외되고, 예상 입금월이 '미정'인 확정산은 마지막 달에 넣습니다. "
+                       "입금 조건일이 이미 지난 가정산·임가공비·원료 매입은 결제 완료로 간주합니다.")
+            if _flow_det:
+                st.dataframe(pd.DataFrame(sorted(_flow_det, key=lambda r: (r["월"], r["구분"]))),
+                             width="stretch", hide_index=True, column_config=_cc_money("금액", dec=0))
+            else:
+                st.caption("해당 기간에 예정된 입출금이 없습니다.")
 
     # ── 엑셀 보고서 (대시보드 요약과 동일 기준: 할 일·현금 전망·완제품 재고 포함) ──
-    if active_buyers:
-        _xl_bytes = _excel_report_cached(cfg, NI, CO, XR, rpt_month, active_buyers[0]["id"],
-                                         _todo, _cf_rows)
-        st.download_button("Excel 보고서 다운로드 (요약·할 일·현금 전망·손익·선적·완제품 재고)",
-                           data=_xl_bytes, file_name=f"BP_BM_요약보고서_{rpt_month}.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    with _slot_xl:
+        if active_buyers:
+            _xl_bytes = _excel_report_cached(cfg, NI, CO, XR, rpt_month, active_buyers[0]["id"],
+                                             _todo, _cf_rows)
+            st.download_button("Excel 보고서 다운로드", width="stretch",
+                               help="요약·할 일·현금 전망·손익·선적·완제품 재고 (기준월 기준)",
+                               data=_xl_bytes, file_name=f"BP_BM_요약보고서_{rpt_month}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    st.divider()
 
     # ── 공통 데이터 준비 ──────────────────────────────────────────────────────
     _rpt_ships    = cfg.get("shipments", [])
@@ -7090,7 +7143,7 @@ if _page == PG_HOME:
     _rpt_ship_m0  = {s["id"]: s for s in _rpt_ships}
 
     # ── 연간 누계 요약 ────────────────────────────────────────────────────────
-    _cur_year = date.today().year
+    _cur_year = _today().year
     _yr_ph    = [r for r in _rpt_ph_all
                  if (_rpt_ship_m0.get(r.get("shipment_id",""),{}).get("loading_date","") or "")[:4] == str(_cur_year)]
     _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year)]
@@ -7133,24 +7186,9 @@ if _page == PG_HOME:
                          "실질 손익": round(_mv["bp"] - _mv["raw"] - _mv["pf"] - _mv["eu"] - _mv["stor"], 2),
                          "생산(kg)": _mv["out"], "선적": _mv["cnt"], "Invoice": _mv["inv"]})
     # 전월 대비: 데이터가 있는 최근 두 달을 비교 (이번 달 실적이 아직 없으면 직전 두 달)
-    _mo_last, _mo_prev = (_mo_rows[-1], _mo_rows[-2]) if len(_mo_rows) >= 2 else (None, None)
-    def _mom_badge(key, fmt_abs, pct=True):
-        """(배지 문구, 색) — 최근월 vs 직전월 증감."""
-        if not _mo_last:
-            return "", "#9b9b9b"
-        _d = _mo_last[key] - _mo_prev[key]
-        if abs(_d) < 1e-9:
-            return f"{_mo_last['월'][5:]}월 보합", "#9b9b9b"
-        _arrow = "▲" if _d > 0 else "▼"
-        _col   = _C_POS if _d > 0 else _C_NEG
-        _txt   = f"{_arrow} {fmt_abs(abs(_d))}"
-        if pct and _mo_prev[key]:
-            _txt += f" ({_d / abs(_mo_prev[key]) * 100:+.0f}%)"
-        return f"{_mo_last['월'][5:]}월 {_txt}", _col
-    _b_cnt = _mom_badge("선적",     lambda v: f"{v:.0f}건", pct=False)
-    _b_out = _mom_badge("생산(kg)", lambda v: f"{v/1000:.1f} MT")
-    _b_inv = _mom_badge("Invoice",  lambda v: f"${v/1000:,.0f}k")
-    _b_rl  = _mom_badge("실질 손익", lambda v: f"${v/1000:,.0f}k", pct=False)
+    # 증감은 진행 중인 이번 달(한국 시간)을 빼고, 실적이 있는 마감 월 중 최근 두 달을 비교
+    _mo_done = [r for r in _mo_rows if r["월"] < _today().strftime("%Y-%m")]
+    _mo_last, _mo_prev = (_mo_done[-1], _mo_done[-2]) if len(_mo_done) >= 2 else (None, None)
 
     _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
     _yoy_sub      = f"전년 동기 {len(_yr_ships) - len(_yr_ships_ly):+d}건"
@@ -7159,25 +7197,13 @@ if _page == PG_HOME:
     _inv_sub      = f"평균 ${(_yr_inv / len(_yr_ships) / 1000):.0f}k / 건" if _yr_ships else "선적 없음"
     _margin_pct   = (_yr_real / _yr_bp * 100) if _yr_bp else 0
     _margin_sub   = f"매출 대비 {_margin_pct:+.1f}% · 판관비 제외"
-    _margin_col   = "#4ade80" if _yr_real >= 0 else "#f87171"
-    _margin_fmt   = (f"${_yr_real/1_000_000:+.1f}M" if abs(_yr_real) >= 1_000_000
-                     else f"${_yr_real/1000:+.0f}k")
-
-    st.markdown(f"#### {_cur_year}년 누계")
-    _ya1, _ya2, _ya3, _ya4 = st.columns(4)
-    _ya1.markdown(_kpi_card_badge("선적 건수",    *_b_cnt, f"{len(_yr_ships)}건",        _yoy_sub),   unsafe_allow_html=True)
-    _ya2.markdown(_kpi_card_badge("BP 생산",      *_b_out, f"{_yr_out/1000:.1f} MT",     _conv_sub),  unsafe_allow_html=True)
-    _ya3.markdown(_kpi_card_badge("Invoice 합계", *_b_inv, f"${_yr_inv/1_000_000:.1f}M", _inv_sub),   unsafe_allow_html=True)
-    _ya4.markdown(_kpi_card_badge("실질 손익",    *_b_rl,  _margin_fmt, _margin_sub, val_color=_margin_col), unsafe_allow_html=True)
-    st.caption("배지: 실적이 있는 최근 월과 그 직전 월의 비교")
-
-    st.divider()
-    st.markdown("#### 현재 운영 현황")
+    _margin_fmt   = (("-" if _yr_real < 0 else "") + (f"${abs(_yr_real)/1_000_000:.2f}M" if abs(_yr_real) >= 1_000_000
+                                                        else f"${abs(_yr_real)/1000:.0f}k"))
 
     # ── 미수금 / ETA 임박 / 계약 잔여 ─────────────────────────────────────────
     _all_ships   = cfg.get("shipments", [])
     _buyer_m_rpt = {b["id"]: b for b in cfg["buyers"]}
-    _today_rpt   = date.today()
+    _today_rpt   = _today()
     _eta14_end   = (_today_rpt + timedelta(days=14)).isoformat()
 
     # 미수금: 상단 '미수 현금 전망' 패널과 동일 기준 (_cf_rows 재사용 — 확정/계산/추정 통합)
@@ -7198,37 +7224,210 @@ if _page == PG_HOME:
     _ar_fmt      = (f"${_ar_total/1_000_000:.1f}M" if abs(_ar_total) >= 1_000_000
                     else f"${_ar_total/1000:.0f}k")
     _eta_hbls    = "  ·  ".join(s.get("hbl","—") for s in _eta_soon) or "없음"
-    _ct_border   = "#f87171" if _ct_remaining > 0 else ""
-    _ct_val_col  = "#f87171" if _ct_remaining > 0 else "#e5e5e5"
     _prov_cnt    = sum(1 for s in _all_ships if s.get("status","") == "provisional")
     _final_cnt   = sum(1 for s in _all_ships if s.get("status","") == "final")
 
-    _yb1, _yb2, _yb3, _yb4 = st.columns(4)
-    _yb1.markdown(_kpi_card_badge("미수금 추정", f"{_ar_cnt}건 미정산", "#fb923c",
-                                  _ar_fmt, "미수 현금 전망 패널과 동일 기준 (확정산 잔액)"),
-                  unsafe_allow_html=True)
-    _yb2.markdown(_kpi_card_badge("ETA 14일 이내", f"{len(_eta_soon)}건", "#60a5fa",
-                                  f"{len(_eta_soon)}건", _eta_hbls),
-                  unsafe_allow_html=True)
-    _yb3.markdown(_kpi_card("계약 잔여 의무",
-                             f"{_ct_remaining:,.1f} MT",
-                             "진행 중 계약 최소 이행 잔량",
-                             val_color=_ct_val_col, left_border=_ct_border),
-                  unsafe_allow_html=True)
-    _yb4.markdown(_kpi_card("미정산 건수",
-                             f"{_ar_cnt}건",
-                             f"provisional {_prov_cnt} · final {_final_cnt}"),
-                  unsafe_allow_html=True)
+    # ── KPI (기본 st.metric: 테두리 카드 + 월별 스파크라인 + 전월 대비) ──
+    def _spark(key, scale=1.0):
+        return [round(float(r[key]) / scale, 2) for r in _mo_rows] if len(_mo_rows) >= 2 else None
+    def _mom(key, fmt):
+        """(증감 문구, 설명) — 실적이 있는 최근 월 vs 직전 월."""
+        if not _mo_last:
+            return None, None
+        _d = float(_mo_last[key]) - float(_mo_prev[key])
+        return fmt(_d), f"{_mo_last['월'][5:]}월 vs {_mo_prev['월'][5:]}월"
+    _sgn = lambda v, f: ("+" if v > 0 else "-" if v < 0 else "") + f(abs(v))
+    with _slot_kpi:
+        st.markdown(f"#### {_cur_year}년 누계")
+        _ya = st.columns(4)
+        _d, _dd = _mom("선적", lambda v: _sgn(v, lambda x: f"{x:.0f}건"))
+        _ya[0].metric("선적 건수", f"{len(_yr_ships)}건", delta=_d, delta_description=_dd,
+                      chart_data=_spark("선적"), chart_type="bar", help=_yoy_sub, border=True)
+        _d, _dd = _mom("생산(kg)", lambda v: _sgn(v, lambda x: f"{x/1000:.1f} MT"))
+        _ya[1].metric("BP 생산", f"{_yr_out/1000:.1f} MT", delta=_d, delta_description=_dd,
+                      chart_data=_spark("생산(kg)", 1000), chart_type="area", help=_conv_sub, border=True)
+        _d, _dd = _mom("Invoice", lambda v: _sgn(v, lambda x: f"${x/1000:,.0f}k"))
+        _ya[2].metric("Invoice 합계", f"${_yr_inv/1_000_000:.2f}M", delta=_d, delta_description=_dd,
+                      chart_data=_spark("Invoice", 1000), chart_type="area", help=_inv_sub, border=True)
+        _d, _dd = _mom("실질 손익", lambda v: _sgn(v, lambda x: f"${x/1000:,.0f}k"))
+        _ya[3].metric("실질 손익", _margin_fmt, delta=_d, delta_description=_dd,
+                      chart_data=_spark("실질 손익", 1000), chart_type="bar", help=_margin_sub, border=True)
+        st.caption("카드 아래 선은 월별 추이입니다. 증감은 진행 중인 이번 달을 뺀, 실적이 있는 최근 두 달의 비교입니다. 손익은 판관비 제외.")
+        st.markdown("#### 현재 운영 현황")
+        _yb = st.columns(4)
+        _yb[0].metric("미수금 추정", _ar_fmt, delta=f"{_ar_cnt}건 미정산", delta_color="off", delta_arrow="off",
+                      help="미수 현금 전망과 동일 기준 (확정산 잔액)", border=True)
+        _yb[1].metric("ETA 14일 이내", f"{len(_eta_soon)}건",
+                      delta=(_eta_hbls if _eta_soon else "없음"), delta_color="off", delta_arrow="off", border=True)
+        _yb[2].metric("계약 잔여 의무", f"{_ct_remaining:,.1f} MT",
+                      delta=("이행 잔량 있음" if _ct_remaining > 0 else "모두 이행"),
+                      delta_color=("orange" if _ct_remaining > 0 else "green"), delta_arrow="off",
+                      help="진행 중 계약의 최소 이행 잔량", border=True)
+        _yb[3].metric("미정산 건수", f"{_ar_cnt}건", delta=f"provisional {_prov_cnt} · final {_final_cnt}",
+                      delta_color="off", delta_arrow="off", border=True)
 
     # ── 월별 손익 구성 추이 (관리회계 기준 — 원료비·보관비 차감, 판관비 제외) ──
-    if _mo_rows:
+    with _slot_chart, st.container(border=True):
+        if _mo_rows:
+            try:
+                st.markdown(f"#### {_cur_year}년 월별 손익 구성")
+                st.caption("매출은 위로, 원료비·임가공비·수출비·보관비는 아래로 쌓고 실질 손익을 선으로 표시 — "
+                           "손익·시나리오 > 손익 요약의 월별 추이와 같은 기준")
+                st.plotly_chart(_fig_monthly_pnl(_mo_rows, height=340), width="stretch")
+            except ImportError:
+                pass
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 홈 > 월 마감 — 매달 확인하는 항목을 한 화면에 (기준 데이터 · 선적·정산 · 입금 · 생산·재고 실사)
+# ══════════════════════════════════════════════════════════════════════════════
+if _page == PG_HOME and _sub == SUB_CLOSE:
+    st.subheader("월 마감")
+    _mc_prev = (_today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    _mc_opts = sorted({_mc_prev, _today().strftime("%Y-%m")}
+                      | {(s.get("loading_date") or "")[:7] for s in cfg.get("shipments", []) if s.get("loading_date")}
+                      | {r.get("month", "") for r in cfg.get("production_monthly", [])}, reverse=True)
+    _mc_opts = [m for m in _mc_opts if m]
+    _mc_m = st.selectbox("마감 월", _mc_opts, index=_mc_opts.index(_mc_prev) if _mc_prev in _mc_opts else 0,
+                         key="mc_month", help="기본값은 지난달 (한국 시간 기준)")
+    _mc_end = (datetime.strptime(_mc_m + "-01", "%Y-%m-%d") + timedelta(days=32)).replace(day=1).date() - timedelta(days=1)
+    _mc_B   = {b["id"]: b for b in cfg.get("buyers", [])}
+    _mc_S   = cfg.get("shipments", [])
+    _hbl    = lambda s: (s.get("hbl") or "").strip() or "HBL미정"
+    _checks = []          # (구역, 항목, 완료 여부, 내용)
+
+    # ── 1) 기준 데이터 ──
+    _std_ix = {h["month"] for h in cfg.get("index_history", [])}
+    _checks.append(("기준 데이터", "표준 INDEX", _mc_m in _std_ix, f"{_mc_m} 등록" if _mc_m in _std_ix else f"{_mc_m} 미등록"))
+    _used_b = {s.get("buyer_id") for s in _mc_S
+               if _mc_m in (s.get("prov_month"), s.get("final_month")) and _mc_B.get(s.get("buyer_id"), {}).get("custom_index")}
+    for _bid in sorted(_used_b, key=lambda x: _mc_B.get(x, {}).get("name", "")):
+        _alt = {h["month"]: h for h in cfg.get("index_history_alt", {}).get(_bid, [])}
+        _bn  = f"{_mc_B[_bid].get('name')} ({_mc_B[_bid].get('product')})"
+        _ok  = _mc_m in _alt
+        _checks.append(("기준 데이터", f"매입사 INDEX · {_bn}", _ok,
+                        (f"{_mc_m} 등록" + (" · payable 포함" if _ok and _alt[_mc_m].get("ni_payable") else " · payable 없음(계약값 사용)"))
+                        if _ok else f"{_mc_m} 미등록 — 이 달이 Prov/Final월인 선적이 있음"))
+    for _lbl, _key in (("EUR/USD 환율", "eur_usd_rates"), ("USD/KRW 환율", "usd_krw_rates"), ("판관비", "sga_monthly")):
+        _ok = any(r.get("month") == _mc_m for r in cfg.get(_key, []))
+        _checks.append(("기준 데이터", _lbl, _ok, f"{_mc_m} 등록" if _ok else f"{_mc_m} 미등록"))
+
+    # ── 2) 선적·정산 ──
+    _mc_ships = [s for s in _mc_S if (s.get("loading_date") or "")[:7] == _mc_m]
+    _checks.append(("선적·정산", "당월 선적", True,
+                    f"{len(_mc_ships)}건 · Invoice ${sum(float(s.get('invoice_usd') or 0) for s in _mc_ships):,.0f}"
+                    + (f" · {', '.join(_hbl(s) for s in _mc_ships[:6])}" if _mc_ships else "")))
+    _mm = [s for s in _mc_S if _inv_mismatch(cfg, s)]
+    _checks.append(("선적·정산", "Invoice 불일치 (가정산)", not _mm,
+                    "; ".join(f"{_hbl(s)} ({_inv_hint_text(cfg, s)})" for s in _mm) or "없음"))
+    _ready = [s for s in _mc_S if s.get("status") == "provisional" and s.get("final_month") not in (None, "", "—")
+              and s.get("final_month") <= _mc_m
+              and s.get("final_month") in _hm_for(cfg, _mc_B.get(s.get("buyer_id"), {}))]
+    _checks.append(("선적·정산", "확정산 진행 가능 (Final월 INDEX 등록됨)", not _ready,
+                    ", ".join(f"{_hbl(s)} (Final {s.get('final_month')})" for s in _ready) or "없음"))
+    _nosnap = [s for s in _mc_S if s.get("status") in ("final", "paid") and not s.get("final_amount_usd")]
+    _checks.append(("선적·정산", "확정 상태인데 확정액 미저장", not _nosnap,
+                    ", ".join(_hbl(s) for s in _nosnap) or "없음"))
+    _nobatch = [s for s in _mc_S if s["id"] not in {r.get("shipment_id") for r in cfg.get("processing_history", [])}]
+    _checks.append(("선적·정산", "배치 없는 선적", not _nobatch, ", ".join(_hbl(s) for s in _nobatch) or "없음"))
+    _noeu = [s for s in _mc_ships if s.get("export_cost_usd") is None]
+    _checks.append(("선적·정산", "당월 선적 수출비 입력", not _noeu, ", ".join(_hbl(s) for s in _noeu) or "모두 입력"))
+
+    # ── 3) 입금 (마감월 말일까지 만기가 지난 건) ──
+    _late_p, _late_f = [], []
+    for s in _mc_S:
+        b = _mc_B.get(s.get("buyer_id"), {})
         try:
-            st.markdown(f"#### {_cur_year}년 월별 손익 구성")
-            st.caption("매출은 위로, 원료비·임가공비·수출비·보관비는 아래로 쌓고 실질 손익을 선으로 표시 — "
-                       "손익·시나리오 > 손익 요약의 월별 추이와 같은 기준")
-            st.plotly_chart(_fig_monthly_pnl(_mo_rows, height=340), use_container_width=True)
-        except ImportError:
-            pass
+            _ld = date.fromisoformat(s.get("loading_date", ""))
+        except Exception:
+            continue
+        _pd = _ld + timedelta(days=int(b.get("prov_pay_days") or 0) or 30)
+        if s.get("status") != "paid" and not s.get("prov_paid_date") and _pd <= _mc_end:
+            _late_p.append(f"{_hbl(s)} (만기 {_pd})")
+        try:
+            _eta = date.fromisoformat(s["eta"]) if _valid_date_str(s.get("eta", "")) else _ld + timedelta(days=60)
+        except Exception:
+            _eta = _ld + timedelta(days=60)
+        _fd = _eta + timedelta(days=int(b.get("final_pay_days") or 0) or 30)
+        if s.get("status") == "final" and not s.get("final_paid_date") and _fd <= _mc_end:
+            _late_f.append(f"{_hbl(s)} (만기 {_fd})")
+    _checks.append(("입금", "가정산 입금 기록", not _late_p, ", ".join(_late_p) or "만기 지난 미기록 없음"))
+    _checks.append(("입금", "확정산 입금 기록", not _late_f, ", ".join(_late_f) or "만기 지난 미기록 없음"))
+
+    # ── 4) 생산·재고 ──
+    _P = {p["id"]: p["name"] for p in cfg.get("processors", [])}
+    _SCn = {s["id"]: s["name"] for s in cfg.get("scrap_types", [])}
+    for _pid, _scid in sorted(_prod_combos(cfg)):
+        _rows_m = [r for r in cfg.get("production_monthly", [])
+                   if r.get("processor_id") == _pid and r.get("scrap_type_id") == _scid and r.get("month") == _mc_m]
+        _checks.append(("생산·재고", f"생산 보고 · {_P.get(_pid, '?')} {_SCn.get(_scid, '?')}", bool(_rows_m),
+                        (f"투입 {_rows_m[0].get('input_kg') or 0:,.0f} · 생산 {_rows_m[0].get('output_kg') or 0:,.0f} kg"
+                         if _rows_m else f"{_mc_m} 행 없음 — 생산이 없던 달이면 0으로 한 줄 넣어 두세요")))
+    _est = defaultdict(float)
+    for _sc in cfg.get("scrap_types", []):
+        _est[_sc_product(_sc)] += _finished_goods_kg(cfg, _sc["id"])
+    _counts = {(c.get("month"), c.get("product")): c for c in cfg.get("stock_counts", [])}
+    for _prod in ("BP", "BM"):
+        _c = _counts.get((_mc_m, _prod))
+        _checks.append(("생산·재고", f"{_prod} 재고 실사", bool(_c),
+                        (f"실사 {_c['kg']:,.0f} kg · 앱 추정 {_est[_prod]:,.0f} kg · 차이 {_c['kg'] - _est[_prod]:+,.0f} kg"
+                         + (f" · {_c.get('note')}" if _c.get("note") else "")) if _c
+                        else f"미입력 · 앱 추정 {_est[_prod]:,.0f} kg"))
+
+    # ── 요약 + 구역별 표 ──
+    _open = [c for c in _checks if not c[2]]
+    _k1, _k2, _k3 = st.columns(3)
+    _k1.metric("점검 항목", f"{len(_checks)}개", border=True)
+    _k2.metric("확인 필요", f"{len(_open)}개", border=True,
+               delta=("모두 완료" if not _open else None), delta_color="off")
+    _closed = (cfg.get("month_close") or {}).get(_mc_m)
+    _k3.metric("마감 상태", "마감 완료" if _closed else "진행 중", border=True,
+               delta=(f"{_closed.get('closed_at', '')[:16]}" if _closed else None), delta_color="off")
+    for _sec in ("기준 데이터", "선적·정산", "입금", "생산·재고"):
+        _rows = [c for c in _checks if c[0] == _sec]
+        _n_open = sum(1 for c in _rows if not c[2])
+        with st.container(border=True):
+            st.markdown(f"**{_sec}**  ·  " + (f":orange[확인 필요 {_n_open}]" if _n_open else ":green[완료]"))
+            st.dataframe(pd.DataFrame([{"항목": c[1], "상태": "완료" if c[2] else "확인 필요", "내용": c[3]} for c in _rows]),
+                         width="stretch", hide_index=True,
+                         column_config={"항목": st.column_config.TextColumn(width="medium"),
+                                        "상태": st.column_config.TextColumn(width="small"),
+                                        "내용": st.column_config.TextColumn(width="large")})
+
+    # ── 재고 실사 입력 · 마감 표시 ──
+    with st.container(border=True):
+        st.markdown("**재고 실사 입력**")
+        st.caption("월말 창고 실물 수량을 넣으면 앱 추정 재고와의 차이가 위 '생산·재고'에 표시됩니다. "
+                   "차이 사유를 비고에 남기면 다음 달부터 추세를 볼 수 있습니다.")
+        with st.form("stock_count_form"):
+            _sc1, _sc2, _sc3 = st.columns([1, 1, 3])
+            with _sc1: _in_bp = st.number_input("BP 실사 (kg)", min_value=0.0, step=100.0, format="%.0f",
+                                                value=float((_counts.get((_mc_m, "BP")) or {}).get("kg") or 0))
+            with _sc2: _in_bm = st.number_input("BM 실사 (kg)", min_value=0.0, step=100.0, format="%.0f",
+                                                value=float((_counts.get((_mc_m, "BM")) or {}).get("kg") or 0))
+            with _sc3: _in_nt = st.text_input("비고", value=(_counts.get((_mc_m, "BP")) or {}).get("note", ""))
+            if st.form_submit_button(f"{_mc_m} 실사 저장"):
+                _keep = [c for c in cfg.get("stock_counts", []) if c.get("month") != _mc_m]
+                for _prod, _kg in (("BP", _in_bp), ("BM", _in_bm)):
+                    _keep.append({"month": _mc_m, "product": _prod, "kg": float(_kg), "note": _in_nt.strip(),
+                                  "saved_at": _now().strftime("%Y-%m-%d %H:%M"),
+                                  "app_estimate_kg": round(_est[_prod])})
+                cfg["stock_counts"] = sorted(_keep, key=lambda c: (c["month"], c["product"]))
+                save_cfg(cfg); st.toast(f"{_mc_m} 재고 실사 저장"); st.rerun()
+    _mcb1, _mcb2 = st.columns([1, 3])
+    with _mcb1:
+        if not _closed:
+            if st.button(f"{_mc_m} 마감 완료 표시", type="primary", width="stretch", key="mc_close_btn",
+                         help="확인 필요 항목이 남아 있어도 표시할 수 있습니다. 남은 항목 수가 함께 기록됩니다."):
+                cfg.setdefault("month_close", {})[_mc_m] = {"closed_at": _now().strftime("%Y-%m-%d %H:%M"),
+                                                           "open_items": len(_open)}
+                save_cfg(cfg); st.rerun()
+        else:
+            if st.button(f"{_mc_m} 마감 해제", width="stretch", key="mc_reopen_btn"):
+                cfg.get("month_close", {}).pop(_mc_m, None)
+                save_cfg(cfg); st.rerun()
+    with _mcb2:
+        if _closed:
+            st.caption(f"{_closed.get('closed_at')} 마감 표시 · 당시 확인 필요 {_closed.get('open_items', 0)}개")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 계약 이행

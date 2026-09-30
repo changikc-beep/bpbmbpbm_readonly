@@ -32,7 +32,7 @@ def _find(marker, start=0):
 NS = {"st": st, "pd": pd, "json": json, "hashlib": hashlib, "re": re, "os": os, "uuid": uuid,
       "date": date, "datetime": datetime, "timedelta": timedelta, "defaultdict": defaultdict,
       "BytesIO": io.BytesIO, "READ_ONLY": False, "_HAS_LOCAL_CREDS": False, "CONFIG_FILE": "x"}
-h0 = _find("def bp_price(");              h1 = _find("# ── Sidebar ─", h0)
+h0 = _find("def _now():");              h1 = _find("# ── Sidebar ─", h0)
 x0 = _find("def generate_excel_report(");   x1 = _find("# TAB 0 — 요약 보고서", x0)
 exec(compile("\n".join(LINES[h0:h1]), "helpers", "exec"), NS)
 exec(compile("\n".join(LINES[x0:x1]), "excel", "exec"), NS)
@@ -165,6 +165,66 @@ def main():
     texts = {str(c.value) for row in ws.iter_rows() for c in row if c.value is not None}
     check("excel has 할 일·현금 전망·완제품 sections",
           any("할 일" in t for t in texts) and any("미수 현금 전망" in t for t in texts) and any("완제품" in t for t in texts))
+
+    # ── 2026-09 추가 로직 ─────────────────────────────────────────────────────
+    # KST 시각: UTC+9, tz 없는 값
+    from datetime import timezone as _tz
+    _k = f["_now"](); _u = datetime.now(_tz.utc).replace(tzinfo=None)
+    check("_now = UTC+9 (tz-naive)", _k.tzinfo is None and abs((_k - _u).total_seconds() - 9 * 3600) < 5
+          and f["_today"]() == _k.date())
+
+    # 월별 payable: INDEX 행 값 우선, 없으면 계약·매입사 값
+    terms = {"ni_payable": 1.25, "co_payable": 1.25}
+    check("_pay_at row override / fallback", f["_pay_at"](terms, {"ni_payable": 1.18, "co_payable": 1.17}) == (1.18, 1.17)
+          and f["_pay_at"](terms, {}) == (1.25, 1.25) and f["_pay_at"](terms, None) == (1.25, 1.25))
+
+    # 매출 = 선적 확정액(또는 가정산 Invoice) + 기타조정, 배치 생산량 비율 배분
+    rc = {"shipments": [{"id": "A", "final_amount_usd": 1000.0, "invoice_usd": 900.0, "other_adj_usd": -100.0},
+                        {"id": "B", "final_amount_usd": None, "invoice_usd": 500.0},
+                        {"id": "C", "invoice_usd": 0}],
+          "processing_history": [{"id": "a1", "shipment_id": "A", "output_kg": 300, "bp_sale_per_kg": 9},
+                                 {"id": "a2", "shipment_id": "A", "output_kg": 100, "bp_sale_per_kg": 9},
+                                 {"id": "b1", "shipment_id": "B", "output_kg": 50, "bp_sale_per_kg": 9},
+                                 {"id": "c1", "shipment_id": "C", "output_kg": 10, "bp_sale_per_kg": 2},
+                                 {"id": "u1", "shipment_id": "", "output_kg": 10, "bp_sale_per_kg": 3}]}
+    rm = f["_batch_revenue_map"](rc)
+    check("_batch_revenue_map allocation & basis",
+          rm["a1"] == (675.0, "확정") and rm["a2"] == (225.0, "확정") and rm["b1"] == (500.0, "가정산")
+          and rm["c1"] == (20.0, "단가") and rm["u1"] == (30.0, "단가"))
+
+    # Invoice 점검은 가정산만 + 일치 월 힌트
+    b = cfg["buyers"][0]; sh = dict(ships[0], buyer_id=b["id"], status="provisional", prov_month="2026-03")
+    sh["invoice_usd"] = f["_prov_invoice_calc"](cfg, sh)
+    check("_inv_mismatch none when equal", f["_inv_mismatch"](cfg, sh) is None)
+    sh2 = dict(sh, prov_month="2026-12")   # 합성 INDEX에서 3월 대비 약 5% 차이
+    check("_inv_mismatch + hint finds original month",
+          f["_inv_mismatch"](cfg, sh2) is not None and "2026-03" in f["_prov_month_hint"](cfg, sh2))
+    check("_inv_mismatch skips final/paid", f["_inv_mismatch"](cfg, dict(sh2, status="final")) is None)
+
+    # 생산 탭: 완제품 = 누적 생산 − 선적 배치, 보유 원료 = 출고 − 실제 투입, 회수율
+    pc = {"processors": [{"id": "P"}], "scrap_types": [{"id": "S", "name": "양극"}],
+          "shipments": [{"id": "X"}],
+          "dispatch_records": [{"processor_id": "P", "scrap_type_id": "S", "quantity_kg": 1000.0}],
+          "processing_history": [{"id": "h", "shipment_id": "X", "processor_id": "P", "scrap_type_id": "S",
+                                  "output_kg": 500.0, "input_kg": 700.0}],
+          "production_monthly": [{"month": "2026-01", "processor_id": "P", "scrap_type_id": "S",
+                                  "received_kg": 1010.0, "input_kg": 600.0, "output_kg": 480.0},
+                                 {"month": "2026-02", "processor_id": "P", "scrap_type_id": "S",
+                                  "received_kg": 0.0, "input_kg": 200.0, "output_kg": 150.0}]}
+    check("_finished_goods_kg from production", f["_finished_goods_kg"](pc, "S") == 130.0)
+    check("_at_processor_raw_kg uses actual input", f["_at_processor_raw_kg"](pc, "S") == 200.0)
+    check("_prod_recovery cumulative & upto",
+          abs(f["_prod_recovery"](pc, "P", "S") - 630 / 800) < 1e-9
+          and abs(f["_prod_recovery"](pc, "P", "S", "2026-01") - 0.8) < 1e-9)
+    rr = f["_production_recon"](pc)[0]
+    check("_production_recon row", rr["완제품 재고(생산−선적)"] == 130 and rr["계량차(입고−출고)"] == 10
+          and rr["미투입 원료(입고−투입)"] == 210 and rr["제품"] == "BP")
+
+    # 동기화 전후 점검: 새 선적 · HBL 변경 · 삭제
+    bf = {"shipments": [{"id": "1", "hbl": "TBA"}, {"id": "2", "hbl": "OLD"}], "processing_history": []}
+    af = {"shipments": [{"id": "1", "hbl": "REAL1"}, {"id": "3", "hbl": "NEW"}], "processing_history": []}
+    txt = " | ".join(t for _, t in f["_sync_checks"](bf, af))
+    check("_sync_checks new/rename/delete", "새 선적 1건: NEW" in txt and "TBA → REAL1" in txt and "삭제된 선적 1건: OLD" in txt)
 
     ok = all(RESULTS)
     print(f"\n{'ALL PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
