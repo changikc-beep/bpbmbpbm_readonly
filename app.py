@@ -4892,6 +4892,9 @@ def _sync_from_gsheets(cfg_ref):
             # BUG FIX: 빈 HBL 선적건이 같은 키("")로 충돌하지 않도록 제외
             hbl_idx = {s["hbl"].strip(): i for i, s in enumerate(cfg_ref.get("shipments", []))
                        if s.get("hbl","").strip()}
+            # 시트에 있는 HBL 전체 — 앱에만 남은 HBL(예: 'TBA'를 실제 번호로 바꾼 경우의 옛 번호)을 가려낸다
+            _sheet_hbls = {r[0].strip() for r in rows[1:] if r and r[0].strip()}
+            _renamed = []
             added, updated = 0, 0
             _status_trans  = {}   # "provisional→final" 같은 전이 건수
             _snap_reset_cnt = 0
@@ -4964,12 +4967,14 @@ def _sync_from_gsheets(cfg_ref):
                     cfg_ref["shipments"][_sync_idx].update(entry)
                     updated += 1
                 else:
-                    # HBL 공란이거나, HBL이 새로 채워졌는데 기존엔 공란이었던 경우
-                    # → 선적일+buyer_id+중량 복합키로 기존 항목(공란 HBL) 탐색
+                    # HBL 공란이거나, HBL이 새로 채워졌거나 바뀐 경우(TBA → 실제 번호 등)
+                    # → 선적일+buyer_id+중량 복합키로 기존 항목 탐색. 대상은 HBL이 공란이거나
+                    #   시트에서 사라진 HBL을 가진 선적건 (배치·확정액·입금 기록 연결을 그대로 유지)
                     _match_idx = None
                     _wkg_f = _to_float(wkg)
                     for _ci, _cs in enumerate(cfg_ref.get("shipments", [])):
-                        if (not _cs.get("hbl","").strip()
+                        _cs_hbl = _cs.get("hbl","").strip()
+                        if ((not _cs_hbl or _cs_hbl not in _sheet_hbls)
                                 and _cs.get("loading_date","") == ld
                                 and _cs.get("buyer_id","") == (buyer_id or "")
                                 and abs(float(_cs.get("weight_kg",0)) - _wkg_f) < 1):
@@ -4984,9 +4989,13 @@ def _sync_from_gsheets(cfg_ref):
                         if entry.get("status") != _prev_status:
                             _tk = f"{_prev_status}→{entry.get('status')}"
                             _status_trans[_tk] = _status_trans.get(_tk, 0) + 1
+                        _old_hbl = cfg_ref["shipments"][_match_idx].get("hbl","").strip()
                         cfg_ref["shipments"][_match_idx].update(entry)
                         if hbl:
+                            hbl_idx.pop(_old_hbl, None)
                             hbl_idx[hbl] = _match_idx
+                            if _old_hbl and _old_hbl != hbl:
+                                _renamed.append(f"{_old_hbl}→{hbl}")
                         updated += 1
                     else:
                         entry["id"] = str(uuid.uuid4())[:8]
@@ -4998,7 +5007,30 @@ def _sync_from_gsheets(cfg_ref):
                         if hbl:
                             hbl_idx[hbl] = len(cfg_ref["shipments"]) - 1
                         added += 1
+            # 중복 정리: 시트에서 사라진 HBL(예: 'TBA')의 선적건이, 시트에 있는 선적건과
+            # 선적일·매입사·중량·Invoice가 같고 연결된 데이터가 전혀 없으면 옛 복제본으로 보고 삭제한다.
+            # (위 매칭 보완 전에 HBL을 바꿔 동기화해서 생긴 중복을 치우기 위함)
+            _ships_all = cfg_ref.get("shipments", [])
+            _linked_sids = ({r.get("shipment_id") for r in cfg_ref.get("processing_history", [])}
+                            | {a.get("shipment_id") for a in cfg_ref.get("contract_allocations", [])})
+            def _twin(a, b):
+                return (a.get("loading_date","") == b.get("loading_date","")
+                        and a.get("buyer_id","") == b.get("buyer_id","")
+                        and abs(float(a.get("weight_kg") or 0) - float(b.get("weight_kg") or 0)) < 1
+                        and abs(float(a.get("invoice_usd") or 0) - float(b.get("invoice_usd") or 0)) < 0.01)
+            _dup_removed = []
+            for _ds in list(_ships_all):
+                _dh = _ds.get("hbl","").strip()
+                if (not _dh or _dh in _sheet_hbls or _ds.get("id") in _linked_sids
+                        or _ds.get("final_amount_usd") or _ds.get("prov_paid_date") or _ds.get("final_paid_date")):
+                    continue
+                if any(_o is not _ds and _o.get("hbl","").strip() in _sheet_hbls and _twin(_ds, _o)
+                       for _o in _ships_all):
+                    _ships_all.remove(_ds)
+                    _dup_removed.append(_dh)
             log.append(f"선적: 추가 {added}건 / 업데이트 {updated}건"
+                       + (f" · HBL 변경 {', '.join(_renamed)}" if _renamed else "")
+                       + (f" · 중복 선적 삭제 {', '.join(_dup_removed)}" if _dup_removed else "")
                        + (f" ⚠️ 확장 열 숫자 오류로 무시 {_x_bad}행" if _x_bad else ""))
             if _status_trans:
                 _trans_str = ", ".join(f"{k} {v}건" for k, v in sorted(_status_trans.items()))
