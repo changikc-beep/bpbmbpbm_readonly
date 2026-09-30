@@ -1,0 +1,8 @@
+streamlit>=1.56,<1.60
+pandas>=2.2,<3.0
+pyarrow>=14,<18
+openpyxl
+gspread
+google-auth
+google-api-python-client
+plotly
