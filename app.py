@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -991,6 +991,110 @@ def _prov_invoice_calc(cfg, s):
     return round(round(pkg, 2) * float(s.get("weight_kg", 0) or 0), 2)
 
 
+def _inv_mismatch(cfg, s, tol=0.01):
+    """Invoice 금액이 가정산 계산값과 tol(기본 1%) 넘게 다르면 (계산값, 차이율%) 반환, 아니면 None."""
+    iv = float(s.get("invoice_usd") or 0)
+    if iv <= 0:
+        return None
+    calc = _prov_invoice_calc(cfg, s)
+    if calc and abs(calc - iv) / iv > tol:
+        return calc, (iv - calc) / calc * 100
+    return None
+
+def _prov_month_hint(cfg, s):
+    """Invoice 금액과 일치하는 INDEX 월 목록 — 매입사에 적용되는 INDEX(전용 INDEX 포함)의
+    월별 값으로 가정산 단가(소수 2자리) × 중량을 계산해 Invoice와 USD 1(또는 0.05%) 이내인 월.
+    Prov월 입력 실수를 바로 짚기 위한 힌트."""
+    iv = float(s.get("invoice_usd") or 0)
+    w  = float(s.get("weight_kg") or 0)
+    b  = next((x for x in cfg.get("buyers", []) if x.get("id") == s.get("buyer_id")), None)
+    if iv <= 0 or w <= 0 or not b:
+        return []
+    terms = _settle_terms(_get_contract_for_shipment(cfg, s.get("id", "")), b)
+    out = []
+    for m, row in sorted(_hm_for(cfg, b).items()):
+        _, _, _, pkg = bp_price(row["ni_index"], row["co_index"],
+                                b.get("ni_content", 0), b.get("co_content", 0),
+                                terms["ni_payable"], terms["co_payable"])
+        if abs(round(round(pkg, 2) * w, 2) - iv) <= max(1.0, iv * 0.0005):
+            out.append(m)
+    return out
+
+def _inv_hint_text(cfg, s):
+    """불일치 건 한 줄 설명: 'Prov월 2026-06 · 2026-07 INDEX로 계산하면 일치' 형태."""
+    pm = s.get("prov_month") or "—"
+    hint = [m for m in _prov_month_hint(cfg, s) if m != pm]
+    if hint:
+        return f"Prov월 {pm} · {', '.join(hint)} INDEX로 계산하면 Invoice와 일치"
+    return f"Prov월 {pm} · 일치하는 INDEX 월 없음 (중량·Invoice 금액 확인)"
+
+def _sync_checks(before, after):
+    """동기화 전후 비교 → [(구분, 문장)]. 구분: '변경' · '확인' · '해소'.
+    동기화가 제대로 됐는지 사람이 대조하던 항목(새 선적·HBL 변경·삭제·배치 없는 선적·
+    Invoice 불일치·중량 불일치·입출고 건수)을 한 번에 보여 준다."""
+    res = []
+    bs = {s["id"]: s for s in before.get("shipments", []) if s.get("id")}
+    a_s = {s["id"]: s for s in after.get("shipments", []) if s.get("id")}
+    hb = lambda s: (s.get("hbl") or "").strip() or "HBL미정"
+    _new = [hb(s) for i, s in a_s.items() if i not in bs]
+    _del = [hb(s) for i, s in bs.items() if i not in a_s]
+    _ren = [f"{hb(bs[i])} → {hb(s)}" for i, s in a_s.items() if i in bs and hb(bs[i]) != hb(s)]
+    _st  = [f"{hb(s)} {bs[i].get('status','provisional')}→{s.get('status','provisional')}"
+            for i, s in a_s.items() if i in bs and bs[i].get("status") != s.get("status")]
+    _inv = [f"{hb(s)} ${float(bs[i].get('invoice_usd') or 0):,.2f} → ${float(s.get('invoice_usd') or 0):,.2f}"
+            for i, s in a_s.items() if i in bs
+            and abs(float(bs[i].get("invoice_usd") or 0) - float(s.get("invoice_usd") or 0)) >= 0.01]
+    _pm  = [f"{hb(s)} {bs[i].get('prov_month','—')} → {s.get('prov_month','—')}"
+            for i, s in a_s.items() if i in bs and bs[i].get("prov_month") != s.get("prov_month")]
+    if _new: res.append(("변경", f"새 선적 {len(_new)}건: {', '.join(_new)}"))
+    if _ren: res.append(("변경", f"HBL 변경 {len(_ren)}건: {', '.join(_ren)}"))
+    if _del: res.append(("변경", f"삭제된 선적 {len(_del)}건: {', '.join(_del)}"))
+    if _st:  res.append(("변경", f"상태 변경 {len(_st)}건: {', '.join(_st)}"))
+    if _inv: res.append(("변경", f"Invoice 금액 변경 {len(_inv)}건: {', '.join(_inv)}"))
+    if _pm:  res.append(("변경", f"Prov월 변경 {len(_pm)}건: {', '.join(_pm)}"))
+    # 배치
+    _nb, _na = len(before.get("processing_history", [])), len(after.get("processing_history", []))
+    if _nb != _na:
+        res.append(("변경", f"배치 {_nb}건 → {_na}건"))
+    _sids_b = {r.get("shipment_id") for r in after.get("processing_history", [])}
+    _nobatch = [hb(s) for s in a_s.values() if s["id"] not in _sids_b]
+    if _nobatch:
+        res.append(("확인", f"배치 없는 선적 {len(_nobatch)}건: {', '.join(_nobatch)} — 손익·원료 원가에서 빠짐"))
+    _orph = sum(1 for r in after.get("processing_history", [])
+                if r.get("shipment_id") and r.get("shipment_id") not in a_s)
+    if _orph:
+        res.append(("확인", f"삭제된 선적에 연결된 배치 {_orph}건"))
+    # Invoice 불일치 — 새로 생긴 건은 원인 힌트와 함께, 해소된 건도 표시
+    _mis_b = {i for i, s in bs.items() if _inv_mismatch(before, s)}
+    for i, s in a_s.items():
+        _mm = _inv_mismatch(after, s)
+        if _mm and i not in _mis_b:
+            res.append(("확인", f"Invoice 불일치 {hb(s)}: 계산 ${_mm[0]:,.2f} 대비 {_mm[1]:+.1f}% — {_inv_hint_text(after, s)}"))
+        elif not _mm and i in _mis_b:
+            res.append(("해소", f"Invoice 불일치 해소: {hb(s)}"))
+    # 선적 중량 vs 배치 생산량 (2% 초과) — 새로 생긴 건만
+    def _wt_bad(cfg_):
+        out_by = defaultdict(float)
+        for r in cfg_.get("processing_history", []):
+            out_by[r.get("shipment_id")] += float(r.get("output_kg") or 0)
+        return {s["id"] for s in cfg_.get("shipments", [])
+                if s.get("id") in out_by and float(s.get("weight_kg") or 0) > 0
+                and abs(out_by[s["id"]] - float(s["weight_kg"])) / float(s["weight_kg"]) > 0.02}
+    _wb = _wt_bad(after) - _wt_bad(before)
+    if _wb:
+        res.append(("확인", f"선적 중량과 배치 생산량 2% 초과 차이: {', '.join(hb(a_s[i]) for i in _wb)}"))
+    # 입출고 건수
+    _cnt = lambda c: (sum(len(v.get("purchases", [])) for v in (c.get("raw_material_inventory") or {}).values()),
+                      len(c.get("dispatch_records", [])), len(c.get("direct_sales", [])))
+    _cb, _ca = _cnt(before), _cnt(after)
+    for _lbl, _x, _y in zip(("입고", "임가공 출고", "직접판매"), _cb, _ca):
+        if _x != _y:
+            res.append(("변경", f"{_lbl} {_x}건 → {_y}건"))
+    if not res:
+        res.append(("변경", "바뀐 내용 없음"))
+    return res
+
+
 # ── 차트 공통 스타일 (plotly) — 색 규칙: BP 파랑 / BM 초록 / 흑자 초록 / 적자 빨강 / 총계 보라 ──
 _C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#2383e2", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#f59e0b"
 _C_COST = {"원료 매입비": "#6b7280", "임가공비(순)": "#a16207", "수출비": "#0e7490", "보관비": "#7c3aed"}
@@ -1405,27 +1509,6 @@ def _pnl_agg(rows, key_fn):
 with st.spinner("데이터 불러오는 중..."):     # 캐시 히트 시엔 표시되지 않음
     cfg = load_cfg()
 
-# ── 기존 배치 스크랩 매각단가 일괄 기본값 적용 (미설정 배치만) ─────────────
-if not READ_ONLY:
-    _mig_buyers = {b["id"]: b for b in cfg.get("buyers", [])}
-    _mig_ships  = {s["id"]: s for s in cfg.get("shipments", [])}
-    _mig_changed = False
-    for _mrec in cfg.get("processing_history", []):
-        if _mrec.get("scrap_sale_per_kg"):
-            continue  # 이미 설정된 배치는 건너뜀
-        _mbid = (_mrec.get("buyer_id","") or
-                 _mig_ships.get(_mrec.get("shipment_id",""), {}).get("buyer_id",""))
-        _mprod = _mig_buyers.get(_mbid, {}).get("product","").upper()
-        if "BP" in _mprod:
-            _mrec["scrap_sale_per_kg"] = 5.5
-            _mig_changed = True
-        elif "BM" in _mprod:
-            _mrec["scrap_sale_per_kg"] = 3.2
-            _mig_changed = True
-    if _mig_changed:
-        save_cfg(cfg)
-# ─────────────────────────────────────────────────────────────────────────────
-
 # ── 선적건 날짜 필드 정합성 정리 (오타 등으로 깨진 값 → 공란 처리) ─────────
 if not READ_ONLY:
     _dmig_changed = False
@@ -1452,38 +1535,58 @@ _latest_idx = sorted(cfg.get("index_history", []), key=lambda x: x["month"], rev
 NI = _latest_idx[0]["ni_index"] if _latest_idx else 17093.18
 CO = _latest_idx[0]["co_index"] if _latest_idx else 56598.72
 
-with st.sidebar:
-    st.title("현황")
+# ── 환율 — INDEX·환율·판관비에 저장된 최근 월 USD/KRW (자동 조회됨, 미등록 시 1,380) ──
+_xr_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"])
+XR = float(_xr_rates[-1]["rate"]) if _xr_rates else 1380.0
 
-    # ── 환율 — INDEX·환율·판관비 서브페이지에 저장된 최근 월 USD/KRW 를 기본값으로, 세션에서 덮어쓰기 가능 ──
-    _xr_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"])
-    _xr_dflt  = float(_xr_rates[-1]["rate"]) if _xr_rates else 1380.0
-    XR = st.number_input("💱 USD / KRW", value=_xr_dflt, step=1.0, format="%.0f", key="xr_input",
-                         help=("INDEX·환율·판관비 서브페이지 " + _xr_rates[-1]["month"] + " 등록값") if _xr_rates else "미등록 — 기본값 1,380")
-    st.divider()
+st.title("BP / BM 재고·손익 관리")
 
-    # ── 요약 한 줄 (경고·재고 상세는 홈의 할 일 패널로 일원화) ──
-    _sb_ships  = cfg.get("shipments", [])
-    _sb_nosett = sum(1 for s in _sb_ships if not s.get("status","") or s.get("status") == "provisional")
-    st.caption(f"선적 {len(_sb_ships)}건 · 미확정 {_sb_nosett}건")
-    _sb_meta = cfg.get("_meta") or {}
-    if _sb_meta.get("saved_at"):
-        st.caption(f"마지막 저장 {_sb_meta['saved_at'][:16].replace('T', ' ')} (rev {_sb_meta.get('rev', 0)})")
-
-    if _latest_idx:
-        st.caption(f"INDEX 기준: {_latest_idx[0]['month']}  Ni \\${NI:,.0f} / Co \\${CO:,.0f}")
-
-    # ── 수동 새로고침 ────────────────────────────────────────────────────────
-    # 캐시 TTL(config 120초/문서 600초) 내에 다른 기기에서 저장된 변경을
-    # 즉시 반영해야 할 때 사용. 본인 저장은 자동으로 캐시가 비워지므로 불필요.
-    st.divider()
-    if st.button("데이터 새로고침", use_container_width=True,
-                 help="Google Drive에서 최신 데이터를 다시 불러옵니다"):
+# ── 상태 바 (예전 사이드바 대체) — 저장 시각·INDEX 기준 + 새로고침·시트 동기화 버튼 ──
+# 동기화 함수는 파일 뒤쪽에 정의되어 있으므로, 버튼은 요청 플래그만 세우고 실제 동기화는
+# 스크립트 끝에서 실행한 뒤 다시 그린다. 결과(전후 점검)는 여기 상태 바 아래에 표시.
+_sb_meta = cfg.get("_meta") or {}
+_sb_parts = []
+if _sb_meta.get("saved_at"):
+    _sb_parts.append(f"마지막 저장 {_sb_meta['saved_at'][:16].replace('T', ' ')} (rev {_sb_meta.get('rev', 0)})")
+if _latest_idx:
+    _sb_parts.append(f"INDEX {_latest_idx[0]['month']}  Ni \\${NI:,.0f} / Co \\${CO:,.0f}")
+_sb_parts.append(f"USD/KRW {XR:,.0f}")
+if st.session_state.get("last_sync_time"):
+    _sb_parts.append(f"마지막 동기화 {st.session_state['last_sync_time'][5:16]}")
+_hb1, _hb2, _hb3 = st.columns([7, 1.3, 1.3])
+with _hb1:
+    st.caption("  ·  ".join(_sb_parts))
+with _hb2:
+    if st.button("새로고침", use_container_width=True, key="hdr_refresh",
+                 help="Google Drive에서 최신 데이터를 다시 불러옵니다 (다른 기기에서 저장한 변경 반영)"):
         _load_cfg_drive.clear()
         _fifo_lot_trace.clear()
         st.rerun()
-
-st.title("BP / BM 재고·손익 관리")
+with _hb3:
+    if not READ_ONLY:
+        st.button("시트 동기화", type="primary", use_container_width=True, key="hdr_sync",
+                  on_click=lambda: st.session_state.__setitem__("_do_sync", True),
+                  help="Google 시트 내용을 바로 반영합니다. 결과와 전후 점검이 이 아래에 표시됩니다.")
+_sync_rep = st.session_state.get("_sync_report")
+if _sync_rep:
+    with st.expander(f"동기화 결과 — {_sync_rep['time']}", expanded=True):
+        if _sync_rep.get("error"):
+            st.error(f"동기화 실패: {_sync_rep['error']}")
+        else:
+            for _lv, _tx in _sync_rep.get("checks", []):
+                if _lv == "확인":
+                    st.warning(_tx.replace("$", "\\$"))
+                elif _lv == "해소":
+                    st.success(_tx.replace("$", "\\$"))
+                else:
+                    st.markdown("- " + _tx.replace("$", "\\$"))
+            with st.expander("동기화 로그", expanded=False):
+                for _ll in (_sync_rep.get("log") or "").split("\n"):
+                    if _ll.strip():
+                        st.caption(_ll)
+        if st.button("닫기", key="sync_rep_close"):
+            st.session_state.pop("_sync_report", None)
+            st.rerun()
 
 # ── 페이지 내비게이션 ─────────────────────────────────────────────────────────
 # st.tabs 는 보이지 않는 탭의 코드까지 매 조작마다 전부 실행한다(스타일 표 40여 개·
@@ -2202,9 +2305,12 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _inv_calc = round(prov_pkg * new_wkg, 2)
                         _inv_gap  = (_inv_calc - new_iusd) / new_iusd * 100
                         if abs(_inv_gap) > 1.0:
+                            _hint_s = dict(s, invoice_usd=new_iusd, weight_kg=new_wkg,
+                                           buyer_id=buyer_opts.get(new_b, s.get("buyer_id", "")),
+                                           prov_month=new_pm)
                             st.warning(f"Invoice 총액 \\${new_iusd:,.2f}이 가정산 단가 기준 계산값 \\${_inv_calc:,.2f} "
                                        f"(\\${prov_pkg:.2f}/kg × {new_wkg:,.0f} kg)과 {_inv_gap:+.1f}% 차이납니다 — "
-                                       "입력 오타 또는 Provisional INDEX 기준월을 확인하세요.")
+                                       + _inv_hint_text(cfg, _hint_s).replace("$", "\\$") + ".")
 
                     # Provisional 조건 표시
                     if _settle_ct:
@@ -5265,9 +5371,26 @@ def _sync_from_gsheets(cfg_ref):
             ph_ref   = cfg_ref.setdefault("processing_history", [])
             _grouped = {}   # (sid, pid, scid) → [행]
             _b_skip  = []
+            # 열 이름으로 읽는다 — BP매각단가·스크랩매각단가처럼 안 쓰는 열은 시트에서 지워도 되고
+            # 순서를 바꿔도 된다. 필수 열(HBL·임가공사·스크랩유형·생산) 이름을 못 찾으면 예전처럼 순서로 읽음.
+            _bh = [h.strip().replace(" ", "").lower() for h in rows[0]]
+            def _bcol(*keys):
+                for _i, _h in enumerate(_bh):
+                    if any(_h.startswith(k) for k in keys):
+                        return _i
+                return None
+            _BC = {"hbl": _bcol("hbl"), "proc": _bcol("임가공사"), "sc": _bcol("스크랩유형", "스크랩종류"),
+                   "inp": _bcol("투입"), "out": _bcol("생산"), "fee": _bcol("임가공비"),
+                   "bps": _bcol("bp매각", "bm매각", "bp/bm매각"), "scs": _bcol("스크랩매각"), "notes": _bcol("비고")}
+            if any(_BC[k] is None for k in ("hbl", "proc", "sc", "out")):
+                _BC = dict(zip(("hbl", "proc", "sc", "inp", "out", "fee", "bps", "scs", "notes"), range(9)))
+                log.append("배치 탭: 열 이름을 찾지 못해 열 순서(9열)로 읽음")
             for row in rows[1:]:
-                row = [c.strip() for c in row] + [""] * 9
-                hbl, proc_nm, sc_nm, inp, out, fee, bps, scs, notes = row[:9]
+                row = [c.strip() for c in row]
+                _bget = lambda k: (row[_BC[k]] if _BC[k] is not None and _BC[k] < len(row) else "")
+                hbl, proc_nm, sc_nm, inp, out, fee, bps, scs, notes = (
+                    _bget("hbl"), _bget("proc"), _bget("sc"), _bget("inp"), _bget("out"),
+                    _bget("fee"), _bget("bps"), _bget("scs"), _bget("notes"))
                 if not hbl or not out:
                     continue
                 sid  = _hbl_to_sid.get(hbl)
@@ -5471,6 +5594,32 @@ def _sync_from_gsheets(cfg_ref):
     return True, "\n".join(log)
 
 
+def _run_sync_and_report(cfg_ref):
+    """시트 동기화 → 저장 → 전후 점검 결과를 session_state['_sync_report']에 남긴다.
+    상단 '시트 동기화' 버튼과 동기화·백업 페이지의 '지금 동기화'가 같이 쓴다. 성공 여부 반환."""
+    import copy as _copy
+    from datetime import datetime as _dt
+    st.toast("시트 동기화 중...")
+    _before = _copy.deepcopy(cfg_ref)
+    _now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    with st.spinner("Google Sheets에서 데이터 가져오는 중..."):
+        _ok, _msg = _sync_from_gsheets(cfg_ref)
+    if not _ok:
+        st.session_state["_sync_report"] = {"time": _now, "error": _msg}
+        return False
+    save_cfg(cfg_ref)
+    try:
+        _checks = _sync_checks(_before, cfg_ref)
+    except Exception as e:          # 점검 실패가 동기화 자체를 막지 않도록
+        _checks = [("확인", f"전후 점검 중 오류: {e}")]
+    st.session_state["_sync_report"] = {"time": _now, "checks": _checks, "log": _msg}
+    st.session_state["last_sync_time"] = _now
+    st.session_state["last_sync_log"] = _msg
+    st.session_state["sync_preview_ready"] = False
+    st.session_state["sync_preview_log"] = None
+    return True
+
+
 # TAB 11 — INDEX 이력
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_MASTER and _sub == SUB_SYNC:
@@ -5528,22 +5677,11 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
         st.markdown("---")
         if st.button("지금 동기화", type="primary", use_container_width=True):
             if not st.session_state.get("sync_preview_ready"):
-                st.warning("⚠️ 동기화 전에 **미리보기**를 먼저 확인하세요.")
+                st.warning("⚠️ 동기화 전에 **미리보기**를 먼저 확인하세요. (미리보기 없이 바로 하려면 상단 '시트 동기화' 버튼)")
             else:
-                with st.spinner("Google Sheets에서 데이터 가져오는 중..."):
-                    _ok, _msg = _sync_from_gsheets(cfg)
-                if _ok:
-                    save_cfg(cfg)
-                    from datetime import datetime as _dt
-                    _now_str = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
-                    st.session_state["last_sync_time"] = _now_str
-                    st.session_state["last_sync_log"] = _msg
-                    st.session_state["sync_preview_ready"] = False
-                    st.session_state["sync_preview_log"] = None
-                    st.toast("✅ 동기화 완료")
-                    st.rerun()
-                else:
-                    st.error(f"동기화 실패: {_msg}")
+                if _run_sync_and_report(cfg):
+                    st.toast("동기화 완료 — 결과는 화면 상단에 표시됩니다")
+                st.rerun()
         _last_sync = st.session_state.get("last_sync_time")
         if _last_sync:
             st.caption(f"마지막 동기화: {_last_sync}")
@@ -5566,7 +5704,8 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
             "HBL / Invoice No / 출하일 / 매입사 / 중량 / Invoice금액 / Prov월 / Final월 / 상태 / ETD / ETA / 수출비 / "
             "수분(%) / 매입사Ni / 매입사Co / Ni기준 / Co기준 / 기타조정 / 조정사유 / "
             "가정산입금일 / 가정산입금액 / 확정산입금일 / 확정산입금액 / 계약ID / 비고(25열)  \n"
-            "**배치 탭 (9열)** HBL / 임가공사 / 스크랩 유형 / 투입(kg) / 생산(kg) / 임가공비 / BP매각단가 / 스크랩매각단가 / 비고  \n"
+            "**배치 탭 (열 이름으로 읽음, 순서 무관)** HBL / 임가공사 / 스크랩유형 / 생산(kg) 필수, "
+            "투입(kg) / 임가공비 / 비고 선택. BP매각단가·스크랩매각단가 열은 손익에 쓰이지 않아 삭제해도 됩니다  \n"
             "**컨테이너 탭 (7열)** HBL / 컨테이너번호 / 중량(kg) / Invoice(USD) / Ni(%) / Co(%) / 수분(%)  \n"
             "**INDEX 탭** 기준월 / Ni / Co / 매입사(빈칸=표준) · **환율 탭** 기준월 / EUR-USD / USD-KRW · "
             "**판관비 탭** 기준월 / 판관비 / 기타 · **기초재고 탭** 스크랩유형 / 기준일 / 수량 / 단가 / 톤백  \n"
@@ -6371,15 +6510,15 @@ if _page == PG_HOME:
                       _td_hbls(_td_eta), "선적·계약 > 선적 정산"))
 
     # 7) Invoice 금액이 가정산 단가×중량과 1% 이상 어긋난 건 (입력 오타·기준월 오류 의심)
-    _td_inv_bad = []
-    for _ts in _td_ships:
-        _iv = float(_ts.get("invoice_usd") or 0)
-        _ic = _prov_invoice_calc(cfg, _ts) if _iv > 0 else None
-        if _ic and abs(_ic - _iv) / _iv > 0.01:
-            _td_inv_bad.append(_ts)
+    _td_inv_bad = [_ts for _ts in _td_ships if _inv_mismatch(cfg, _ts)]
     if _td_inv_bad:
+        # 건별 원인 힌트: 어느 INDEX 월로 계산하면 Invoice와 맞는지
+        _td_inv_det = "; ".join(f"{(_ts.get('hbl') or '').strip() or 'HBL미정'} ({_inv_hint_text(cfg, _ts)})"
+                                for _ts in _td_inv_bad[:4])
+        if len(_td_inv_bad) > 4:
+            _td_inv_det += f" 외 {len(_td_inv_bad) - 4}건"
         _todo.append(("🟡", f"Invoice 금액 불일치 {len(_td_inv_bad)}건",
-                      _td_hbls(_td_inv_bad) + " — 가정산 단가×중량 대비 1% 초과 차이", "선적·계약 > 선적 정산"))
+                      _td_inv_det + " — 가정산 단가×중량 대비 1% 초과 차이", "선적·계약 > 선적 정산"))
 
     # 8) 선적 중량 vs 연결 배치 생산량 합이 2% 이상 다른 건 (배치 누락·중복 의심)
     _td_out_by_sid = defaultdict(float)
@@ -7264,4 +7403,11 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
                         ]
                         save_cfg(cfg)
                         st.rerun()
+
+# ── 상단 '시트 동기화' 버튼 처리 ─────────────────────────────────────────────
+# 동기화 함수가 파일 중간에 정의되므로 버튼은 플래그만 세우고, 여기(스크립트 끝)에서 실행한 뒤
+# 다시 그린다. 결과·전후 점검은 상단 상태 바 아래 '동기화 결과'에 표시된다.
+if st.session_state.pop("_do_sync", False) and not READ_ONLY:
+    _run_sync_and_report(cfg)
+    st.rerun()
 
