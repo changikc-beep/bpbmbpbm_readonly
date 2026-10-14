@@ -5602,11 +5602,13 @@ def _sync_from_gsheets(cfg_ref):
                                 "received_kg": _to_float(rec), "input_kg": _to_float(inp),
                                 "output_kg": _to_float(out), "byproduct_kg": _to_float(byp),
                                 "defect_kg": _to_float(dfc), "notes": nt})
-            cfg_ref["production_monthly"] = sorted(_pm_new, key=lambda r: (r["month"], r["processor_id"], r["scrap_type_id"]))
-            _pm_msg = f"생산: {len(_pm_new)}행 (최근 {max((r['month'] for r in _pm_new), default='—')})"
             if _pm_skip:
-                _pm_msg += f" ⚠️ 월 형식·임가공사·스크랩명 오류 스킵: {', '.join(sorted(_pm_skip)[:5])}"
-            log.append(_pm_msg)
+                # 한 행이라도 못 읽으면 교체하지 않는다 — 빠진 달 때문에 재고·회수율(배치 투입 역산)이 조용히 틀어지는 것 방지
+                log.append(f"⚠️ 생산 탭 반영 안 함 (기존 {len(cfg_ref.get('production_monthly', []))}행 유지) — "
+                           f"월 형식·임가공사·스크랩명 오류: {', '.join(sorted(_pm_skip)[:5])}")
+            else:
+                cfg_ref["production_monthly"] = sorted(_pm_new, key=lambda r: (r["month"], r["processor_id"], r["scrap_type_id"]))
+                log.append(f"생산: {len(_pm_new)}행 (최근 {max((r['month'] for r in _pm_new), default='—')})")
         except Exception as e:
             log.append(f"생산 탭 오류: {e}")
 
@@ -6147,11 +6149,11 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
             import requests as _req
             _existing_months = {r["month"] for r in cfg.get("eur_usd_rates", [])}
             _saved, _skipped, _failed = [], [], []
-            _today = _today()
+            _td = _today()
             for _mi in range(int(_fetch_months)):
                 # N개월 전부터 이번 달까지 역순 순회
-                _y = _today.year
-                _m = _today.month - _mi
+                _y = _td.year
+                _m = _td.month - _mi
                 while _m <= 0:
                     _m += 12; _y -= 1
                 _month_str = f"{_y}-{_m:02d}"
@@ -6162,7 +6164,7 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
                 import calendar
                 _last_day = calendar.monthrange(_y, _m)[1]
                 # 미래 월이면 오늘 날짜 기준
-                _fetch_date = min(date(_y, _m, _last_day), _today).isoformat()
+                _fetch_date = min(date(_y, _m, _last_day), _td).isoformat()
                 try:
                     _resp = _req.get(
                         f"https://api.frankfurter.app/{_fetch_date}?from=EUR&to=USD",
@@ -7185,14 +7187,13 @@ if _page == PG_HOME and _sub == SUB_DASH:
                          "보관비": round(_mv["stor"], 2),
                          "실질 손익": round(_mv["bp"] - _mv["raw"] - _mv["pf"] - _mv["eu"] - _mv["stor"], 2),
                          "생산(kg)": _mv["out"], "선적": _mv["cnt"], "Invoice": _mv["inv"]})
-    # 전월 대비: 데이터가 있는 최근 두 달을 비교 (이번 달 실적이 아직 없으면 직전 두 달)
     # 증감은 진행 중인 이번 달(한국 시간)을 빼고, 실적이 있는 마감 월 중 최근 두 달을 비교
     _mo_done = [r for r in _mo_rows if r["월"] < _today().strftime("%Y-%m")]
     _mo_last, _mo_prev = (_mo_done[-1], _mo_done[-2]) if len(_mo_done) >= 2 else (None, None)
 
     _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
     _yoy_sub      = f"전년 동기 {len(_yr_ships) - len(_yr_ships_ly):+d}건"
-    _yr_input_kg  = sum(float(r.get("input_kg",0) or 0) for r in _yr_ph) or 1
+    _yr_input_kg  = sum(_ph_input_kg(r) for r in _yr_ph) or 1
     _conv_sub     = f"투입 대비 전환율 {_yr_out / _yr_input_kg * 100:.1f}%"
     _inv_sub      = f"평균 ${(_yr_inv / len(_yr_ships) / 1000):.0f}k / 건" if _yr_ships else "선적 없음"
     _margin_pct   = (_yr_real / _yr_bp * 100) if _yr_bp else 0
@@ -7397,22 +7398,31 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
     with st.container(border=True):
         st.markdown("**재고 실사 입력**")
         st.caption("월말 창고 실물 수량을 넣으면 앱 추정 재고와의 차이가 위 '생산·재고'에 표시됩니다. "
+                   "센 제품만 넣으세요 — 빈칸은 저장하지 않습니다(재고가 실제로 0이면 0 입력). "
                    "차이 사유를 비고에 남기면 다음 달부터 추세를 볼 수 있습니다.")
+        _cnt_kg = lambda p: (_counts.get((_mc_m, p)) or {}).get("kg")
         with st.form("stock_count_form"):
             _sc1, _sc2, _sc3 = st.columns([1, 1, 3])
             with _sc1: _in_bp = st.number_input("BP 실사 (kg)", min_value=0.0, step=100.0, format="%.0f",
-                                                value=float((_counts.get((_mc_m, "BP")) or {}).get("kg") or 0))
+                                                value=_cnt_kg("BP"), placeholder="미실사")
             with _sc2: _in_bm = st.number_input("BM 실사 (kg)", min_value=0.0, step=100.0, format="%.0f",
-                                                value=float((_counts.get((_mc_m, "BM")) or {}).get("kg") or 0))
-            with _sc3: _in_nt = st.text_input("비고", value=(_counts.get((_mc_m, "BP")) or {}).get("note", ""))
+                                                value=_cnt_kg("BM"), placeholder="미실사")
+            with _sc3: _in_nt = st.text_input("비고", value=((_counts.get((_mc_m, "BP")) or _counts.get((_mc_m, "BM")) or {})
+                                                            .get("note", "")))
             if st.form_submit_button(f"{_mc_m} 실사 저장"):
-                _keep = [c for c in cfg.get("stock_counts", []) if c.get("month") != _mc_m]
-                for _prod, _kg in (("BP", _in_bp), ("BM", _in_bm)):
-                    _keep.append({"month": _mc_m, "product": _prod, "kg": float(_kg), "note": _in_nt.strip(),
-                                  "saved_at": _now().strftime("%Y-%m-%d %H:%M"),
-                                  "app_estimate_kg": round(_est[_prod])})
-                cfg["stock_counts"] = sorted(_keep, key=lambda c: (c["month"], c["product"]))
-                save_cfg(cfg); st.toast(f"{_mc_m} 재고 실사 저장"); st.rerun()
+                # 입력한 제품만 저장(빈칸은 기존 기록 유지) — 미입력이 '0 kg 실사 완료'로 남지 않게
+                _new = {_prod: _kg for _prod, _kg in (("BP", _in_bp), ("BM", _in_bm)) if _kg is not None}
+                if not _new:
+                    st.warning("BP·BM 중 하나 이상 실사 수량을 입력하세요.")
+                else:
+                    _keep = [c for c in cfg.get("stock_counts", [])
+                             if not (c.get("month") == _mc_m and c.get("product") in _new)]
+                    for _prod, _kg in _new.items():
+                        _keep.append({"month": _mc_m, "product": _prod, "kg": float(_kg), "note": _in_nt.strip(),
+                                      "saved_at": _now().strftime("%Y-%m-%d %H:%M"),
+                                      "app_estimate_kg": round(_est[_prod])})
+                    cfg["stock_counts"] = sorted(_keep, key=lambda c: (c["month"], c["product"]))
+                    save_cfg(cfg); st.toast(f"{_mc_m} 재고 실사 저장 ({', '.join(_new)})"); st.rerun()
     _mcb1, _mcb2 = st.columns([1, 3])
     with _mcb1:
         if not _closed:

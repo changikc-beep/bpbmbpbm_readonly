@@ -36,6 +36,23 @@ h0 = _find("def _now():");              h1 = _find("# ── Sidebar ─", h0)
 x0 = _find("def generate_excel_report(");   x1 = _find("# TAB 0 — 요약 보고서", x0)
 exec(compile("\n".join(LINES[h0:h1]), "helpers", "exec"), NS)
 exec(compile("\n".join(LINES[x0:x1]), "excel", "exec"), NS)
+s0 = _find("_GSHEET_NAME  ="); s1 = _find("def _run_sync_and_report(", s0)
+exec(compile("\n".join(LINES[s0:s1]), "sync", "exec"), NS)
+
+
+class _FakeSheet:
+    """Stands in for a gspread spreadsheet: {tab name: rows}. Missing tabs raise like gspread."""
+    def __init__(self, tabs): self.tabs = tabs
+    def worksheet(self, name):
+        if name not in self.tabs:
+            raise KeyError(name)
+        rows = self.tabs[name]
+        return type("WS", (), {"get_all_values": lambda _self: [list(r) for r in rows]})()
+
+
+def run_sync(cfg, tabs):
+    NS["_gsheet_connect"] = lambda: type("GC", (), {"open": lambda _self, _n: _FakeSheet(tabs)})()
+    return NS["_sync_from_gsheets"](cfg)
 
 
 # ── synthetic cfg ────────────────────────────────────────────────────────────
@@ -225,6 +242,27 @@ def main():
     af = {"shipments": [{"id": "1", "hbl": "REAL1"}, {"id": "3", "hbl": "NEW"}], "processing_history": []}
     txt = " | ".join(t for _, t in f["_sync_checks"](bf, af))
     check("_sync_checks new/rename/delete", "새 선적 1건: NEW" in txt and "TBA → REAL1" in txt and "삭제된 선적 1건: OLD" in txt)
+
+    # 시트 동기화: 투입이 빈 배치는 선적월까지의 생산 보고 회수율로 역산 (계약 전환율보다 우선)
+    def _sync_cfg():
+        return {"buyers": [], "processors": [{"id": "P", "name": "Sungeel", "conditions": {"S": {"conversion_rate": 70.0}}}],
+                "scrap_types": [{"id": "S", "name": "양극", "product": "BP"}],
+                "shipments": [{"id": "X", "hbl": "H1", "loading_date": "2026-02-10"}],
+                "processing_history": [], "dispatch_records": []}
+    prod_tab = [["월", "임가공사", "스크랩유형", "입고", "투입", "생산"],
+                ["2026-01", "Sungeel", "양극", "1000", "600", "480"],
+                ["2026-03", "Sungeel", "양극", "0", "200", "100"]]     # after the loading month → not used
+    batch_tab = [["HBL", "임가공사", "스크랩유형", "투입", "생산"], ["H1", "Sungeel", "양극", "", "400"]]
+    sc = _sync_cfg()
+    ok_s, _ = run_sync(sc, {"생산": prod_tab, "배치": batch_tab})
+    b = sc["processing_history"][0] if sc["processing_history"] else {}
+    check("sync: blank batch input from production recovery up to loading month",
+          ok_s and len(sc["production_monthly"]) == 2 and abs((b.get("input_kg") or 0) - 500.0) < 1e-9
+          and b.get("conversion_rate_pct") == 80.0)
+    sc2 = _sync_cfg(); sc2["production_monthly"] = [{"month": "2026-01", "processor_id": "P", "scrap_type_id": "S"}]
+    _, log2 = run_sync(sc2, {"생산": prod_tab + [["2026-04", "Sungeel하이텍", "양극", "0", "10", "8"]]})
+    check("sync: production tab with a bad row keeps existing rows",
+          len(sc2["production_monthly"]) == 1 and "생산 탭 반영 안 함" in log2)
 
     ok = all(RESULTS)
     print(f"\n{'ALL PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
