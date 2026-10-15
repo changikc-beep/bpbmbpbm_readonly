@@ -1150,7 +1150,8 @@ def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None
     """모든 plotly 차트에 같은 배경·격자·글꼴·여백·범례를 적용한다."""
     fig.update_layout(
         height=height,
-        title=dict(text=title, font=dict(size=13, color="#e5e5e5"), x=0, xanchor="left") if title else None,
+        # empty text, not None: plotly.js draws the literal "undefined" for a None title
+        title=dict(text=title or "", font=dict(size=13, color="#e5e5e5"), x=0, xanchor="left"),
         margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
         plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
         font=dict(color="#c5c5c5", size=11),
@@ -6717,21 +6718,44 @@ def _excel_report_cached(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, ca
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_HOME and _sub == SUB_DASH:
 
-    # ── 헤더 바 ──────────────────────────────────────────────────────────────
-    ro1, ro2, _ro3 = st.columns([1, 1, 2], vertical_alignment="bottom")
-    with ro1:
+    # ── 필터 바: 분기 · 매입사 · 제품 (요약 카드·차트에 적용) + 엑셀 보고서 ──
+    def _qtr(ym):
+        """'YYYY-MM…' → 'YYYY Q#'."""
+        return f"{ym[:4]} Q{(int(ym[5:7]) - 1) // 3 + 1}"
+    def _qtr_prev(q):
+        _y, _n = int(q[:4]), int(q[-1])
+        return f"{_y - 1} Q4" if _n == 1 else f"{_y} Q{_n - 1}"
+    _ship_qs = sorted({_qtr(s["loading_date"]) for s in cfg.get("shipments", [])
+                       if _valid_date_str(s.get("loading_date", ""))})
+    _q_now   = _qtr(_today().isoformat())
+    _q_opts  = sorted(set(_ship_qs) | {_q_now}, reverse=True)
+    _q_dflt  = max([q for q in _ship_qs if q <= _q_now], default=_q_now)   # 실적이 있는 최근 분기
+    _f_buyers = {f"{b['name']} ({b.get('product', '?')})": b["id"] for b in cfg["buyers"]
+                 if any(s.get("buyer_id") == b["id"] for s in cfg.get("shipments", []))}
+    _fc = st.columns([1, 1.4, 0.8, 1, 1], vertical_alignment="bottom")
+    with _fc[0]:
+        _f_q = st.selectbox("분기", _q_opts, index=_q_opts.index(_q_dflt), key="home_q",
+                            help="요약 카드와 막대 차트의 기간입니다. 증감은 직전 분기와 비교합니다.")
+    with _fc[1]:
+        _f_b = st.selectbox("매입사", ["전체"] + sorted(_f_buyers), key="home_buyer")
+    with _fc[2]:
+        _f_p = st.selectbox("제품", ["전체", "BP", "BM"], key="home_prod")
+    with _fc[3]:
         _rpt_month_opts = hist_opts if hist_opts else [f"{_today().year}-{_today().month:02d}"]
         rpt_month = st.selectbox("보고서 기준월", _rpt_month_opts, key="rpt_month_sel",
                                  help="엑셀 보고서의 INDEX 기준월입니다. 화면 수치에는 영향이 없습니다.")
-    with ro2:
+    with _fc[4]:
         _slot_xl = st.container()      # 엑셀 보고서 다운로드 (아래에서 채움)
 
     # ── 화면 배치: 계산 순서와 무관하게 표시 위치를 고정 ──
-    #    KPI → (할 일 | 미수 현금 전망) → 간이 현금 전망 → 월별 손익 구성
+    #    KPI 5 → (매입사별 | 월별 추이) → (스크랩 유형별 | 정산 상태 | 임가공사별) → 운영 현황
+    #    → (할 일 | 미수 현금 전망) → 간이 현금 전망
     _slot_kpi   = st.container()
+    _g1         = st.columns([1, 2], gap="small")
+    _g2         = st.columns(3, gap="small")
+    _slot_ops   = st.container()
     _hl, _hr    = st.columns(2, gap="medium")
     _slot_cash  = st.container()
-    _slot_chart = st.container()
 
     # ══════════════════════════════════════════════════════════════════════════
     # 할 일 패널 — 앱 곳곳에 흩어진 경고를 한 곳에 모은 액션 목록
@@ -7138,125 +7162,168 @@ if _page == PG_HOME and _sub == SUB_DASH:
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-    # ── 공통 데이터 준비 ──────────────────────────────────────────────────────
-    _rpt_ships    = cfg.get("shipments", [])
-    _rpt_ph_all   = cfg.get("processing_history", [])
-    _rpt_buyer_m0 = {b["id"]: b for b in cfg["buyers"]}
-    _rpt_ship_m0  = {s["id"]: s for s in _rpt_ships}
+    # ── 공통 데이터: 배치별 손익(손익 탭과 같은 엔진) + 필터 ──────────────────────
+    _rpt_ships  = cfg.get("shipments", [])
+    _hp_rows    = _batch_pnl_rows(cfg, _pnl_context(cfg))
+    _f_bid      = _f_buyers.get(_f_b)
+    def _f_ship_ok(s):
+        _b = _td_buyers.get(s.get("buyer_id", ""), {})
+        return ((not _f_bid or s.get("buyer_id") == _f_bid)
+                and (_f_p == "전체" or (_b.get("product") or "").upper() == _f_p))
+    def _f_row_ok(x):
+        return ((not _f_bid or x["buyer"].get("id") == _f_bid)
+                and (_f_p == "전체" or x["product"] == _f_p))
+    _f_rows  = [x for x in _hp_rows if x["month"] and x["sid"] and _f_row_ok(x)]   # HBL 연결 배치만
+    _f_ships = [s for s in _rpt_ships if _valid_date_str(s.get("loading_date", "")) and _f_ship_ok(s)]
 
-    # ── 연간 누계 요약 ────────────────────────────────────────────────────────
-    _cur_year = _today().year
-    _yr_ph    = [r for r in _rpt_ph_all
-                 if (_rpt_ship_m0.get(r.get("shipment_id",""),{}).get("loading_date","") or "")[:4] == str(_cur_year)]
-    _yr_ships = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year)]
-    _home_rev = _batch_revenue_map(cfg)   # 매출 = 선적 확정액(없으면 가정산 Invoice) 배분
-    _yr_bp    = sum(_rev_of(r, _home_rev) for r in _yr_ph)
-    _yr_pf    = sum(float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _yr_ph)
-    _yr_eu    = sum(_ph_export_usd(r, cfg) for r in _yr_ph)
-    _yr_out   = sum(float(r.get("output_kg",0) or 0) for r in _yr_ph)
-    _yr_inv   = sum(float(s.get("invoice_usd",0) or 0) for s in _yr_ships)
-    # 관리회계 기준: 원료비(FIFO 우선)·보관비까지 차감한 실질 손익 (판관비 제외)
-    _rctx     = _pnl_context(cfg)          # 손익 탭과 같은 엔진 — 탭 실행 순서 무관
-    _yr_raw   = sum(_rctx["rmc_fifo"](r)[0] * _ph_input_kg(r) for r in _yr_ph)
-    _yr_stor  = sum(_rctx["eff_storage"](r) for r in _yr_ph)
-    _yr_real  = _yr_bp - _yr_raw - _yr_pf - _yr_eu - _yr_stor
+    def _q_stats(q):
+        """분기 q의 요약 — 매출·손익은 HBL에 연결된 배치 기준(손익 탭과 동일), 건수는 선적 기준."""
+        _rs = [x for x in _f_rows if _qtr(x["month"]) == q]
+        _ss = [s for s in _f_ships if _qtr(s["loading_date"]) == q]
+        _rev = sum(x["bp"] for x in _rs)
+        _out = sum(x["out"] for x in _rs)
+        _real = sum(x["bp"] - x["raw"] - x["pf"] - x["eu"] - x["stor"] for x in _rs)
+        return {"rev": _rev, "cnt": len(_ss), "out": _out, "real": _real,
+                "price": (_rev / _out if _out else None), "margin": (_real / _rev * 100 if _rev else None),
+                "rows": _rs, "ships": _ss,
+                "nobatch": [s for s in _ss if s["id"] not in {x["sid"] for x in _rs}]}
+    _qs, _qp = _q_stats(_f_q), _q_stats(_qtr_prev(_f_q))
+    _q_hist  = [q for q in sorted({_qtr(x["month"]) for x in _f_rows} | {_f_q}) if q <= _f_q]
+    _q_ser   = {q: _q_stats(q) for q in _q_hist}
 
-    # ── 월별 집계 (카드 전월 대비 배지 + 아래 월별 구성 차트 공용) ──
-    _mo_agg = defaultdict(lambda: {"bp": 0.0, "pf": 0.0, "eu": 0.0, "raw": 0.0, "stor": 0.0,
-                                   "out": 0.0, "cnt": 0, "inv": 0.0})
-    for r in _yr_ph:
-        _mo_key = (_rpt_ship_m0.get(r.get("shipment_id",""), {}).get("loading_date","") or "")[:7]
-        if not _mo_key:
-            continue
-        _mo_agg[_mo_key]["bp"]   += _rev_of(r, _home_rev)
-        _mo_agg[_mo_key]["pf"]   += float(r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r)
-        _mo_agg[_mo_key]["eu"]   += _ph_export_usd(r, cfg)
-        _mo_agg[_mo_key]["raw"]  += _rctx["rmc_fifo"](r)[0] * _ph_input_kg(r)
-        _mo_agg[_mo_key]["stor"] += _rctx["eff_storage"](r)
-        _mo_agg[_mo_key]["out"]  += float(r.get("output_kg",0) or 0)
-    for s in _yr_ships:
-        _mo_key = (s.get("loading_date","") or "")[:7]
-        if _mo_key:
-            _mo_agg[_mo_key]["cnt"] += 1
-            _mo_agg[_mo_key]["inv"] += float(s.get("invoice_usd",0) or 0)
-    _mo_rows = []
-    for _mk in sorted(_mo_agg.keys()):
-        _mv = _mo_agg[_mk]
-        _mo_rows.append({"월": _mk, "매출(BP)": round(_mv["bp"], 2), "원료 매입비": round(_mv["raw"], 2),
-                         "임가공비(순)": round(_mv["pf"], 2), "수출비": round(_mv["eu"], 2),
-                         "보관비": round(_mv["stor"], 2),
-                         "실질 손익": round(_mv["bp"] - _mv["raw"] - _mv["pf"] - _mv["eu"] - _mv["stor"], 2),
-                         "생산(kg)": _mv["out"], "선적": _mv["cnt"], "Invoice": _mv["inv"]})
-    # 증감은 진행 중인 이번 달(한국 시간)을 빼고, 실적이 있는 마감 월 중 최근 두 달을 비교
-    _mo_done = [r for r in _mo_rows if r["월"] < _today().strftime("%Y-%m")]
-    _mo_last, _mo_prev = (_mo_done[-1], _mo_done[-2]) if len(_mo_done) >= 2 else (None, None)
+    def _usd_s(v):
+        return ("-" if v < 0 else "") + (f"${abs(v)/1_000_000:.2f}M" if abs(v) >= 1_000_000 else f"${abs(v)/1000:,.0f}k")
+    def _pct_d(key):
+        """직전 분기 대비 증감률 문구 — 직전 분기 값이 없으면 None."""
+        _a, _b = _qs[key], _qp[key]
+        if not _b or _a is None:
+            return None
+        _d = (_a - _b) / abs(_b) * 100
+        return f"{_d:+.1f}%"
+    def _spark_q(key, scale=1.0):
+        _v = [(_q_ser[q][key] or 0) / scale for q in _q_hist]
+        return [round(v, 2) for v in _v] if len(_v) >= 2 else None
+    _dd_q = f"vs {_qtr_prev(_f_q)}"
 
-    _yr_ships_ly  = [s for s in _rpt_ships if (s.get("loading_date","") or "")[:4] == str(_cur_year - 1)]
-    _yoy_sub      = f"전년 동기 {len(_yr_ships) - len(_yr_ships_ly):+d}건"
-    _yr_input_kg  = sum(_ph_input_kg(r) for r in _yr_ph) or 1
-    _conv_sub     = f"투입 대비 전환율 {_yr_out / _yr_input_kg * 100:.1f}%"
-    _inv_sub      = f"평균 ${(_yr_inv / len(_yr_ships) / 1000):.0f}k / 건" if _yr_ships else "선적 없음"
-    _margin_pct   = (_yr_real / _yr_bp * 100) if _yr_bp else 0
-    _margin_sub   = f"매출 대비 {_margin_pct:+.1f}% · 판관비 제외"
-    _margin_fmt   = (("-" if _yr_real < 0 else "") + (f"${abs(_yr_real)/1_000_000:.2f}M" if abs(_yr_real) >= 1_000_000
-                                                        else f"${abs(_yr_real)/1000:.0f}k"))
+    # ── KPI 5개 (선택 분기, 직전 분기 대비) ──
+    with _slot_kpi:
+        _k = st.columns(5)
+        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), delta_description=_dd_q,
+                     chart_data=_spark_q("rev", 1000), chart_type="area", border=True,
+                     help="확정액(없으면 가정산 Invoice) + 기타 조정 — 손익 탭과 같은 기준")
+        _k[1].metric("선적 건수", f"{_qs['cnt']}건", delta=_pct_d("cnt"), delta_description=_dd_q,
+                     chart_data=_spark_q("cnt"), chart_type="bar", border=True)
+        _k[2].metric("평균 매각 단가", f"${_qs['price']:.2f}/kg" if _qs["price"] else "—",
+                     delta=_pct_d("price"), delta_description=_dd_q,
+                     chart_data=_spark_q("price"), chart_type="line", border=True, help="매출 ÷ 배치 생산(판매) 중량")
+        _k[3].metric("판매 중량", f"{_qs['out']/1000:,.1f} MT", delta=_pct_d("out"), delta_description=_dd_q,
+                     chart_data=_spark_q("out", 1000), chart_type="area", border=True, help="HBL에 연결된 배치 생산량 합계")
+        _mg_d = (f"{_qs['margin'] - _qp['margin']:+.1f}%p"
+                 if _qs["margin"] is not None and _qp["margin"] is not None else None)
+        _k[4].metric("실질 마진율", f"{_qs['margin']:.1f}%" if _qs["margin"] is not None else "—",
+                     delta=_mg_d, delta_description=_dd_q,
+                     chart_data=_spark_q("margin"), chart_type="line", border=True,
+                     help=f"실질 손익 {_usd_s(_qs['real'])} ÷ 매출 — 원료비(FIFO)·임가공비·수출비·보관비 차감, 판관비 제외")
+        _cap = f"{_f_q} 기준 · 직전 분기({_qtr_prev(_f_q)}) 대비. 카드 아래 막대·선은 분기별 추이입니다."
+        if _qs["nobatch"]:
+            _cap += (f" 배치가 없는 선적 {len(_qs['nobatch'])}건"
+                     f"({', '.join((s.get('hbl') or '—') for s in _qs['nobatch'][:4])})은 매출·중량에 빠져 있습니다.")
+        st.caption(_cap)
 
-    # ── 미수금 / ETA 임박 / 계약 잔여 ─────────────────────────────────────────
+    # ── 차트 공통: 가로 막대 (값 라벨, 큰 값이 위) ──
+    def _hbar(items, fmt, height=230):
+        import plotly.graph_objects as go
+        items = sorted(((k, v) for k, v in items if v), key=lambda kv: kv[1])
+        _tot = sum(v for _, v in items) or 1
+        fig = go.Figure(go.Bar(
+            y=[k for k, _ in items], x=[v for _, v in items], orientation="h", marker_color=_C_BP,
+            text=[f"{fmt(v)} · {v / _tot * 100:.0f}%" for _, v in items], textposition="outside", cliponaxis=False,
+            hovertemplate="%{y}<br>%{text}<extra></extra>"))
+        _fig_style(fig, height=height, legend=False, top=8)
+        fig.update_xaxes(visible=False, range=[0, max([v for _, v in items] or [1]) * 1.6])
+        fig.update_yaxes(showgrid=False, tickformat=None, type="category")
+        return fig
+    def _panel(slot, title, sub, build):
+        with slot, st.container(border=True):
+            st.markdown(f"**{title}**")
+            st.caption(sub)
+            try:
+                _fig = build()
+                if _fig is None:
+                    st.caption("해당 기간 자료 없음")
+                else:
+                    st.plotly_chart(_fig, width="stretch", config={"displayModeBar": False})
+            except ImportError:
+                pass
+    _MT = lambda v: f"{v/1000:,.1f} MT"
+
+    def _b_buyer():
+        _a = _pnl_agg(_qs["rows"], lambda x: x["buyer_lbl"])
+        return _hbar([(k, v["bp"]) for k, v in _a.items()], _usd_s) if _a else None
+    def _b_trend():
+        import plotly.graph_objects as go
+        _a = _pnl_agg(_f_rows, lambda x: x["month"])
+        if not _a:
+            return None
+        _ms, _m = [], min(_a)
+        while _m <= max(_a):                               # 실적 없는 달도 0으로 표시
+            _ms.append(_m)
+            _m = f"{int(_m[:4]) + int(_m[5:7]) // 12}-{int(_m[5:7]) % 12 + 1:02d}"
+        _rev  = [_a[m]["bp"] if m in _a else 0 for m in _ms]
+        _real = [(_a[m]["bp"] - _a[m]["raw"] - _a[m]["pf"] - _a[m]["eu"] - _a[m]["stor"]) if m in _a else 0 for m in _ms]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=_ms, y=_rev, name="매출", mode="lines+markers", line=dict(color=_C_BP, width=2),
+                                 hovertemplate="%{x}<br>매출 $%{y:,.0f}<extra></extra>"))
+        fig.add_trace(go.Scatter(x=_ms, y=_real, name="실질 손익", mode="lines+markers", line=dict(color=_C_LINE, width=2),
+                                 hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>"))
+        _in_q = [i for i, m in enumerate(_ms) if _qtr(m) == _f_q]
+        if _in_q:                                          # 선택 분기 음영
+            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(35,131,226,0.12)", line_width=0)
+        fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+        _fig_style(fig, height=230, top=8)
+        fig.update_xaxes(type="category")
+        return fig
+    def _b_scrap():
+        _a = _pnl_agg(_qs["rows"], lambda x: x["sc_nm"])
+        return _hbar([(k, v["bp"]) for k, v in _a.items()], _usd_s) if _a else None
+    def _b_status():
+        _lbl = {"provisional": "가정산", "final": "확정산", "paid": "입금완료"}
+        _c = defaultdict(int)
+        for s in _qs["ships"]:
+            _c[_lbl.get(s.get("status", "provisional"), s.get("status", "?"))] += 1
+        return _hbar(list(_c.items()), lambda v: f"{v:.0f}건") if _c else None
+    def _b_proc():
+        _a = _pnl_agg(_qs["rows"], lambda x: x["proc_nm"])
+        return _hbar([(k, v["out"]) for k, v in _a.items()], _MT) if _a else None
+
+    _panel(_g1[0], "매입사별 매출", f"{_f_q} · 매출이 어디서 나왔나", _b_buyer)
+    _panel(_g1[1], "월별 매출 추이", "매출과 실질 손익 (선택 분기 음영, 매입사·제품 필터 적용)", _b_trend)
+    _panel(_g2[0], "스크랩 유형별 매출", f"{_f_q} · 어떤 원료가 매출을 만들었나", _b_scrap)
+    _panel(_g2[1], "정산 상태", f"{_f_q} 선적 · 건수 기준", _b_status)
+    _panel(_g2[2], "임가공사별 생산", f"{_f_q} · 판매 배치 생산량", _b_proc)
+
+    # ── 현재 운영 현황 (필터와 무관한 전체 기준) ─────────────────────────────────
     _all_ships   = cfg.get("shipments", [])
-    _buyer_m_rpt = {b["id"]: b for b in cfg["buyers"]}
     _today_rpt   = _today()
     _eta14_end   = (_today_rpt + timedelta(days=14)).isoformat()
-
-    # 미수금: 상단 '미수 현금 전망' 패널과 동일 기준 (_cf_rows 재사용 — 확정/계산/추정 통합)
+    # 미수금: '미수 현금 전망' 패널과 동일 기준 (_cf_rows 재사용 — 확정/계산/추정 통합)
     _ar_total = sum(r["확정산 잔액"] for r in _cf_rows)
     _ar_cnt   = len(_cf_rows)
-
     _eta_soon = [s for s in _all_ships
                  if s.get("eta","") and _today_rpt.isoformat() <= s.get("eta","") <= _eta14_end
                  and s.get("status","") != "paid"]
-
     _ct_remaining = 0.0
     for _ctc in cfg.get("contracts", []):
         if _ctc.get("contract_status","active") != "active":
             continue
-        _mc = _contract_metrics(cfg, _ctc)
-        _ct_remaining += _mc["remaining_mt"]
-
-    _ar_fmt      = (f"${_ar_total/1_000_000:.1f}M" if abs(_ar_total) >= 1_000_000
-                    else f"${_ar_total/1000:.0f}k")
-    _eta_hbls    = "  ·  ".join(s.get("hbl","—") for s in _eta_soon) or "없음"
-    _prov_cnt    = sum(1 for s in _all_ships if s.get("status","") == "provisional")
-    _final_cnt   = sum(1 for s in _all_ships if s.get("status","") == "final")
-
-    # ── KPI (기본 st.metric: 테두리 카드 + 월별 스파크라인 + 전월 대비) ──
-    def _spark(key, scale=1.0):
-        return [round(float(r[key]) / scale, 2) for r in _mo_rows] if len(_mo_rows) >= 2 else None
-    def _mom(key, fmt):
-        """(증감 문구, 설명) — 실적이 있는 최근 월 vs 직전 월."""
-        if not _mo_last:
-            return None, None
-        _d = float(_mo_last[key]) - float(_mo_prev[key])
-        return fmt(_d), f"{_mo_last['월'][5:]}월 vs {_mo_prev['월'][5:]}월"
-    _sgn = lambda v, f: ("+" if v > 0 else "-" if v < 0 else "") + f(abs(v))
-    with _slot_kpi:
-        st.markdown(f"#### {_cur_year}년 누계")
-        _ya = st.columns(4)
-        _d, _dd = _mom("선적", lambda v: _sgn(v, lambda x: f"{x:.0f}건"))
-        _ya[0].metric("선적 건수", f"{len(_yr_ships)}건", delta=_d, delta_description=_dd,
-                      chart_data=_spark("선적"), chart_type="bar", help=_yoy_sub, border=True)
-        _d, _dd = _mom("생산(kg)", lambda v: _sgn(v, lambda x: f"{x/1000:.1f} MT"))
-        _ya[1].metric("BP 생산", f"{_yr_out/1000:.1f} MT", delta=_d, delta_description=_dd,
-                      chart_data=_spark("생산(kg)", 1000), chart_type="area", help=_conv_sub, border=True)
-        _d, _dd = _mom("Invoice", lambda v: _sgn(v, lambda x: f"${x/1000:,.0f}k"))
-        _ya[2].metric("Invoice 합계", f"${_yr_inv/1_000_000:.2f}M", delta=_d, delta_description=_dd,
-                      chart_data=_spark("Invoice", 1000), chart_type="area", help=_inv_sub, border=True)
-        _d, _dd = _mom("실질 손익", lambda v: _sgn(v, lambda x: f"${x/1000:,.0f}k"))
-        _ya[3].metric("실질 손익", _margin_fmt, delta=_d, delta_description=_dd,
-                      chart_data=_spark("실질 손익", 1000), chart_type="bar", help=_margin_sub, border=True)
-        st.caption("카드 아래 선은 월별 추이입니다. 증감은 진행 중인 이번 달을 뺀, 실적이 있는 최근 두 달의 비교입니다. 손익은 판관비 제외.")
+        _ct_remaining += _contract_metrics(cfg, _ctc)["remaining_mt"]
+    _eta_hbls  = "  ·  ".join(s.get("hbl","—") for s in _eta_soon) or "없음"
+    _prov_cnt  = sum(1 for s in _all_ships if s.get("status","") == "provisional")
+    _final_cnt = sum(1 for s in _all_ships if s.get("status","") == "final")
+    with _slot_ops:
         st.markdown("#### 현재 운영 현황")
         _yb = st.columns(4)
-        _yb[0].metric("미수금 추정", _ar_fmt, delta=f"{_ar_cnt}건 미정산", delta_color="off", delta_arrow="off",
+        _yb[0].metric("미수금 추정", _usd_s(_ar_total), delta=f"{_ar_cnt}건 미정산", delta_color="off", delta_arrow="off",
                       help="미수 현금 전망과 동일 기준 (확정산 잔액)", border=True)
         _yb[1].metric("ETA 14일 이내", f"{len(_eta_soon)}건",
                       delta=(_eta_hbls if _eta_soon else "없음"), delta_color="off", delta_arrow="off", border=True)
@@ -7266,17 +7333,6 @@ if _page == PG_HOME and _sub == SUB_DASH:
                       help="진행 중 계약의 최소 이행 잔량", border=True)
         _yb[3].metric("미정산 건수", f"{_ar_cnt}건", delta=f"provisional {_prov_cnt} · final {_final_cnt}",
                       delta_color="off", delta_arrow="off", border=True)
-
-    # ── 월별 손익 구성 추이 (관리회계 기준 — 원료비·보관비 차감, 판관비 제외) ──
-    with _slot_chart, st.container(border=True):
-        if _mo_rows:
-            try:
-                st.markdown(f"#### {_cur_year}년 월별 손익 구성")
-                st.caption("매출은 위로, 원료비·임가공비·수출비·보관비는 아래로 쌓고 실질 손익을 선으로 표시 — "
-                           "손익·시나리오 > 손익 요약의 월별 추이와 같은 기준")
-                st.plotly_chart(_fig_monthly_pnl(_mo_rows, height=340), width="stretch")
-            except ImportError:
-                pass
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 홈 > 월 마감 — 매달 확인하는 항목을 한 화면에 (기준 데이터 · 선적·정산 · 입금 · 생산·재고 실사)
