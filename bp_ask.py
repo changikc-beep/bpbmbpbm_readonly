@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Answer questions about the BP/BM app data from the command line — same numbers as the app.
 
-Reads the live config.json from Google Drive (read-only, local service-account file) and runs
+Reads the live config.json from Google Drive (read-only) and runs
 app.py's own calculation helpers (extracted by tests/smoke_test.py), so nothing is re-implemented
 here and nothing is written anywhere.
 
@@ -13,12 +13,10 @@ here and nothing is written anywhere.
     python bp_ask.py pnl [--by month|quarter|buyer|hbl|processor|scrap] [--year 2026] [--buyer ...] [--product ...]
     python bp_ask.py stock
 """
-import argparse, os, sys, warnings
+import argparse, contextlib, io, json, os, sys, warnings
 from collections import defaultdict
 
 warnings.filterwarnings("ignore")
-sys.stdout.reconfigure(encoding="utf-8")
-sys.stderr.reconfigure(encoding="utf-8")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "tests"))
 import logging; logging.disable(logging.CRITICAL)
@@ -187,8 +185,8 @@ def cmd_stock(cfg, a):
           ("완제품 재고", lambda r: f"{r['완제품 재고(생산−선적)']:,}")])
 
 
-def main():
-    p = argparse.ArgumentParser(description="BP/BM 앱 데이터 질의 (읽기 전용)")
+def build_parser():
+    p = argparse.ArgumentParser(prog="bp_ask", description="BP/BM 앱 데이터 질의 (읽기 전용)", exit_on_error=False)
     sp = p.add_subparsers(dest="cmd", required=True)
     s = sp.add_parser("summary"); s.add_argument("quarter", nargs="?"); s.add_argument("--buyer"); s.add_argument("--product", choices=["BP", "BM"])
     sp.add_parser("todo")
@@ -198,13 +196,54 @@ def main():
     s = sp.add_parser("pnl"); s.add_argument("--by", default="month", choices=["month", "quarter", "buyer", "hbl", "processor", "scrap"])
     s.add_argument("--year", type=int); s.add_argument("--buyer"); s.add_argument("--product", choices=["BP", "BM"])
     sp.add_parser("stock")
-    a = p.parse_args()
-    if not os.path.exists(R.CREDS):
-        sys.exit("로컬 서비스 계정 파일이 없어 Drive 데이터를 읽을 수 없습니다.")
-    cfg = R.load_live()
-    m = cfg.get("_meta") or {}
-    print(f"(데이터: Drive config rev {m.get('rev')} · 저장 {m.get('saved_at')})\n")
-    globals()["cmd_" + a.cmd](cfg, a)
+    return p
+
+
+def load_cfg():
+    """Live config.json from Drive, read-only. Local: the service-account key file next to app.py.
+    Cloud Run: the service account attached to the service (Application Default Credentials)."""
+    if os.path.exists(R.CREDS):
+        return R.load_live()
+    import google.auth
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseDownload
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/drive.readonly"])
+    svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+    fid = os.environ.get("DRIVE_CONFIG_FILE_ID") or svc.files().list(
+        q="name='config.json' and trashed=false", fields="files(id)").execute()["files"][0]["id"]
+    buf = io.BytesIO(); dl = MediaIoBaseDownload(buf, svc.files().get_media(fileId=fid)); done = False
+    while not done:
+        _, done = dl.next_chunk()
+    return json.loads(buf.getvalue().decode("utf-8"))
+
+
+def ask(argv, cfg):
+    """Run one query (argv like ["ar", "--buyer", "posco"]) on cfg and return the printed answer as text."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        try:
+            a = build_parser().parse_args(argv)
+            m = cfg.get("_meta") or {}
+            print(f"(데이터: Drive config rev {m.get('rev')} · 저장 {m.get('saved_at')})")
+            print()
+            globals()["cmd_" + a.cmd](cfg, a)
+        except SystemExit as e:          # lookup failures exit with a message (sys.exit("..."))
+            if e.code not in (None, 0):
+                print(e.code)
+        except argparse.ArgumentError as e:
+            print(f"입력 오류: {e}")
+    return out.getvalue()
+
+
+def main():
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    argv = sys.argv[1:]
+    try:
+        build_parser().parse_args(argv)          # show usage errors before downloading
+    except argparse.ArgumentError as e:
+        sys.exit(f"입력 오류: {e}")
+    print(ask(argv, load_cfg()), end="")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,10 @@ python bp_ask.py stock                                                 # 원료�
 - 스크립트에 없는 질문은 `tests/regression_live.py`의 `load_live()`와 `R.F["함수명"]`(app.py 헬퍼)로 짧게 계산한다.
   새로 자주 쓰일 질문이면 `bp_ask.py`에 명령을 추가한다. 계산식을 이 스크립트에 따로 만들지 않는다.
 - 읽기 전용이다. Drive `config.json`에 직접 쓰지 않는다. 수정은 사용자가 시트나 앱에서 한다.
+- 같은 질의를 claude.ai 커스텀 커넥터로도 쓴다: `mcp_server.py`(FastMCP, Google 로그인 + `ALLOWED_EMAILS`)가
+  `bp_ask.ask()`를 도구로 노출하고, `Dockerfile`로 Cloud Run(`bp-mcp`, europe-west1)에 GitHub `main` 푸시마다 자동 배포된다.
+  설정 절차는 `MCP_SETUP.md`. 도구를 추가할 때는 `bp_ask.py`에 명령을 만들고 `mcp_server.py`에 얇은 래퍼만 단다.
+  로컬 확인: `BP_MCP_LOCAL=1`(로그인 없이 127.0.0.1에서만 뜸).
 
 ## 용어와 계산 기준
 

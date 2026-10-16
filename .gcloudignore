@@ -1,0 +1,9 @@
+# Upload only what the image needs. Never upload the service-account key (*.json) or local data.
+*
+!Dockerfile
+!app.py
+!bp_ask.py
+!mcp_server.py
+!tests/
+!tests/smoke_test.py
+!tests/regression_live.py
