@@ -40,12 +40,21 @@ def _auth():
         return None
     from fastmcp.server.auth.providers.google import GoogleProvider
     from key_value.aio.stores.firestore import FirestoreStore
+    from key_value.aio.stores.firestore.store import (FirestoreV1CollectionSanitizationStrategy,
+                                                      FirestoreV1KeySanitizationStrategy)
     from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
     secret = os.environ["GOOGLE_CLIENT_SECRET"]
     # Cloud Run instances are stateless and scale to zero: keep OAuth client registrations and tokens in
     # Firestore so connections survive restarts. Encrypted with a key derived from the client secret.
-    storage = FernetEncryptionWrapper(FirestoreStore(default_collection="bp_mcp_oauth"),
-                                      source_material=secret, salt="bp-mcp-oauth-storage")
+    # Keys must be sanitized: Claude's client id is a URL (https://claude.ai/oauth/...), and "/" is a
+    # path separator in Firestore document names (400 "lacks a collection id" otherwise).
+    store = FirestoreStore(default_collection="bp_mcp_oauth",
+                           key_sanitization_strategy=FirestoreV1KeySanitizationStrategy(),
+                           collection_sanitization_strategy=FirestoreV1CollectionSanitizationStrategy())
+    # An entry that no longer decrypts (e.g. after the client secret is rotated) is treated as missing,
+    # so Claude simply signs in again instead of getting a 500.
+    storage = FernetEncryptionWrapper(store, source_material=secret, salt="bp-mcp-oauth-storage",
+                                      raise_on_decryption_error=False)
     return GoogleProvider(
         client_id=os.environ["GOOGLE_CLIENT_ID"], client_secret=secret,
         base_url=os.environ["BASE_URL"],
