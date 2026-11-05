@@ -584,7 +584,7 @@ def _cfg_fingerprint(c):
     ).hexdigest()
 
 @st.cache_data(show_spinner=False, hash_funcs={dict: _cfg_fingerprint})
-def _fifo_lot_trace(cfg, scrap_id):
+def _fifo_lot_trace(cfg, scrap_id, pool_out=None):
     """2단계 FIFO Lot 추적.
 
     Level 1  입고 Lot 큐 → 전체 출고 이벤트(임가공 출고 + 직접판매) — 날짜순
@@ -597,6 +597,8 @@ def _fifo_lot_trace(cfg, scrap_id):
                         lots: {lot_label → {qty, amount, unit_cost, lot_date}}}}
       all_events   : 전체 출고 이벤트 목록 (attributions 포함) — 임가공출고 + 직접판매
       lot_remaining: 미소진 Lot 잔량 리스트
+    pool_out: 리스트를 넘기면 B/L 배치에 아직 귀속되지 않은 임가공 출고분(임가공사 보유 원료)을
+              출고일순으로 담아 준다 — 각 항목 {date, processor_id, lot_q_remain: [{unit_cost, remain, kg_per_bag, lot_date, lot_label}]}
     """
     inv = cfg.get("raw_material_inventory", {}).get(scrap_id, {})
     op  = inv.get("opening")
@@ -844,7 +846,74 @@ def _fifo_lot_trace(cfg, scrap_id):
                     bl_result[sid]["lots"][k].get("storage_days_wsum", 0.0) + v.get("storage_days_wsum", 0.0))
         bl_result[sid]["storage_cost"] += sum(v.get("storage_cost", 0.0) for v in bl_lots.values())
 
+    if pool_out is not None:
+        pool_out.extend(sorted((de for dq in dq_by_proc.values() for de in dq if de["lot_q_remain"]),
+                               key=lambda d: d["date"]))
     return bl_result, all_events, lot_q   # lot_q: 미소진 잔량
+
+
+def _lot_storage_start(lot_date):
+    """Storage start for a lot date ('YYYY-MM-DD', or 'YYYY-MM' → mid-month), '' when unknown."""
+    d = lot_date or ""
+    return d[:10] if len(d) >= 10 else (d[:7] + "-15" if len(d) >= 7 else "")
+
+
+def _next_lot_cost(cfg, scrap_id, input_kg, start=None, per_day=30000.0):
+    """Planning estimate of FIFO raw cost and warehouse storage for the next `input_kg` of scrap (read-only).
+
+    Raw already at the processor is used first, oldest dispatch first, at its FIFO cost; its storage runs from
+    lot receipt to its recorded dispatch date. The rest is assumed to leave the warehouse Mon-Thu from `start`
+    (default: the next Monday after today, KST) at `per_day` kg a day, oldest lot first; storage runs from
+    lot receipt to that day at the scrap type's EUR rate and the latest registered EUR/USD.
+    """
+    pool = []
+    _, _, wh = _fifo_lot_trace(cfg, scrap_id, pool_out=pool)
+    srate = _storage_rate_eur(cfg, scrap_id)
+    days = lambda a, b: max(0, (datetime.strptime(b, "%Y-%m-%d") - datetime.strptime(a, "%Y-%m-%d")).days) if a and b else 0
+
+    # processor-held raw: FIFO detail averaged, applied to the processor stock estimate
+    pq = pa = ps = 0.0
+    for de in pool:
+        for lr in de["lot_q_remain"]:
+            q, kpb = lr["remain"], lr.get("kg_per_bag") or 510.0
+            pq += q; pa += q * (lr.get("unit_cost") or 0)
+            ps += q / kpb * days(_lot_storage_start(lr.get("lot_date")), de["date"]) * srate * _get_eur_usd(cfg, de["date"][:7])
+    proc_kg = _at_processor_raw_kg(cfg, scrap_id)
+    p_use = min(proc_kg, input_kg)
+    p_unit, p_stor_kg = (pa / pq, ps / pq) if pq > 0 else (0.0, 0.0)
+
+    # warehouse: Mon-Thu dispatch days from start
+    if not start:
+        t = _today()
+        start = (t + timedelta(days=(7 - t.weekday()) or 7)).isoformat()
+    need, d = max(0.0, input_kg - p_use), datetime.strptime(start, "%Y-%m-%d").date()
+    q = [dict(l) for l in wh]
+    w_kg = w_amt = w_st = w_dsum = 0.0
+    first = last = None
+    eur = _get_eur_usd(cfg)
+    while need > 1e-3 and q:
+        while d.weekday() > 3:
+            d += timedelta(days=1)
+        day, cap = d.isoformat(), min(per_day, need)
+        first = first or day; last = day
+        while cap > 1e-3 and q:
+            l = q[0]; t = min(l["remain"], cap)
+            n = days(_lot_storage_start(l.get("date")), day)
+            w_kg += t; w_amt += t * (l.get("unit_cost") or 0); w_dsum += t * n
+            w_st += t / (l.get("kg_per_bag") or 510.0) * n * srate * eur
+            l["remain"] -= t; cap -= t; need -= t
+            if l["remain"] < 1e-3:
+                q.pop(0)
+        d += timedelta(days=1)
+    raw = p_use * p_unit + w_amt
+    stor = p_use * p_stor_kg + w_st
+    r = lambda x, n=2: round(x, n)
+    return {"scrap": scrap_id, "input_kg": r(input_kg, 1), "proc_kg": r(p_use, 1), "proc_unit": r(p_unit, 4),
+            "proc_raw": r(p_use * p_unit), "proc_stor": r(p_use * p_stor_kg),
+            "wh_kg": r(w_kg, 1), "wh_unit": r(w_amt / w_kg, 4) if w_kg else None, "wh_raw": r(w_amt), "wh_stor": r(w_st),
+            "wh_days": r(w_dsum / w_kg, 1) if w_kg else None, "from": first, "to": last, "per_day": per_day,
+            "short_kg": r(max(0.0, need), 1), "eur_usd": eur, "storage_rate_eur": srate,
+            "raw": r(raw), "raw_per_input": r(raw / input_kg, 6) if input_kg else None, "stor": r(stor)}
 
 
 def _get_contract_for_shipment(cfg, ship_id):

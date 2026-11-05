@@ -12,7 +12,9 @@ here and nothing is written anywhere.
     python bp_ask.py ships [--buyer EcoPro] [--status provisional]
     python bp_ask.py pnl [--by month|quarter|buyer|hbl|processor|scrap] [--year 2026] [--buyer ...] [--product ...]
     python bp_ask.py stock
-    python bp_ask.py feed      # JSON for the BP/BM price calculator: stock, monthly EUR/USD, half-year margins
+    python bp_ask.py feed [--product BP --product-kg 300000 --conv 82.18]
+                               # JSON for the BP/BM price calculator: stock, monthly EUR/USD, half-year margins,
+                               # and with --product-kg the FIFO raw cost and storage of the next lot
 """
 import argparse, contextlib, io, json, os, sys, warnings
 from collections import defaultdict
@@ -214,8 +216,14 @@ def cmd_feed(cfg, a):
            "from": min(h["months"]), "to": max(h["months"])} for _, h in sorted(halves.items())]
     fx = sorted(({"month": r["month"], "rate": r["rate"]} for r in cfg.get("eur_usd_rates", []) if r.get("rate")),
                 key=lambda r: r["month"])
-    print(json.dumps({"rev": m.get("rev"), "saved_at": m.get("saved_at"), "stock": stock, "eur_usd": fx, "halves": hs},
-                     ensure_ascii=False))
+    lot = None
+    if a.product_kg and a.conv:
+        sc = next((s for s in cfg["scrap_types"] if s.get("active") and F["_sc_product"](s) == (a.product or "BP")), None)
+        if sc:
+            lot = {"product": a.product or "BP", "product_kg": a.product_kg, "conv": a.conv,
+                   **F["_next_lot_cost"](cfg, sc["id"], a.product_kg / (a.conv / 100))}
+    print(json.dumps({"rev": m.get("rev"), "saved_at": m.get("saved_at"), "stock": stock, "eur_usd": fx, "halves": hs,
+                      "lot": lot}, ensure_ascii=False))
 
 
 def build_parser():
@@ -229,7 +237,8 @@ def build_parser():
     s = sp.add_parser("pnl"); s.add_argument("--by", default="month", choices=["month", "quarter", "buyer", "hbl", "processor", "scrap"])
     s.add_argument("--year", type=int); s.add_argument("--buyer"); s.add_argument("--product", choices=["BP", "BM"])
     sp.add_parser("stock")
-    sp.add_parser("feed")
+    s = sp.add_parser("feed"); s.add_argument("--product", choices=["BP", "BM"])
+    s.add_argument("--product-kg", type=float); s.add_argument("--conv", type=float)
     return p
 
 

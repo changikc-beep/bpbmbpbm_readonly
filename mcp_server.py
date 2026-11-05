@@ -136,10 +136,14 @@ def stock() -> str:
     return _run("stock")
 
 @mcp.tool
-def calculator_feed() -> str:
+def calculator_feed(product: Optional[Literal["BP", "BM"]] = None, product_kg: Optional[float] = None,
+                    conv: Optional[float] = None) -> str:
     """BP/BM 단가 계산기용 JSON: 스크랩별 창고·임가공사·완제품 재고(kg), 월별 EUR/USD 환율,
-    반기별(YYYY-H1/H2) 제품별·전체 실질 손익과 제품 kg당 마진(판관비 제외)."""
-    return _run("feed")
+    반기별(YYYY-H1/H2) 제품별·전체 실질 손익과 제품 kg당 마진(판관비 제외).
+    product_kg(건조 제품 kg)와 conv(전환율 %)를 주면 다음 물량의 FIFO 원료비·창고 보관비 추정(lot)도 담는다."""
+    return _run("feed", *_opt("--product", product),
+                *_opt("--product-kg", str(product_kg) if product_kg else None),
+                *_opt("--conv", str(conv) if conv else None))
 
 
 if __name__ == "__main__":
