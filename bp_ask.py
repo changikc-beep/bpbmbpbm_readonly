@@ -12,6 +12,7 @@ here and nothing is written anywhere.
     python bp_ask.py ships [--buyer EcoPro] [--status provisional]
     python bp_ask.py pnl [--by month|quarter|buyer|hbl|processor|scrap] [--year 2026] [--buyer ...] [--product ...]
     python bp_ask.py stock
+    python bp_ask.py feed      # JSON for the BP/BM price calculator: stock, monthly EUR/USD, half-year margins
 """
 import argparse, contextlib, io, json, os, sys, warnings
 from collections import defaultdict
@@ -185,6 +186,38 @@ def cmd_stock(cfg, a):
           ("완제품 재고", lambda r: f"{r['완제품 재고(생산−선적)']:,}")])
 
 
+def cmd_feed(cfg, a):
+    """Machine-readable data for the BP/BM price calculator Artifact (JSON on one line)."""
+    m = cfg.get("_meta") or {}
+    stock = []
+    for sc in cfg["scrap_types"]:
+        _, _, rem = F["_fifo_lot_trace"](cfg, sc["id"])
+        stock.append({"scrap": sc["id"], "name": sc["name"], "product": F["_sc_product"](sc),
+                      "wh_kg": round(sum(l.get("remain", 0) for l in rem), 1),
+                      "proc_kg": round(F["_at_processor_raw_kg"](cfg, sc["id"]), 1),
+                      "fg_kg": round(F["_finished_goods_kg"](cfg, sc["id"]), 1)})
+    # half-year margin per kg of product, by month of the batch P&L row (same engine as the P&L tab, SG&A excluded)
+    halves = {}
+    for x in F["_batch_pnl_rows"](cfg, F["_pnl_context"](cfg)):
+        mo = x["month"] or ""
+        if len(mo) < 7:
+            continue
+        key = f"{mo[:4]}-H{1 if int(mo[5:7]) <= 6 else 2}"
+        for prod in (x.get("product") or "", "ALL"):
+            if not prod:
+                continue
+            h = halves.setdefault((key, prod), {"half": key, "product": prod, "kg": 0.0, "real": 0.0, "ships": set(), "months": set()})
+            h["kg"] += x["out"]; h["real"] += x["bp"] - x["raw"] - x["pf"] - x["eu"] - x["stor"]
+            h["ships"].add(x["sid"]); h["months"].add(mo)
+    hs = [{"half": h["half"], "product": h["product"], "kg": round(h["kg"], 1), "real": round(h["real"], 2),
+           "margin_kg": round(h["real"] / h["kg"], 6) if h["kg"] else None, "ships": len(h["ships"]),
+           "from": min(h["months"]), "to": max(h["months"])} for _, h in sorted(halves.items())]
+    fx = sorted(({"month": r["month"], "rate": r["rate"]} for r in cfg.get("eur_usd_rates", []) if r.get("rate")),
+                key=lambda r: r["month"])
+    print(json.dumps({"rev": m.get("rev"), "saved_at": m.get("saved_at"), "stock": stock, "eur_usd": fx, "halves": hs},
+                     ensure_ascii=False))
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="bp_ask", description="BP/BM 앱 데이터 질의 (읽기 전용)", exit_on_error=False)
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -196,6 +229,7 @@ def build_parser():
     s = sp.add_parser("pnl"); s.add_argument("--by", default="month", choices=["month", "quarter", "buyer", "hbl", "processor", "scrap"])
     s.add_argument("--year", type=int); s.add_argument("--buyer"); s.add_argument("--product", choices=["BP", "BM"])
     sp.add_parser("stock")
+    sp.add_parser("feed")
     return p
 
 
@@ -224,8 +258,9 @@ def ask(argv, cfg):
         try:
             a = build_parser().parse_args(argv)
             m = cfg.get("_meta") or {}
-            print(f"(데이터: Drive config rev {m.get('rev')} · 저장 {m.get('saved_at')})")
-            print()
+            if a.cmd != "feed":   # feed is JSON and carries rev / saved_at itself
+                print(f"(데이터: Drive config rev {m.get('rev')} · 저장 {m.get('saved_at')})")
+                print()
             globals()["cmd_" + a.cmd](cfg, a)
         except SystemExit as e:          # lookup failures exit with a message (sys.exit("..."))
             if e.code not in (None, 0):

@@ -135,6 +135,12 @@ def stock() -> str:
     """재고 추정: 스크랩별 창고 원료·임가공사 보유 원료·완제품(BP/BM)과 임가공사 생산 보고 기준 생산·재고 대사."""
     return _run("stock")
 
+@mcp.tool
+def calculator_feed() -> str:
+    """BP/BM 단가 계산기용 JSON: 스크랩별 창고·임가공사·완제품 재고(kg), 월별 EUR/USD 환율,
+    반기별(YYYY-H1/H2) 제품별·전체 실질 손익과 제품 kg당 마진(판관비 제외)."""
+    return _run("feed")
+
 
 if __name__ == "__main__":
     mcp.run(transport="http", host="127.0.0.1" if LOCAL else "0.0.0.0",
