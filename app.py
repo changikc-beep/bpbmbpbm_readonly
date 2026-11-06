@@ -264,25 +264,33 @@ div[data-testid="stNumberInput"] button{display:none !important}
 
 .st-key-nav_sub{align-items:stretch !important}
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
-.st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
-.st-key-nav_sub div[data-testid="stButtonGroup"]{
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"]{
     background:transparent;border:none;border-bottom:1px solid #2A2A30;border-radius:0;
     padding:0;width:100%
 }
-.st-key-nav_sub div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
     display:flex;gap:6px;flex-wrap:wrap}
-.st-key-nav_sub div[data-testid="stButtonGroup"] button{
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button{
     border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
     background:transparent !important;color:#8A8A95 !important;min-height:42px;
     font-size:.92rem !important;font-weight:500 !important;padding:8px 18px 9px !important;
     margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
 }
-.st-key-nav_sub div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
-.st-key-nav_sub div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
-.st-key-nav_sub div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
     color:#ECECEF !important;font-weight:600 !important;border-bottom:2px solid #ECECEF !important
 }
-.st-key-nav_sub div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
+/* in-page pickers (scrap type, processor): larger pills, the chosen one filled with the accent */
+:is(.st-key-io_sc, .st-key-proc_pick) div[data-testid="stButtonGroup"] button{
+    min-height:38px;padding:6px 20px !important;border-radius:999px !important;font-size:.98rem !important;font-weight:600 !important
+}
+:is(.st-key-io_sc, .st-key-proc_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
+    background:#3B82F6 !important;border-color:#3B82F6 !important;color:#FFFFFF !important
+}
+:is(.st-key-io_sc, .st-key-proc_pick){margin-bottom:6px}
 /* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
 .nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
 .nav-crumb a{color:#9A9AA6 !important}
@@ -4187,12 +4195,15 @@ if _page == PG_STOCK and _sub == SUB_PROC:
         ship_opts_ph[f"#{_soi+1}  {_sohbl}  ({_sos.get('loading_date','?')} · {_sob.get('name','?')})"] = _sos["id"]
 
     # ── 서브탭 ──────────────────────────────────────────────────────────────
-    proc_tab1, proc_tab2 = st.tabs(["전체 내역", "세부 내역 (HBL)"])
+    # st.tabs 는 안 보이는 탭까지 매번 실행하므로, 고른 보기만 실행되는 세그먼트로
+    _PROC_VIEWS = ["전체 내역", "세부 내역 (HBL)"]
+    _proc_view = st.segmented_control("보기", _PROC_VIEWS, key="proc_view", default=_PROC_VIEWS[0],
+                                      label_visibility="collapsed") or _PROC_VIEWS[0]
 
     # ══════════════════════════════════════════════════════════════════════════
     # 서브탭 1 — 전체 내역 : 계약 조건 + 누적 실적
     # ══════════════════════════════════════════════════════════════════════════
-    with proc_tab1:
+    if _proc_view == "전체 내역":
         # ── 생산·재고 대사 (시트 '생산' 탭 = 임가공사 월별 생산 보고) ─────────────
         _recon = _production_recon(cfg)
         if _recon:
@@ -4238,9 +4249,22 @@ if _page == PG_STOCK and _sub == SUB_PROC:
         if not cfg.get("processors"):
             st.info("등록된 임가공사가 없습니다.")
         else:
+            _pv_procs = [p for p in cfg.get("processors", []) if p.get("active", True)] or cfg.get("processors", [])
+            _pv_names = [p["name"] for p in _pv_procs]
+            _pv_name = st.segmented_control("임가공사", _pv_names, key="proc_pick", default=_pv_names[0],
+                                            label_visibility="collapsed") or _pv_names[0]
             for _proc in cfg.get("processors", []):
-                _pname = _proc['name'] + ('' if _proc.get('active', True) else '  (비활성)')
-                st.markdown(f"#### {_pname}")
+                if _proc["name"] != _pv_name:
+                    continue
+                _p_recs = [p for p in ph_list if p.get("processor_id") == _proc["id"]]
+                _p_in   = sum(_ph_input_kg(r) for r in _p_recs)
+                _p_out  = sum(float(r.get("output_kg", 0) or 0) for r in _p_recs)
+                _pk = st.columns(4)
+                _pk[0].metric("배치", f"{len(_p_recs)}건", border=True)
+                _pk[1].metric("누적 투입", f"{_p_in/1000:,.1f} MT", border=True)
+                _pk[2].metric("누적 생산", f"{_p_out/1000:,.1f} MT", border=True)
+                _pk[3].metric("실제 전환율", f"{_p_out/_p_in*100:.1f}%" if _p_in else "—", border=True,
+                              help="누적 생산 ÷ 누적 투입 (스크랩 유형 합산)")
                 _rows_sum = []
                 for _sc in scrap_list:
                     _sid2 = _sc["id"]
@@ -4254,9 +4278,11 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                     _sc_cost = sum((r.get("scrap_sale_per_kg",0) or 0) * _ph_input_kg(r) for r in _recs)
                     _pf_cost = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _recs)
                     _bpr_kg  = (_sc_cost + _pf_cost) / _tot_out if _tot_out > 0 else None
+                    if not _recs and not _sc.get("active", True):
+                        continue            # 비활성이고 기록도 없는 스크랩 유형(셀·모듈 등)은 숨김
                     _rows_sum.append({
                         "스크랩 유형":      _sc["name"],
-                        "계약 임임가공비($/kg)": _cond.get("processing_fee"),
+                        "계약 임가공비($/kg)": _cond.get("processing_fee"),
                         "계약 전환율(%)":    _cond.get("conversion_rate"),
                         "계약 불순물율(%)":  _cond.get("impurity_rate"),
                         "배치수":           len(_recs),
@@ -4265,16 +4291,21 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                         "실제 전환율(%)":   _act_cv,
                         "BP 재매입가($/kg)":round(_bpr_kg, 4)  if _bpr_kg  else None,
                     })
-                st.dataframe(pd.DataFrame(_rows_sum).style.format(na_rep="—", formatter={
-                    "계약 임임가공비($/kg)": lambda v: f"${v}" if v is not None else "—",
-                    "계약 전환율(%)":      lambda v: f"{v}%" if v is not None else "—",
-                    "계약 불순물율(%)":    lambda v: f"{v}%" if v is not None else "—",
-                    "누적 투입(kg)":       lambda v: f"{v:,.0f}" if v is not None else "—",
-                    "누적 생산(kg)":       lambda v: f"{v:,.0f}" if v is not None else "—",
-                    "실제 전환율(%)":      lambda v: f"{v:.2f}%" if v is not None else "—",
-                    "BP 재매입가($/kg)":   lambda v: f"${v:.4f}" if v is not None else "—",
-                }), width="stretch", hide_index=True)
-                st.divider()
+                # column_config 형식 지정 — 빈 값은 'None' 대신 빈칸으로 보인다
+                _ncol = st.column_config.NumberColumn
+                _sum_df = pd.DataFrame(_rows_sum)
+                for _c in _sum_df.columns[1:]:      # an all-empty column stays object dtype and prints 'None'
+                    _sum_df[_c] = pd.to_numeric(_sum_df[_c], errors="coerce")
+                _sum_df = _sum_df.dropna(axis=1, how="all")   # e.g. 불순물율 never entered: hide the column
+                st.dataframe(_sum_df, width="stretch", hide_index=True, column_config={
+                    "계약 임가공비($/kg)": _ncol(format="$%.2f"),
+                    "계약 전환율(%)":      _ncol(format="%.1f%%"),
+                    "계약 불순물율(%)":    _ncol(format="%.1f%%"),
+                    "누적 투입(kg)":       _ncol(format="%,.0f"),
+                    "누적 생산(kg)":       _ncol(format="%,.0f"),
+                    "실제 전환율(%)":      _ncol(format="%.2f%%"),
+                    "BP 재매입가($/kg)":   _ncol(format="$%.4f"),
+                })
 
         # ── 계약 조건 편집 (접힘) ────────────────────────────────────────
         with st.expander("계약 조건 편집 / 임가공사 추가·삭제", expanded=False):
@@ -4284,7 +4315,7 @@ if _page == PG_STOCK and _sub == SUB_PROC:
                 with hc1: pnm  = st.text_input("임가공사명", proc["name"], key=f"pnm_{pi}")
                 with hc2: pact = st.checkbox("활성", proc.get("active", True), key=f"pact_{pi}")
                 gh = st.columns([1.5, 1.5, 1.5, 1.5])
-                for _col, _lbl in zip(gh, ["스크랩 유형","임임가공비($/kg)","전환율(%)","불순물율(%)"]):
+                for _col, _lbl in zip(gh, ["스크랩 유형","임가공비($/kg)","전환율(%)","불순물율(%)"]):
                     _col.markdown(f"**{_lbl}**")
                 new_conds = {sid: dict(v) for sid, v in proc.get("conditions", {}).items()}
                 for scrap in scrap_list:
@@ -4335,7 +4366,7 @@ if _page == PG_STOCK and _sub == SUB_PROC:
     # ══════════════════════════════════════════════════════════════════════════
     # 서브탭 2 — HBL 중심 배치 관리
     # ══════════════════════════════════════════════════════════════════════════
-    with proc_tab2:
+    if _proc_view == "세부 내역 (HBL)":
         st.caption("HBL을 선택해 연결 배치를 관리합니다. 배치 추가 시 임가공비는 계약 표준값이 자동 적용됩니다.")
 
         # ── 공통 옵션 ────────────────────────────────────────────────────────
@@ -4719,13 +4750,39 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
     _of_pr_opts = {p["name"]: p["id"] for p in cfg.get("processors", [])}
     _of_pr_rev  = {v: k for k, v in _of_pr_opts.items()}
 
+    # ── 스크랩 유형 탭 → 그 유형의 숫자 카드 → 구분 탭(입고 / 출고 / 직접 판매 / Lot) ──
+    _io_scraps = [s for s in cfg.get("scrap_types", []) if s.get("active", True)] or cfg.get("scrap_types", [])
+    _io_names  = [s["name"] for s in _io_scraps]
+    _io_name   = st.segmented_control("스크랩 유형", _io_names, key="io_sc", default=_io_names[0] if _io_names else None,
+                                      label_visibility="collapsed") or (_io_names[0] if _io_names else None)
+    _io_sel    = next((s for s in _io_scraps if s["name"] == _io_name), {"id": None, "name": "—"})
+    _io_sid    = _io_sel["id"]
+    if _io_sid:
+        _io_avg, _io_in = _inv_moving_avg(cfg, _io_sid)
+        _io_bal  = _inv_balance(cfg, _io_sid, cfg.get("processing_history", []))
+        _io_disp = sum(float(d.get("quantity_kg", 0)) for d in cfg.get("dispatch_records", [])
+                       if d.get("scrap_type_id") == _io_sid)
+        _io_used = sum(_ph_input_kg(r) for r in cfg.get("processing_history", []) if r.get("scrap_type_id") == _io_sid)
+        _iok = st.columns(5)
+        _iok[0].metric("창고 잔량 (추정)", f"{_io_bal/1000:,.1f} MT", border=True,
+                       help="기초재고 + 입고 − 임가공 투입 − 직접 판매")
+        _iok[1].metric("이동평균 단가", f"${_io_avg:.4f}/kg" if _io_avg is not None else "—", border=True)
+        _iok[2].metric("누적 입고", f"{_io_in/1000:,.1f} MT", border=True)
+        _iok[3].metric("임가공 출고 누적", f"{_io_disp/1000:,.1f} MT", border=True)
+        _iok[4].metric("임가공사 보유 (출고−투입)", f"{(_io_disp - _io_used)/1000:,.1f} MT", border=True,
+                       help="임가공 출고 누적 − B/L 투입 누적. 음수면 출고 기록 누락 가능성")
+    _IO_SECS = ["입고·기초재고", "임가공 출고", "직접 판매", "Lot 추적"]
+    _io_sec = st.segmented_control("구분", _IO_SECS, key="io_sec", default=_IO_SECS[0],
+                                   label_visibility="collapsed") or _IO_SECS[0]
+
     # ══════════════════════════════════════════════════════════════════════════
     # 원료 재고 관리 (이동평균법)
     # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("### 원료 재고 관리 (이동평균법)",
-                help="스크랩 유형별 기초재고와 입고 이력을 등록합니다.  \n"
-                               "이동평균단가 → 손익·시나리오 실질 손익에 자동 반영.  \n"
-                               "입고일 **YYYY-MM-DD** + 톤백 수 입력 시 FIFO 창고비 자동 계산 정확도↑")
+    if _io_sec == "입고·기초재고":
+        st.markdown("#### 기초재고 · 입고 이력",
+                    help="스크랩 유형별 기초재고와 입고 이력을 등록합니다.  \n"
+                                   "이동평균단가 → 손익·시나리오 실질 손익에 자동 반영.  \n"
+                                   "입고일 **YYYY-MM-DD** + 톤백 수 입력 시 FIFO 창고비 자동 계산 정확도↑")
 
     if "raw_material_inventory" not in cfg:
         cfg["raw_material_inventory"] = {}
@@ -4734,6 +4791,8 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
     # ── 스크랩 유형별 상세 ────────────────────────────────────────────────────
     _ph_all_inv = cfg.get("processing_history", [])
     for _isc in cfg.get("scrap_types", []):
+        if _io_sec != "입고·기초재고" or _isc["id"] != _io_sid:
+            continue
         _isid = _isc["id"]; _isnm = _isc["name"]
         _stor_rate_disp = float(_isc.get("storage_rate_eur") or 1.5)
         if _isid not in cfg["raw_material_inventory"]:
@@ -4747,7 +4806,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                         f"창고비 EUR {_stor_rate_disp:.2f}/톤백/day")
         else:
             _exp_lbl = f"**{_isnm}** — 기초재고 미설정"
-        with st.expander(_exp_lbl, expanded=(_avg_cur is None)):
+        with st.container():
+            st.caption(f"창고비 EUR {_stor_rate_disp:.2f}/톤백/day  ·  "
+                       + ("기초재고 미설정 — 아래에서 먼저 입력" if _avg_cur is None else f"이동평균 ${_avg_cur:.4f}/kg"))
             st.markdown("##### 기초재고")
             _op_i = _inv_i.get("opening") or {}
             _ic1,_ic2,_ic3,_ic4 = st.columns(4)
@@ -4769,14 +4830,6 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                         save_cfg(cfg); st.success("기초재고 저장 완료"); st.rerun()
                     else:
                         st.error("기준일·재고량·단가를 모두 입력하세요.")
-            if _avg_cur is not None:
-                st.markdown("---")
-                _im1,_im2,_im3 = st.columns(3)
-                _bal_col = "#f87171" if _bal_cur < 0 else "#ECECEF"
-                _im1.markdown(_kpi_card("현재 이동평균단가", f"${_avg_cur:.4f}/kg"), unsafe_allow_html=True)
-                _im2.markdown(_kpi_card("누적 입고량",       f"{_qty_cur:,.0f} kg"), unsafe_allow_html=True)
-                _im3.markdown(_kpi_card("잔량 (추정)", f"{_bal_cur:,.0f} kg",
-                                        "음수 재고 확인 필요" if _bal_cur < 0 else "", val_color=_bal_col), unsafe_allow_html=True)
             st.markdown("---")
             st.markdown("##### 입고 이력")
             _purs_i = sorted(_inv_i.get("purchases", []), key=lambda x: x.get("date",""))
@@ -4832,387 +4885,396 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                         st.error("입고일·입고량·단가를 모두 입력하세요.")
 
 
-        # ── 임가공 출고 이력 ──────────────────────────────────────────────────────
-    st.markdown("### 임가공 출고 이력",
-                help="스크랩을 임가공사(톨링)로 출고한 날짜와 수량을 기록합니다. "
-                               "각 B/L 배치가 어느 입고 Lot에서 비롯되었는지 추적하는 기준이 됩니다.")
+    if _io_sec == "임가공 출고":
+            # ── 임가공 출고 이력 ──────────────────────────────────────────────────────
+        st.markdown("#### 임가공 출고 이력",
+                    help="스크랩을 임가공사(톨링)로 출고한 날짜와 수량을 기록합니다. "
+                                   "각 B/L 배치가 어느 입고 Lot에서 비롯되었는지 추적하는 기준이 됩니다.")
 
-    if "dispatch_records" not in cfg:
-        cfg["dispatch_records"] = []
+        if "dispatch_records" not in cfg:
+            cfg["dispatch_records"] = []
 
-    _dr_list = cfg["dispatch_records"]
+        _dr_list = cfg["dispatch_records"]
 
-    if _dr_list:
-        _dr_rows = []
-        for dr in sorted(_dr_list, key=lambda x: x.get("date", ""), reverse=True):
-            _dr_rows.append({
-                "출고일":      dr.get("date", ""),
-                "임가공사":    _of_pr_rev.get(dr.get("processor_id", ""), "—"),
-                "스크랩 유형": _of_sc_rev.get(dr.get("scrap_type_id", ""), "—"),
-                "출고량 (kg)": float(dr.get("quantity_kg", 0)),
-                "톤백 (개)":   int(dr.get("ton_bags", 0) or 0),
-                "비고":        dr.get("notes", ""),
-            })
-        st.dataframe(
-            pd.DataFrame(_dr_rows).style.format({"출고량 (kg)": "{:,.0f}", "톤백 (개)": "{:,.0f}"}),
-            width="stretch", hide_index=True
-        )
-
-        _dr_del_opts = [
-            f"{dr.get('date','')}  |  {_of_pr_rev.get(dr.get('processor_id',''),'—')}  |  "
-            f"{_of_sc_rev.get(dr.get('scrap_type_id',''),'—')}  |  {float(dr.get('quantity_kg',0)):,.0f} kg"
-            for dr in _dr_list
-        ]
-        _drd1, _drd2 = st.columns([4, 1])
-        with _drd1:
-            # 인덱스를 값으로 사용 — 라벨 중복 시 오삭제 방지
-            _dri = st.selectbox("삭제할 출고 건", range(len(_dr_list)),
-                                 format_func=lambda i: _dr_del_opts[i], key="dr_del_sel")
-        with _drd2:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", width="stretch"):
-                st.warning(f"임가공 출고 삭제:\n{_dr_del_opts[_dri]}")
-                if st.button("삭제 확인", key="dr_del_cfm", type="primary", width="stretch"):
-                    cfg["dispatch_records"].pop(_dri)
-                    save_cfg(cfg); st.rerun()
-    else:
-        st.info("등록된 임가공 출고 기록이 없습니다.")
-
-    with st.expander("임가공 출고 수동 추가", expanded=False):
-        with st.form("add_dr"):
-            _dr_a1, _dr_a2, _dr_a3, _dr_a4, _dr_a5 = st.columns(5)
-            with _dr_a1: _dr_date  = st.text_input("출고일 (YYYY-MM-DD)", placeholder="예: 2025-11-15", key="dr_date")
-            with _dr_a2: _dr_proc  = st.selectbox("임가공사", list(_of_pr_opts.keys()), key="dr_proc")
-            with _dr_a3: _dr_sc    = st.selectbox("스크랩 유형", list(_of_sc_opts.keys()), key="dr_sc")
-            with _dr_a4: _dr_qty   = st.number_input("출고량 (kg)", value=0.0, step=100.0, format="%.0f", key="dr_qty")
-            with _dr_a5: _dr_notes = st.text_input("비고", placeholder="배치번호, 차량번호 등", key="dr_notes")
-            if st.form_submit_button("출고 추가"):
-                if not _dr_date or _dr_qty <= 0:
-                    st.error("출고일과 출고량을 입력하세요.")
-                elif not _of_pr_opts:
-                    st.error("임가공사를 먼저 등록하세요.")
-                else:
-                    cfg["dispatch_records"].append({
-                        "id":            str(uuid.uuid4())[:8],
-                        "date":          _dr_date.strip(),
-                        "processor_id":  _of_pr_opts[_dr_proc],
-                        "scrap_type_id": _of_sc_opts[_dr_sc],
-                        "quantity_kg":   float(_dr_qty),
-                        "notes":         _dr_notes,
-                    })
-                    save_cfg(cfg); st.success("임가공 출고 추가 완료"); st.rerun()
-
-    # ── 직접 판매 출고 이력 ───────────────────────────────────────────────────
-    st.divider()
-    st.markdown("### 직접 판매 출고 이력",
-                help="임가공(톨링) 없이 스크랩을 직접 판매한 경우 여기에 기록합니다. "
-                               "FIFO Lot 추적 계산 시 소진 이벤트로 반영됩니다.")
-
-    if "direct_sales" not in cfg:
-        cfg["direct_sales"] = []
-
-    _ds_list    = cfg["direct_sales"]
-
-    if _ds_list:
-        # 단가 칸만 직접 수정 가능 — 저장하면 시트 동기화 때도 유지된다(시트 단가 칸이 비어 있으면 기존 단가 보존)
-        _ds_sorted = sorted(range(len(_ds_list)), key=lambda i: _ds_list[i].get("date", ""), reverse=True)
-        _ds_rows = []
-        for _i in _ds_sorted:
-            ds = _ds_list[_i]
-            _spkg = ds.get("sale_price_per_kg")
-            _dqty = float(ds.get("quantity_kg", 0))
-            _ds_rows.append({
-                "판매일":        ds.get("date", ""),
-                "판매처":        ds.get("customer", "") or "—",
-                "스크랩 유형":   _of_sc_rev.get(ds.get("scrap_type_id", ""), "—"),
-                "판매량 (kg)":   _dqty,
-                "톤백 (개)":     int(ds.get("ton_bags", 0) or 0),
-                "단가 ($/kg)":   float(_spkg) if _spkg is not None else None,
-                "매출액 (USD)":  round(float(_spkg) * _dqty, 2) if _spkg is not None else None,
-                "비고":          ds.get("notes", ""),
-            })
-        _ds_df = pd.DataFrame(_ds_rows)
-        _ds_ed = st.data_editor(
-            _ds_df, width="stretch", hide_index=True, key="ds_price_editor",
-            disabled=[c for c in _ds_df.columns if c != "단가 ($/kg)"],
-            column_config={
-                "판매량 (kg)":  st.column_config.NumberColumn(format="%,.0f"),
-                "톤백 (개)":    st.column_config.NumberColumn(format="%d"),
-                "단가 ($/kg)":  st.column_config.NumberColumn(format="$%.4f", min_value=0.0, step=0.01,
-                                                             help="이 칸만 수정할 수 있습니다. 수정 후 아래 '단가 저장'"),
-                "매출액 (USD)": st.column_config.NumberColumn(format="$%,.2f"),
-            })
-        _ds_changed = [(_ds_sorted[k], v) for k, v in enumerate(_ds_ed["단가 ($/kg)"].tolist())
-                       if not (pd.isna(v) and _ds_rows[k]["단가 ($/kg)"] is None)
-                       and v != _ds_rows[k]["단가 ($/kg)"]]
-        if _ds_changed:
-            if st.button(f"단가 저장 ({len(_ds_changed)}건 변경)", type="primary", key="ds_price_save"):
-                for _i, _v in _ds_changed:
-                    cfg["direct_sales"][_i]["sale_price_per_kg"] = None if pd.isna(_v) else float(_v)
-                save_cfg(cfg); st.toast("직접판매 단가 저장"); st.rerun()
-        st.caption("단가는 이 표에서 직접 고치거나, 시트 출고 탭의 '판매단가($/kg)' 열에 넣으면 됩니다. "
-                   "시트 단가 칸이 비어 있으면 동기화해도 여기서 넣은 단가가 유지됩니다.")
-
-        _ds_del_opts = [
-            f"{ds.get('date','')}  |  {_of_sc_rev.get(ds.get('scrap_type_id',''),'—')}  |  "
-            f"{float(ds.get('quantity_kg',0)):,.0f} kg"
-            for ds in _ds_list
-        ]
-        _dsd1, _dsd2 = st.columns([4, 1])
-        with _dsd1:
-            # 인덱스를 값으로 사용 — 라벨 중복 시 오삭제 방지
-            _dsi = st.selectbox("삭제할 판매 건", range(len(_ds_list)),
-                                 format_func=lambda i: _ds_del_opts[i], key="ds_del_sel")
-        with _dsd2:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", width="stretch"):
-                st.warning(f"직접 판매 삭제:\n{_ds_del_opts[_dsi]}")
-                if st.button("삭제 확인", key="ds_del_cfm", type="primary", width="stretch"):
-                    cfg["direct_sales"].pop(_dsi)
-                    save_cfg(cfg); st.rerun()
-    else:
-        st.info("등록된 직접 판매 출고 이력이 없습니다.")
-
-    with st.expander("직접 판매 수동 추가", expanded=False):
-        with st.form("add_ds"):
-            _ds_a1, _ds_a2, _ds_a3, _ds_a4, _ds_a5 = st.columns(5)
-            with _ds_a1: _ds_date  = st.text_input("판매일 (YYYY-MM-DD)", placeholder="예: 2026-02-10", key="ds_date")
-            with _ds_a2: _ds_sc    = st.selectbox("스크랩 유형", list(_of_sc_opts.keys()), key="ds_sc")
-            with _ds_a3: _ds_qty   = st.number_input("판매량 (kg)", value=0.0, step=1.0, format="%.0f", key="ds_qty")
-            with _ds_a4: _ds_price = st.number_input("단가 ($/kg)", value=0.0, step=0.01, format="%.4f", key="ds_price",
-                                                      help="직접 판매 단가 ($/kg 스크랩). 0 입력 시 미등록.")
-            with _ds_a5: _ds_notes = st.text_input("비고", placeholder="거래처, 용도 등", key="ds_notes")
-            if st.form_submit_button("추가"):
-                if not _ds_date or _ds_qty <= 0:
-                    st.error("판매일과 수량을 입력하세요.")
-                else:
-                    cfg["direct_sales"].append({
-                        "id":               str(uuid.uuid4())[:8],
-                        "date":             _ds_date.strip(),
-                        "scrap_type_id":    _of_sc_opts[_ds_sc],
-                        "quantity_kg":      float(_ds_qty),
-                        "sale_price_per_kg": float(_ds_price) if _ds_price > 0 else None,
-                        "notes":            _ds_notes,
-                    })
-                    save_cfg(cfg); st.success("추가 완료"); st.rerun()
-
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # 원료 Lot 추적 (FIFO)
-    # ══════════════════════════════════════════════════════════════════════════
-    st.divider()
-    st.markdown("### 원료 Lot 추적 (FIFO)",
-                help="임가공 출고 기록을 기준으로 2단계 FIFO를 적용해 각 B/L이 어느 입고 Lot의 스크랩으로 "
-                               "생산되었는지 추적합니다.")
-
-    _lt_inv_types = [s for s in cfg.get("scrap_types", [])
-                     if cfg.get("raw_material_inventory", {}).get(s["id"], {}).get("opening")]
-    if not _lt_inv_types:
-        st.info("스크랩 유형 관리 탭에서 기초재고를 설정하면 Lot 추적이 가능합니다.")
-    else:
-        _ltc1, _ltc2 = st.columns([2, 3])
-        with _ltc1:
-            _lt_sc_opts = {s["name"]: s["id"] for s in _lt_inv_types}
-            _lt_sc_sel  = st.selectbox("스크랩 유형 선택", list(_lt_sc_opts.keys()), key="lt_sc_sel")
-            _lt_sc_id   = _lt_sc_opts[_lt_sc_sel]
-
-        # 2단계 FIFO 계산
-        _lt_bl_result, _lt_events, _lt_remaining = _fifo_lot_trace(cfg, _lt_sc_id)
-
-        # dispatch_records 미입력 경고
-        _has_dispatch = any(dr.get("scrap_type_id") == _lt_sc_id
-                            for dr in cfg.get("dispatch_records", []))
-        _has_ph = any(r.get("scrap_type_id") == _lt_sc_id
-                      for r in cfg.get("processing_history", []))
-        if _has_ph and not _has_dispatch:
-            st.warning("임가공 출고 기록이 없습니다. 위 **임가공 출고 이력** 섹션에서 먼저 출고를 입력하세요.")
-
-        with _ltc2:
-            _lt_view_opts = {"출고 이벤트 흐름": "__all__"}
-            for _sid, _sdata in _lt_bl_result.items():
-                if not _sid.startswith("__no_ship__") and _sdata.get("hbl", "미연결") != "미연결":
-                    _k = f"🚢 {_sdata['hbl']}"
-                    if _k not in _lt_view_opts:
-                        _lt_view_opts[_k] = _sid
-            if any(e["type"] == "직접판매" for e in _lt_events):
-                _lt_view_opts["직접 판매"] = "__direct__"
-            _lt_view_sel = st.selectbox("B/L 또는 보기 선택", list(_lt_view_opts.keys()), key="lt_view_sel")
-            _lt_view_id  = _lt_view_opts[_lt_view_sel]
-
-        if not _lt_events and not _lt_bl_result:
-            st.info("이 스크랩 유형의 출고 이벤트가 없습니다.")
-
-        # ── 출고 이벤트 흐름 (Level 1 결과) ─────────────────────────────────
-        elif _lt_view_id == "__all__":
-            _lt_all_rows = []
-            for _lev in _lt_events:
-                _ev_date = _lev["date"]
-                for _attr in _lev["attributions"]:
-                    # 보관일수: 출고일 - Lot 입고일
-                    _lot_dt = _attr.get("lot_date", "")
-                    _stor_d = None
-                    if _lot_dt and _ev_date and _ev_date != "9999-12-31":
-                        try:
-                            _stor_d = max(0, (
-                                datetime.strptime(_ev_date, "%Y-%m-%d") -
-                                datetime.strptime(_lot_dt[:10], "%Y-%m-%d")
-                            ).days)
-                        except Exception:
-                            _stor_d = None
-                    _lt_all_rows.append({
-                        "출고일":         _ev_date,
-                        "유형":           _lev["type"],
-                        "임가공사":       _lev["processor"],
-                        "소진 Lot":       _attr["lot_label"],
-                        "소진량 (kg)":    _attr["qty"],
-                        "보관일수":       _stor_d,
-                        "원료단가($/kg)": _attr["unit_cost"],
-                        "원가 (USD)":     _attr["amount"],
-                        "비고":           _lev.get("notes", ""),
-                    })
-            if _lt_all_rows:
-                st.dataframe(pd.DataFrame(_lt_all_rows).style.format(na_rep="—", formatter={
-                    "소진량 (kg)":    "{:,.1f}",
-                    "보관일수":       lambda v: f"{int(v)}일" if v is not None else "—",
-                    "원료단가($/kg)": lambda v: f"${v:.4f}" if v is not None else "—",
-                    "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
-                }), width="stretch", hide_index=True)
-            else:
-                st.info("출고 이벤트가 없습니다.")
-            _lt_rem_rows = [{"Lot": l["label"], "잔량 (kg)": round(l["remain"], 1),
-                              "원료단가": l["unit_cost"]}
-                             for l in _lt_remaining if l["remain"] > 0.001]
-            if _lt_rem_rows:
-                st.markdown("**미소진 Lot 잔량** (모든 출고 차감 후)")
-                st.dataframe(pd.DataFrame(_lt_rem_rows).style.format({
-                    "잔량 (kg)": "{:,.1f}", "원료단가": "${:.4f}"}),
-                    width="stretch", hide_index=True)
-
-        # ── 직접 판매 ─────────────────────────────────────────────────────────
-        elif _lt_view_id == "__direct__":
-            _lt_ds_evs = [e for e in _lt_events if e["type"] == "직접판매"]
-            _lt_ds_rows = []
-            for _lev in _lt_ds_evs:
-                for _attr in _lev["attributions"]:
-                    _lt_ds_rows.append({
-                        "판매일":         _lev["date"],
-                        "소진 Lot":       _attr["lot_label"],
-                        "소진량 (kg)":    _attr["qty"],
-                        "원료단가($/kg)": _attr["unit_cost"],
-                        "원가 (USD)":     _attr["amount"],
-                        "비고":           _lev.get("notes", ""),
-                    })
-            if _lt_ds_rows:
-                st.dataframe(pd.DataFrame(_lt_ds_rows).style.format(na_rep="—", formatter={
-                    "소진량 (kg)":    "{:,.1f}",
-                    "원료단가($/kg)": lambda v: f"${v:.4f}" if v is not None else "—",
-                    "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
-                }), width="stretch", hide_index=True)
-            else:
-                st.info("직접 판매 이력이 없습니다.")
-
-        # ── 특정 B/L 상세 ─────────────────────────────────────────────────────
-        else:
-            _lt_bl_data = _lt_bl_result.get(_lt_view_id)
-            if not _lt_bl_data:
-                st.info("해당 B/L에 연결된 처리 이력이 없습니다.")
-            else:
-                _lot_dict   = _lt_bl_data["lots"]
-                _total_qty  = sum(v["qty"] for v in _lot_dict.values())
-                _total_amt  = sum(v["amount"] for v in _lot_dict.values()
-                                  if v.get("unit_cost") is not None)
-                _total_stor = _lt_bl_data.get("storage_cost", 0.0)
-                _wavg_cost  = _total_amt / _total_qty if _total_qty > 0 else 0
-                _bm1, _bm2, _bm3, _bm4, _bm5 = st.columns(5)
-                _bm1.markdown(_kpi_card("HBL",               _lt_bl_data["hbl"]), unsafe_allow_html=True)
-                _bm2.markdown(_kpi_card("투입 스크랩",        f"{_lt_bl_data['input_kg']:,.0f} kg"), unsafe_allow_html=True)
-                _bm3.markdown(_kpi_card("가중평균 원료단가",  f"${_wavg_cost:.4f}/kg"), unsafe_allow_html=True)
-                _bm4.markdown(_kpi_card("총 원료비 (추정)",   f"${_total_amt:,.2f}"), unsafe_allow_html=True)
-                _bm5.markdown(_kpi_card("FIFO 자동 보관비",  f"${_total_stor:,.2f}",
-                                        "입고일→출고일 기준"), unsafe_allow_html=True)
-                _lt_bl_rows = []
-                for _lbl, _v in _lot_dict.items():
-                    _qty = _v["qty"]
-                    # 가중평균 보관일수: storage_days_wsum / qty
-                    _wsum = _v.get("storage_days_wsum", 0.0)
-                    _avg_days = round(_wsum / _qty, 1) if _qty > 0 else None  # wsum=0도 유효(당일 출고=0일)
-                    _lt_bl_rows.append({
-                        "입고 Lot":        _lbl,
-                        "입고일":          _v.get("lot_date") or "—",
-                        "원료단가($/kg)":  _v.get("unit_cost"),
-                        "소진량 (kg)":     round(_qty, 1),
-                        "비중 (%)":        round(_qty / _total_qty * 100, 1) if _total_qty else 0,
-                        "원가 (USD)":      round(_v["amount"], 2) if _v.get("unit_cost") else None,
-                        "보관일수 (평균)": _avg_days,
-                        "보관비 (USD)":    round(_v["storage_cost"], 2) if _v.get("storage_cost") else None,
-                    })
-                st.dataframe(pd.DataFrame(_lt_bl_rows).style.format(na_rep="—", formatter={
-                    "원료단가($/kg)":  lambda v: f"${v:.4f}" if v is not None else "—",
-                    "소진량 (kg)":    "{:,.1f}",
-                    "비중 (%)":       "{:.1f}%",
-                    "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
-                    "보관일수 (평균)":lambda v: f"{v:.0f}일" if v is not None else "—",
-                    "보관비 (USD)":   lambda v: f"${v:,.2f}" if v is not None else "—",
-                }), width="stretch", hide_index=True)
-                st.caption("보관일수 = Lot 입고일 → 임가공 출고일 (기초재고 Lot은 기준일부터 기산)  "
-                           "| 복수 출고에 걸친 Lot은 가중평균으로 표시")
-
-        # ── 임가공 출고 합계 (임가공사별) ─────────────────────────────────────
-        st.divider()
-        st.markdown("##### 임가공 출고 합계 (임가공사별)")
-
-        _proc_map_lt = {p["id"]: p["name"] for p in cfg.get("processors", [])}
-        _dp_by_proc  = defaultdict(float)
-        for _dr in cfg.get("dispatch_records", []):
-            if _dr.get("scrap_type_id") == _lt_sc_id:
-                _dp_by_proc[_dr.get("processor_id", "__없음__")] += float(_dr.get("quantity_kg", 0))
-        _ph_by_proc = defaultdict(float)
-        for _r in cfg.get("processing_history", []):
-            if _r.get("scrap_type_id") == _lt_sc_id:
-                _ph_by_proc[_r.get("processor_id", "__없음__")] += _ph_input_kg(_r)
-
-        _lt_inv_total_in  = _inv_moving_avg(cfg, _lt_sc_id)[1]
-        _lt_inv_remaining = sum(l["remain"] for l in _lt_remaining if l["remain"] > 0.001)
-        _lt_total_disp    = sum(_dp_by_proc.values())
-        _lt_total_proc    = sum(_ph_by_proc.values())
-
-        _dm1, _dm2, _dm3, _dm4 = st.columns(4)
-        _dm1.markdown(_kpi_card("누적 입고량",     f"{_lt_inv_total_in:,.0f} kg"), unsafe_allow_html=True)
-        _dm2.markdown(_kpi_card("총 임가공 출고",  f"{_lt_total_disp:,.0f} kg", "dispatch_records 합계"), unsafe_allow_html=True)
-        _dm3.markdown(_kpi_card("총 B/L 투입",    f"{_lt_total_proc:,.0f} kg", "processing_history 합계"), unsafe_allow_html=True)
-        _dm4.markdown(_kpi_card("창고 미출고 잔량",f"{_lt_inv_remaining:,.0f} kg", "임가공사 미발송 재고"), unsafe_allow_html=True)
-
-        _all_proc_ids = set(list(_dp_by_proc.keys()) + list(_ph_by_proc.keys()))
-        if _all_proc_ids:
-            _disp_rows = []
-            for _pid in sorted(_all_proc_ids, key=lambda x: _proc_map_lt.get(x, "ㅎ")):
-                _disp   = _dp_by_proc.get(_pid, 0)
-                _proced = _ph_by_proc.get(_pid, 0)
-                _disp_rows.append({
-                    "임가공사":               _proc_map_lt.get(_pid, "미연결"),
-                    "출고 누적 (kg)":         round(_disp, 0),
-                    "B/L 투입 누적 (kg)":     round(_proced, 0),
-                    "임가공사 보유 추정 (kg)": round(_disp - _proced, 0),
+        _dr_idx = sorted((i for i, d in enumerate(_dr_list) if d.get("scrap_type_id") == _io_sid),
+                         key=lambda i: _dr_list[i].get("date", ""), reverse=True)
+        if _dr_idx:
+            _dr_rows = []
+            for dr in (_dr_list[i] for i in _dr_idx):
+                _dr_rows.append({
+                    "출고일":      dr.get("date", ""),
+                    "임가공사":    _of_pr_rev.get(dr.get("processor_id", ""), "—"),
+                    "스크랩 유형": _of_sc_rev.get(dr.get("scrap_type_id", ""), "—"),
+                    "출고량 (kg)": float(dr.get("quantity_kg", 0)),
+                    "톤백 (개)":   int(dr.get("ton_bags", 0) or 0),
+                    "비고":        dr.get("notes", ""),
                 })
-            def _hl_disp(row):
-                v = row.get("임가공사 보유 추정 (kg)", 0) or 0
-                if v < -1:  return ["", "", "", "color:#b71c1c;font-weight:600"]
-                if v > 0.5: return ["", "", "", "color:#7AA7F8;font-weight:600"]
-                return [""] * 4
             st.dataframe(
-                pd.DataFrame(_disp_rows).style
-                .apply(_hl_disp, axis=1)
-                .format({
-                    "출고 누적 (kg)":          "{:,.0f}",
-                    "B/L 투입 누적 (kg)":      "{:,.0f}",
-                    "임가공사 보유 추정 (kg)":  "{:+,.0f}",
-                }),
+                pd.DataFrame(_dr_rows).style.format({"출고량 (kg)": "{:,.0f}", "톤백 (개)": "{:,.0f}"}),
                 width="stretch", hide_index=True
             )
-            st.caption(
-                "**창고 미출고 잔량** + **임가공사 보유 추정** = 원료 재고 관리의 추정 잔량  \n"
-                "음수이면 출고 기록보다 B/L 투입량이 많음 → 출고 기록 누락 확인 필요"
-            )
+
+            _dr_del_opts = {
+                i: f"{_dr_list[i].get('date','')}  |  {_of_pr_rev.get(_dr_list[i].get('processor_id',''),'—')}  |  "
+                   f"{_of_sc_rev.get(_dr_list[i].get('scrap_type_id',''),'—')}  |  {float(_dr_list[i].get('quantity_kg',0)):,.0f} kg"
+                for i in _dr_idx
+            }
+            _drd1, _drd2 = st.columns([4, 1])
+            with _drd1:
+                # 인덱스를 값으로 사용 — 라벨 중복 시 오삭제 방지
+                _dri = st.selectbox("삭제할 출고 건", _dr_idx,
+                                     format_func=lambda i: _dr_del_opts[i], key=f"dr_del_sel_{_io_sid}")
+            with _drd2:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                with st.popover("", width="stretch"):
+                    st.warning(f"임가공 출고 삭제:\n{_dr_del_opts[_dri]}")
+                    if st.button("삭제 확인", key="dr_del_cfm", type="primary", width="stretch"):
+                        cfg["dispatch_records"].pop(_dri)
+                        save_cfg(cfg); st.rerun()
+        else:
+            st.info(f"{_io_sel['name']} 임가공 출고 기록이 없습니다.")
+
+        with st.expander("임가공 출고 수동 추가", expanded=False):
+            with st.form("add_dr"):
+                _dr_a1, _dr_a2, _dr_a3, _dr_a4, _dr_a5 = st.columns(5)
+                with _dr_a1: _dr_date  = st.text_input("출고일 (YYYY-MM-DD)", placeholder="예: 2025-11-15", key="dr_date")
+                with _dr_a2: _dr_proc  = st.selectbox("임가공사", list(_of_pr_opts.keys()), key="dr_proc")
+                with _dr_a3: _dr_sc    = st.selectbox("스크랩 유형", list(_of_sc_opts.keys()), key="dr_sc",
+                                                      index=list(_of_sc_opts).index(_io_sel["name"]) if _io_sel["name"] in _of_sc_opts else 0)
+                with _dr_a4: _dr_qty   = st.number_input("출고량 (kg)", value=0.0, step=100.0, format="%.0f", key="dr_qty")
+                with _dr_a5: _dr_notes = st.text_input("비고", placeholder="배치번호, 차량번호 등", key="dr_notes")
+                if st.form_submit_button("출고 추가"):
+                    if not _dr_date or _dr_qty <= 0:
+                        st.error("출고일과 출고량을 입력하세요.")
+                    elif not _of_pr_opts:
+                        st.error("임가공사를 먼저 등록하세요.")
+                    else:
+                        cfg["dispatch_records"].append({
+                            "id":            str(uuid.uuid4())[:8],
+                            "date":          _dr_date.strip(),
+                            "processor_id":  _of_pr_opts[_dr_proc],
+                            "scrap_type_id": _of_sc_opts[_dr_sc],
+                            "quantity_kg":   float(_dr_qty),
+                            "notes":         _dr_notes,
+                        })
+                        save_cfg(cfg); st.success("임가공 출고 추가 완료"); st.rerun()
+
+    if _io_sec == "직접 판매":
+        # ── 직접 판매 출고 이력 ───────────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### 직접 판매 출고 이력",
+                    help="임가공(톨링) 없이 스크랩을 직접 판매한 경우 여기에 기록합니다. "
+                                   "FIFO Lot 추적 계산 시 소진 이벤트로 반영됩니다.")
+
+        if "direct_sales" not in cfg:
+            cfg["direct_sales"] = []
+
+        _ds_list    = cfg["direct_sales"]
+
+        _ds_keep = [i for i, d in enumerate(_ds_list) if d.get("scrap_type_id") == _io_sid]
+        if _ds_keep:
+            # 단가 칸만 직접 수정 가능 — 저장하면 시트 동기화 때도 유지된다(시트 단가 칸이 비어 있으면 기존 단가 보존)
+            _ds_sorted = sorted(_ds_keep, key=lambda i: _ds_list[i].get("date", ""), reverse=True)
+            _ds_rows = []
+            for _i in _ds_sorted:
+                ds = _ds_list[_i]
+                _spkg = ds.get("sale_price_per_kg")
+                _dqty = float(ds.get("quantity_kg", 0))
+                _ds_rows.append({
+                    "판매일":        ds.get("date", ""),
+                    "판매처":        ds.get("customer", "") or "—",
+                    "스크랩 유형":   _of_sc_rev.get(ds.get("scrap_type_id", ""), "—"),
+                    "판매량 (kg)":   _dqty,
+                    "톤백 (개)":     int(ds.get("ton_bags", 0) or 0),
+                    "단가 ($/kg)":   float(_spkg) if _spkg is not None else None,
+                    "매출액 (USD)":  round(float(_spkg) * _dqty, 2) if _spkg is not None else None,
+                    "비고":          ds.get("notes", ""),
+                })
+            _ds_df = pd.DataFrame(_ds_rows)
+            _ds_ed = st.data_editor(
+                _ds_df, width="stretch", hide_index=True, key="ds_price_editor",
+                disabled=[c for c in _ds_df.columns if c != "단가 ($/kg)"],
+                column_config={
+                    "판매량 (kg)":  st.column_config.NumberColumn(format="%,.0f"),
+                    "톤백 (개)":    st.column_config.NumberColumn(format="%d"),
+                    "단가 ($/kg)":  st.column_config.NumberColumn(format="$%.4f", min_value=0.0, step=0.01,
+                                                                 help="이 칸만 수정할 수 있습니다. 수정 후 아래 '단가 저장'"),
+                    "매출액 (USD)": st.column_config.NumberColumn(format="$%,.2f"),
+                })
+            _ds_changed = [(_ds_sorted[k], v) for k, v in enumerate(_ds_ed["단가 ($/kg)"].tolist())
+                           if not (pd.isna(v) and _ds_rows[k]["단가 ($/kg)"] is None)
+                           and v != _ds_rows[k]["단가 ($/kg)"]]
+            if _ds_changed:
+                if st.button(f"단가 저장 ({len(_ds_changed)}건 변경)", type="primary", key="ds_price_save"):
+                    for _i, _v in _ds_changed:
+                        cfg["direct_sales"][_i]["sale_price_per_kg"] = None if pd.isna(_v) else float(_v)
+                    save_cfg(cfg); st.toast("직접판매 단가 저장"); st.rerun()
+            st.caption("단가는 이 표에서 직접 고치거나, 시트 출고 탭의 '판매단가($/kg)' 열에 넣으면 됩니다. "
+                       "시트 단가 칸이 비어 있으면 동기화해도 여기서 넣은 단가가 유지됩니다.")
+
+            _ds_del_opts = {
+                i: f"{_ds_list[i].get('date','')}  |  {_of_sc_rev.get(_ds_list[i].get('scrap_type_id',''),'—')}  |  "
+                   f"{float(_ds_list[i].get('quantity_kg',0)):,.0f} kg"
+                for i in _ds_sorted
+            }
+            _dsd1, _dsd2 = st.columns([4, 1])
+            with _dsd1:
+                # 인덱스를 값으로 사용 — 라벨 중복 시 오삭제 방지
+                _dsi = st.selectbox("삭제할 판매 건", _ds_sorted,
+                                     format_func=lambda i: _ds_del_opts[i], key=f"ds_del_sel_{_io_sid}")
+            with _dsd2:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                with st.popover("", width="stretch"):
+                    st.warning(f"직접 판매 삭제:\n{_ds_del_opts[_dsi]}")
+                    if st.button("삭제 확인", key="ds_del_cfm", type="primary", width="stretch"):
+                        cfg["direct_sales"].pop(_dsi)
+                        save_cfg(cfg); st.rerun()
+        else:
+            st.info(f"{_io_sel['name']} 직접 판매 기록이 없습니다.")
+
+        with st.expander("직접 판매 수동 추가", expanded=False):
+            with st.form("add_ds"):
+                _ds_a1, _ds_a2, _ds_a3, _ds_a4, _ds_a5 = st.columns(5)
+                with _ds_a1: _ds_date  = st.text_input("판매일 (YYYY-MM-DD)", placeholder="예: 2026-02-10", key="ds_date")
+                with _ds_a2: _ds_sc    = st.selectbox("스크랩 유형", list(_of_sc_opts.keys()), key="ds_sc",
+                                                      index=list(_of_sc_opts).index(_io_sel["name"]) if _io_sel["name"] in _of_sc_opts else 0)
+                with _ds_a3: _ds_qty   = st.number_input("판매량 (kg)", value=0.0, step=1.0, format="%.0f", key="ds_qty")
+                with _ds_a4: _ds_price = st.number_input("단가 ($/kg)", value=0.0, step=0.01, format="%.4f", key="ds_price",
+                                                          help="직접 판매 단가 ($/kg 스크랩). 0 입력 시 미등록.")
+                with _ds_a5: _ds_notes = st.text_input("비고", placeholder="거래처, 용도 등", key="ds_notes")
+                if st.form_submit_button("추가"):
+                    if not _ds_date or _ds_qty <= 0:
+                        st.error("판매일과 수량을 입력하세요.")
+                    else:
+                        cfg["direct_sales"].append({
+                            "id":               str(uuid.uuid4())[:8],
+                            "date":             _ds_date.strip(),
+                            "scrap_type_id":    _of_sc_opts[_ds_sc],
+                            "quantity_kg":      float(_ds_qty),
+                            "sale_price_per_kg": float(_ds_price) if _ds_price > 0 else None,
+                            "notes":            _ds_notes,
+                        })
+                        save_cfg(cfg); st.success("추가 완료"); st.rerun()
+
+
+    if _io_sec == "Lot 추적":
+        # ══════════════════════════════════════════════════════════════════════════
+        # 원료 Lot 추적 (FIFO)
+        # ══════════════════════════════════════════════════════════════════════════
+        st.divider()
+        st.markdown("#### 원료 Lot 추적 (FIFO)",
+                    help="임가공 출고 기록을 기준으로 2단계 FIFO를 적용해 각 B/L이 어느 입고 Lot의 스크랩으로 "
+                                   "생산되었는지 추적합니다.")
+
+        _lt_inv_types = [s for s in cfg.get("scrap_types", [])
+                         if cfg.get("raw_material_inventory", {}).get(s["id"], {}).get("opening")]
+        if not _lt_inv_types:
+            st.info("스크랩 유형 관리 탭에서 기초재고를 설정하면 Lot 추적이 가능합니다.")
+        else:
+            _ltc1, _ltc2 = st.columns([2, 3])
+            with _ltc1:
+                _lt_sc_opts = {s["name"]: s["id"] for s in _lt_inv_types}
+                _lt_sc_sel  = st.selectbox("스크랩 유형 선택", list(_lt_sc_opts.keys()), key=f"lt_sc_sel_{_io_sid}",
+                                           index=list(_lt_sc_opts).index(_io_sel["name"]) if _io_sel["name"] in _lt_sc_opts else 0)
+                _lt_sc_id   = _lt_sc_opts[_lt_sc_sel]
+
+            # 2단계 FIFO 계산
+            _lt_bl_result, _lt_events, _lt_remaining = _fifo_lot_trace(cfg, _lt_sc_id)
+
+            # dispatch_records 미입력 경고
+            _has_dispatch = any(dr.get("scrap_type_id") == _lt_sc_id
+                                for dr in cfg.get("dispatch_records", []))
+            _has_ph = any(r.get("scrap_type_id") == _lt_sc_id
+                          for r in cfg.get("processing_history", []))
+            if _has_ph and not _has_dispatch:
+                st.warning("임가공 출고 기록이 없습니다. 위 **임가공 출고 이력** 섹션에서 먼저 출고를 입력하세요.")
+
+            with _ltc2:
+                _lt_view_opts = {"출고 이벤트 흐름": "__all__"}
+                for _sid, _sdata in _lt_bl_result.items():
+                    if not _sid.startswith("__no_ship__") and _sdata.get("hbl", "미연결") != "미연결":
+                        _k = f"🚢 {_sdata['hbl']}"
+                        if _k not in _lt_view_opts:
+                            _lt_view_opts[_k] = _sid
+                if any(e["type"] == "직접판매" for e in _lt_events):
+                    _lt_view_opts["직접 판매"] = "__direct__"
+                _lt_view_sel = st.selectbox("B/L 또는 보기 선택", list(_lt_view_opts.keys()), key="lt_view_sel")
+                _lt_view_id  = _lt_view_opts[_lt_view_sel]
+
+            if not _lt_events and not _lt_bl_result:
+                st.info("이 스크랩 유형의 출고 이벤트가 없습니다.")
+
+            # ── 출고 이벤트 흐름 (Level 1 결과) ─────────────────────────────────
+            elif _lt_view_id == "__all__":
+                _lt_all_rows = []
+                for _lev in _lt_events:
+                    _ev_date = _lev["date"]
+                    for _attr in _lev["attributions"]:
+                        # 보관일수: 출고일 - Lot 입고일
+                        _lot_dt = _attr.get("lot_date", "")
+                        _stor_d = None
+                        if _lot_dt and _ev_date and _ev_date != "9999-12-31":
+                            try:
+                                _stor_d = max(0, (
+                                    datetime.strptime(_ev_date, "%Y-%m-%d") -
+                                    datetime.strptime(_lot_dt[:10], "%Y-%m-%d")
+                                ).days)
+                            except Exception:
+                                _stor_d = None
+                        _lt_all_rows.append({
+                            "출고일":         _ev_date,
+                            "유형":           _lev["type"],
+                            "임가공사":       _lev["processor"],
+                            "소진 Lot":       _attr["lot_label"],
+                            "소진량 (kg)":    _attr["qty"],
+                            "보관일수":       _stor_d,
+                            "원료단가($/kg)": _attr["unit_cost"],
+                            "원가 (USD)":     _attr["amount"],
+                            "비고":           _lev.get("notes", ""),
+                        })
+                if _lt_all_rows:
+                    st.dataframe(pd.DataFrame(_lt_all_rows).style.format(na_rep="—", formatter={
+                        "소진량 (kg)":    "{:,.1f}",
+                        "보관일수":       lambda v: f"{int(v)}일" if v is not None else "—",
+                        "원료단가($/kg)": lambda v: f"${v:.4f}" if v is not None else "—",
+                        "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
+                    }), width="stretch", hide_index=True)
+                else:
+                    st.info("출고 이벤트가 없습니다.")
+                _lt_rem_rows = [{"Lot": l["label"], "잔량 (kg)": round(l["remain"], 1),
+                                  "원료단가": l["unit_cost"]}
+                                 for l in _lt_remaining if l["remain"] > 0.001]
+                if _lt_rem_rows:
+                    st.markdown("**미소진 Lot 잔량** (모든 출고 차감 후)")
+                    st.dataframe(pd.DataFrame(_lt_rem_rows).style.format({
+                        "잔량 (kg)": "{:,.1f}", "원료단가": "${:.4f}"}),
+                        width="stretch", hide_index=True)
+
+            # ── 직접 판매 ─────────────────────────────────────────────────────────
+            elif _lt_view_id == "__direct__":
+                _lt_ds_evs = [e for e in _lt_events if e["type"] == "직접판매"]
+                _lt_ds_rows = []
+                for _lev in _lt_ds_evs:
+                    for _attr in _lev["attributions"]:
+                        _lt_ds_rows.append({
+                            "판매일":         _lev["date"],
+                            "소진 Lot":       _attr["lot_label"],
+                            "소진량 (kg)":    _attr["qty"],
+                            "원료단가($/kg)": _attr["unit_cost"],
+                            "원가 (USD)":     _attr["amount"],
+                            "비고":           _lev.get("notes", ""),
+                        })
+                if _lt_ds_rows:
+                    st.dataframe(pd.DataFrame(_lt_ds_rows).style.format(na_rep="—", formatter={
+                        "소진량 (kg)":    "{:,.1f}",
+                        "원료단가($/kg)": lambda v: f"${v:.4f}" if v is not None else "—",
+                        "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
+                    }), width="stretch", hide_index=True)
+                else:
+                    st.info("직접 판매 이력이 없습니다.")
+
+            # ── 특정 B/L 상세 ─────────────────────────────────────────────────────
+            else:
+                _lt_bl_data = _lt_bl_result.get(_lt_view_id)
+                if not _lt_bl_data:
+                    st.info("해당 B/L에 연결된 처리 이력이 없습니다.")
+                else:
+                    _lot_dict   = _lt_bl_data["lots"]
+                    _total_qty  = sum(v["qty"] for v in _lot_dict.values())
+                    _total_amt  = sum(v["amount"] for v in _lot_dict.values()
+                                      if v.get("unit_cost") is not None)
+                    _total_stor = _lt_bl_data.get("storage_cost", 0.0)
+                    _wavg_cost  = _total_amt / _total_qty if _total_qty > 0 else 0
+                    _bm1, _bm2, _bm3, _bm4, _bm5 = st.columns(5)
+                    _bm1.markdown(_kpi_card("HBL",               _lt_bl_data["hbl"]), unsafe_allow_html=True)
+                    _bm2.markdown(_kpi_card("투입 스크랩",        f"{_lt_bl_data['input_kg']:,.0f} kg"), unsafe_allow_html=True)
+                    _bm3.markdown(_kpi_card("가중평균 원료단가",  f"${_wavg_cost:.4f}/kg"), unsafe_allow_html=True)
+                    _bm4.markdown(_kpi_card("총 원료비 (추정)",   f"${_total_amt:,.2f}"), unsafe_allow_html=True)
+                    _bm5.markdown(_kpi_card("FIFO 자동 보관비",  f"${_total_stor:,.2f}",
+                                            "입고일→출고일 기준"), unsafe_allow_html=True)
+                    _lt_bl_rows = []
+                    for _lbl, _v in _lot_dict.items():
+                        _qty = _v["qty"]
+                        # 가중평균 보관일수: storage_days_wsum / qty
+                        _wsum = _v.get("storage_days_wsum", 0.0)
+                        _avg_days = round(_wsum / _qty, 1) if _qty > 0 else None  # wsum=0도 유효(당일 출고=0일)
+                        _lt_bl_rows.append({
+                            "입고 Lot":        _lbl,
+                            "입고일":          _v.get("lot_date") or "—",
+                            "원료단가($/kg)":  _v.get("unit_cost"),
+                            "소진량 (kg)":     round(_qty, 1),
+                            "비중 (%)":        round(_qty / _total_qty * 100, 1) if _total_qty else 0,
+                            "원가 (USD)":      round(_v["amount"], 2) if _v.get("unit_cost") else None,
+                            "보관일수 (평균)": _avg_days,
+                            "보관비 (USD)":    round(_v["storage_cost"], 2) if _v.get("storage_cost") else None,
+                        })
+                    st.dataframe(pd.DataFrame(_lt_bl_rows).style.format(na_rep="—", formatter={
+                        "원료단가($/kg)":  lambda v: f"${v:.4f}" if v is not None else "—",
+                        "소진량 (kg)":    "{:,.1f}",
+                        "비중 (%)":       "{:.1f}%",
+                        "원가 (USD)":     lambda v: f"${v:,.2f}" if v is not None else "—",
+                        "보관일수 (평균)":lambda v: f"{v:.0f}일" if v is not None else "—",
+                        "보관비 (USD)":   lambda v: f"${v:,.2f}" if v is not None else "—",
+                    }), width="stretch", hide_index=True)
+                    st.caption("보관일수 = Lot 입고일 → 임가공 출고일 (기초재고 Lot은 기준일부터 기산)  "
+                               "| 복수 출고에 걸친 Lot은 가중평균으로 표시")
+
+            # ── 임가공 출고 합계 (임가공사별) ─────────────────────────────────────
+            st.divider()
+            st.markdown("##### 임가공 출고 합계 (임가공사별)")
+
+            _proc_map_lt = {p["id"]: p["name"] for p in cfg.get("processors", [])}
+            _dp_by_proc  = defaultdict(float)
+            for _dr in cfg.get("dispatch_records", []):
+                if _dr.get("scrap_type_id") == _lt_sc_id:
+                    _dp_by_proc[_dr.get("processor_id", "__없음__")] += float(_dr.get("quantity_kg", 0))
+            _ph_by_proc = defaultdict(float)
+            for _r in cfg.get("processing_history", []):
+                if _r.get("scrap_type_id") == _lt_sc_id:
+                    _ph_by_proc[_r.get("processor_id", "__없음__")] += _ph_input_kg(_r)
+
+            _lt_inv_total_in  = _inv_moving_avg(cfg, _lt_sc_id)[1]
+            _lt_inv_remaining = sum(l["remain"] for l in _lt_remaining if l["remain"] > 0.001)
+            _lt_total_disp    = sum(_dp_by_proc.values())
+            _lt_total_proc    = sum(_ph_by_proc.values())
+
+            _dm1, _dm2, _dm3, _dm4 = st.columns(4)
+            _dm1.markdown(_kpi_card("누적 입고량",     f"{_lt_inv_total_in:,.0f} kg"), unsafe_allow_html=True)
+            _dm2.markdown(_kpi_card("총 임가공 출고",  f"{_lt_total_disp:,.0f} kg", "dispatch_records 합계"), unsafe_allow_html=True)
+            _dm3.markdown(_kpi_card("총 B/L 투입",    f"{_lt_total_proc:,.0f} kg", "processing_history 합계"), unsafe_allow_html=True)
+            _dm4.markdown(_kpi_card("창고 미출고 잔량",f"{_lt_inv_remaining:,.0f} kg", "임가공사 미발송 재고"), unsafe_allow_html=True)
+
+            _all_proc_ids = set(list(_dp_by_proc.keys()) + list(_ph_by_proc.keys()))
+            if _all_proc_ids:
+                _disp_rows = []
+                for _pid in sorted(_all_proc_ids, key=lambda x: _proc_map_lt.get(x, "ㅎ")):
+                    _disp   = _dp_by_proc.get(_pid, 0)
+                    _proced = _ph_by_proc.get(_pid, 0)
+                    _disp_rows.append({
+                        "임가공사":               _proc_map_lt.get(_pid, "미연결"),
+                        "출고 누적 (kg)":         round(_disp, 0),
+                        "B/L 투입 누적 (kg)":     round(_proced, 0),
+                        "임가공사 보유 추정 (kg)": round(_disp - _proced, 0),
+                    })
+                def _hl_disp(row):
+                    v = row.get("임가공사 보유 추정 (kg)", 0) or 0
+                    if v < -1:  return ["", "", "", "color:#b71c1c;font-weight:600"]
+                    if v > 0.5: return ["", "", "", "color:#7AA7F8;font-weight:600"]
+                    return [""] * 4
+                st.dataframe(
+                    pd.DataFrame(_disp_rows).style
+                    .apply(_hl_disp, axis=1)
+                    .format({
+                        "출고 누적 (kg)":          "{:,.0f}",
+                        "B/L 투입 누적 (kg)":      "{:,.0f}",
+                        "임가공사 보유 추정 (kg)":  "{:+,.0f}",
+                    }),
+                    width="stretch", hide_index=True
+                )
+                st.caption(
+                    "**창고 미출고 잔량** + **임가공사 보유 추정** = 원료 재고 관리의 추정 잔량  \n"
+                    "음수이면 출고 기록보다 B/L 투입량이 많음 → 출고 기록 누락 확인 필요"
+                )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════════════════════════════
