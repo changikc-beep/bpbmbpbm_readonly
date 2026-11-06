@@ -264,33 +264,33 @@ div[data-testid="stNumberInput"] button{display:none !important}
 
 .st-key-nav_sub{align-items:stretch !important}
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"]{
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"]{
     background:transparent;border:none;border-bottom:1px solid #2A2A30;border-radius:0;
     padding:0;width:100%
 }
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
     display:flex;gap:6px;flex-wrap:wrap}
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button{
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button{
     border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
     background:transparent !important;color:#8A8A95 !important;min-height:42px;
     font-size:.92rem !important;font-weight:500 !important;padding:8px 18px 9px !important;
     margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
 }
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
     color:#ECECEF !important;font-weight:600 !important;border-bottom:2px solid #ECECEF !important
 }
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view) div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
 /* in-page pickers (scrap type, processor): larger pills, the chosen one filled with the accent */
-:is(.st-key-io_sc, .st-key-proc_pick) div[data-testid="stButtonGroup"] button{
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick) div[data-testid="stButtonGroup"] button{
     min-height:38px;padding:6px 20px !important;border-radius:999px !important;font-size:.98rem !important;font-weight:600 !important
 }
-:is(.st-key-io_sc, .st-key-proc_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
     background:#3B82F6 !important;border-color:#3B82F6 !important;color:#FFFFFF !important
 }
-:is(.st-key-io_sc, .st-key-proc_pick){margin-bottom:6px}
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick){margin-bottom:6px}
 /* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
 .nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
 .nav-crumb a{color:#9A9AA6 !important}
@@ -4011,6 +4011,23 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_MASTER and _sub == SUB_BUYER:
     st.subheader("BP/BM 매입사 목록")
+    # 한눈에 비교하는 요약 표 → 아래에서 한 곳을 골라 편집
+    _ncol_b = st.column_config.NumberColumn
+    st.dataframe(pd.DataFrame([{
+        "매입사": b["name"], "품목": b["product"],
+        "Ni 지불율": b.get("ni_payable"), "Co 지불율": b.get("co_payable"),
+        "Ni 함유량(%)": b.get("ni_content"), "Co 함유량(%)": b.get("co_content"),
+        "가정산 입금(일)": int(b.get("prov_pay_days") or 0) or 30,
+        "확정산 입금(일)": int(b.get("final_pay_days") or 0) or 30,
+        "자체 INDEX": "사용" if b.get("custom_index") else "",
+        "상태": "활성" if b.get("active", True) else "비활성",
+    } for b in cfg["buyers"]]), width="stretch", hide_index=True, column_config={
+        "Ni 지불율": _ncol_b(format="%.2f"), "Co 지불율": _ncol_b(format="%.2f"),
+        "Ni 함유량(%)": _ncol_b(format="%.2f"), "Co 함유량(%)": _ncol_b(format="%.2f")})
+    _b_pick = st.segmented_control(
+        "편집할 매입사", list(range(len(cfg["buyers"]))), key="buyer_pick", default=0 if cfg["buyers"] else None,
+        format_func=lambda i: f"{cfg['buyers'][i]['name']} {cfg['buyers'][i]['product']}"
+                              + ("" if cfg["buyers"][i].get("active", True) else " (비활성)"))
     with st.expander("지불율(Payable) 개념 안내", expanded=False):
         st.markdown("""
 **지불율(Payable)**은 매입사가 LME/MB INDEX 기준 금속 가치 중 실제로 지불하는 비율입니다.
@@ -4023,7 +4040,10 @@ if _page == PG_MASTER and _sub == SUB_BUYER:
 지불율이 낮을수록 매입사에 유리합니다. 계약 협상 시 이 값이 핵심 조건입니다.
 """)
     for i,b in enumerate(cfg["buyers"]):
-        with st.expander(f"{b['name']} — {b['product']}" + ("" if b.get('active',True) else "  (비활성)")):
+        if i != (_b_pick if _b_pick is not None else 0):
+            continue
+        with st.container(key="panel_buyerdetail"):
+            st.markdown(f"**{b['name']}** — {b['product']}" + ("" if b.get('active',True) else "  (비활성)"))
             c1,c2,c3,c4,c5,c6=st.columns(6)
             with c1: nn =st.text_input("매입사명",b["name"],key=f"bn_{i}")
             with c2: np_=st.selectbox("품목",["BP","BM"],["BP","BM"].index(b["product"]),key=f"bpr_{i}")
@@ -4071,9 +4091,7 @@ if _page == PG_MASTER and _sub == SUB_BUYER:
                         st.warning(f"매입사 **{b['name']}** 삭제")
                         if st.button("삭제 확인", key=f"bdel_cfm_{i}", type="primary", width="stretch"):
                             cfg["buyers"].pop(i); save_cfg(cfg); st.rerun()
-    st.divider()
-    st.subheader("새 매입사 추가")
-    with st.form("add_buyer"):
+    with st.expander("새 매입사 추가", expanded=False), st.form("add_buyer"):
         a1,a2,a3,a4,a5,a6=st.columns(6)
         with a1: anm=st.text_input("매입사명")
         with a2: apr=st.selectbox("품목",["BP","BM"])
@@ -5991,299 +6009,303 @@ if _page == PG_MASTER and _sub == SUB_SYNC:
         )
 
 if _page == PG_MASTER and _sub == SUB_INDEX:
-    st.subheader("월별 INDEX 이력")
-    history=cfg.get("index_history",[])
-    if history:
-        df_h=pd.DataFrame(sorted(history,key=lambda x:x["month"],reverse=True))
-        df_h.columns=["기준월","Ni INDEX($/ton)","Co INDEX($/ton)"]
-        st.dataframe(df_h.style.format({"Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}"}),
-                     width="stretch",hide_index=True)
-        _idx_del_c1, _idx_del_c2 = st.columns([4, 1])
-        with _idx_del_c1:
-            dm=st.selectbox("삭제할 월",[h["month"] for h in sorted(history,key=lambda x:x["month"],reverse=True)])
-        with _idx_del_c2:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", width="stretch"):
-                st.warning(f"INDEX **{dm}** 삭제")
-                if st.button("삭제 확인", key="idx_del_cfm", type="primary", width="stretch"):
-                    cfg["index_history"]=[h for h in history if h["month"]!=dm]
-                    save_cfg(cfg); st.toast(f"{dm} 삭제"); st.rerun()
-    else: st.info("저장된 INDEX 이력이 없습니다.")
-    st.divider()
-    _idx_dflt_ni = _latest_idx[0]["ni_index"] if _latest_idx else 17093.18
-    _idx_dflt_co = _latest_idx[0]["co_index"] if _latest_idx else 56598.72
-    with st.expander("표준 INDEX 추가 / 수정", expanded=False):
-        with st.form("add_idx"):
-            i1,i2,i3=st.columns(3)
-            with i1: im =st.text_input("기준월 (YYYY-MM)",placeholder="2026-04")
-            with i2: ini=st.number_input("Ni INDEX($/ton)",value=_idx_dflt_ni,step=10.0,format="%.2f")
-            with i3: ico=st.number_input("Co INDEX($/ton)",value=_idx_dflt_co,step=10.0,format="%.2f")
-            if st.form_submit_button("저장"):
-                try: datetime.strptime(im,"%Y-%m")
-                except: st.error("YYYY-MM 형식으로 입력하세요.")
-                else:
-                    rest=[h for h in cfg["index_history"] if h["month"]!=im]
-                    rest.append({"month":im,"ni_index":ini,"co_index":ico})
-                    cfg["index_history"]=sorted(rest,key=lambda x:x["month"])
-                    save_cfg(cfg); st.success(f"{im} 저장 — Ni \\${ini:,.2f} / Co \\${ico:,.2f}"); st.rerun()
-
-    # ── 매입사별 자체 INDEX (예외) ─────────────────────────────────────────────
-    st.divider()
-    st.subheader("매입사별 자체 INDEX")
-    _cix_buyers = [b for b in cfg.get("buyers", []) if b.get("custom_index")]
-    if not _cix_buyers:
-        st.caption("'자체 INDEX 사용'으로 설정된 매입사가 없습니다. "
-                   "매입사 관리 탭에서 해당 매입사의 옵션을 켜면 여기에 표시됩니다.")
-    else:
-        cfg.setdefault("index_history_alt", {})
-        _cix_names = {b["id"]: f"{b['name']} ({b['product']})" for b in _cix_buyers}
-        _cix_sel_lbl = st.selectbox("매입사 선택", list(_cix_names.values()), key="idx_alt_buyer_sel")
-        _cix_bid = next(bid for bid, lbl in _cix_names.items() if lbl == _cix_sel_lbl)
-        _cix_hist = cfg["index_history_alt"].get(_cix_bid, [])
-        if _cix_hist:
-            _df_cix = pd.DataFrame([{
-                "기준월": h["month"], "Ni INDEX($/ton)": h["ni_index"], "Co INDEX($/ton)": h["co_index"],
-                "Ni payable(%)": (h["ni_payable"] * 100 if h.get("ni_payable") else None),
-                "Co payable(%)": (h["co_payable"] * 100 if h.get("co_payable") else None),
-            } for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)])
-            st.dataframe(_df_cix, width="stretch", hide_index=True,
-                         column_config={"Ni INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
-                                        "Co INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
-                                        "Ni payable(%)": st.column_config.NumberColumn(format="%.2f%%"),
-                                        "Co payable(%)": st.column_config.NumberColumn(format="%.2f%%")})
-            st.caption("payable이 빈 월은 계약·매입사 기본 지불율을 씁니다. 값이 있으면 그 월(QP)의 정산에 우선 적용됩니다.")
-            _cix_del_c1, _cix_del_c2 = st.columns([4, 1])
-            with _cix_del_c1:
-                _cix_dm = st.selectbox("삭제할 월", [h["month"] for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)], key="idx_alt_del_m")
-            with _cix_del_c2:
+    _IX_TABS = ["INDEX", "환율", "판관비"]
+    _ix_tab = st.segmented_control("구분", _IX_TABS, key="ix_tab", default=_IX_TABS[0],
+                                   label_visibility="collapsed") or _IX_TABS[0]
+    if _ix_tab == "INDEX":
+        st.subheader("월별 INDEX 이력")
+        history=cfg.get("index_history",[])
+        if history:
+            df_h=pd.DataFrame(sorted(history,key=lambda x:x["month"],reverse=True))
+            df_h.columns=["기준월","Ni INDEX($/ton)","Co INDEX($/ton)"]
+            st.dataframe(df_h.style.format({"Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}"}),
+                         width="stretch",hide_index=True)
+            _idx_del_c1, _idx_del_c2 = st.columns([4, 1])
+            with _idx_del_c1:
+                dm=st.selectbox("삭제할 월",[h["month"] for h in sorted(history,key=lambda x:x["month"],reverse=True)])
+            with _idx_del_c2:
                 st.markdown("&nbsp;", unsafe_allow_html=True)
                 with st.popover("", width="stretch"):
-                    st.warning(f"{_cix_sel_lbl} 전용 INDEX **{_cix_dm}** 삭제")
-                    if st.button("삭제 확인", key="idx_alt_del_cfm", type="primary", width="stretch"):
-                        cfg["index_history_alt"][_cix_bid] = [h for h in _cix_hist if h["month"] != _cix_dm]
-                        save_cfg(cfg); st.toast(f"{_cix_dm} 삭제"); st.rerun()
-        else:
-            st.caption(f"{_cix_sel_lbl} 전용 INDEX 이력이 없습니다 — 아래에서 등록하세요.")
-        _cix_dflt_ni = _cix_hist[-1]["ni_index"] if _cix_hist else _idx_dflt_ni
-        _cix_dflt_co = _cix_hist[-1]["co_index"] if _cix_hist else _idx_dflt_co
-        with st.expander("매입사별 INDEX 추가 / 수정", expanded=False):
-            with st.form("add_idx_alt"):
-                st.caption(f"대상: {_cix_sel_lbl}  ·  표준 INDEX와 동일한 월이어도 반드시 이 매입사 값을 별도로 입력하세요.")
-                j1, j2, j3, j4, j5 = st.columns(5)
-                with j1: jm = st.text_input("기준월 (YYYY-MM)", placeholder="2026-04", key="idx_alt_m")
-                with j2: jni = st.number_input("Ni INDEX($/ton)", value=_cix_dflt_ni, step=10.0, format="%.2f", key="idx_alt_ni")
-                with j3: jco = st.number_input("Co INDEX($/ton)", value=_cix_dflt_co, step=10.0, format="%.2f", key="idx_alt_co")
-                with j4: jnp = st.number_input("Ni payable(%)", value=0.0, step=0.5, format="%.2f", key="idx_alt_np",
-                                               help="0이면 계약·매입사 기본 지불율 사용")
-                with j5: jcp = st.number_input("Co payable(%)", value=0.0, step=0.5, format="%.2f", key="idx_alt_cp",
-                                               help="0이면 Ni payable과 같게 처리")
+                    st.warning(f"INDEX **{dm}** 삭제")
+                    if st.button("삭제 확인", key="idx_del_cfm", type="primary", width="stretch"):
+                        cfg["index_history"]=[h for h in history if h["month"]!=dm]
+                        save_cfg(cfg); st.toast(f"{dm} 삭제"); st.rerun()
+        else: st.info("저장된 INDEX 이력이 없습니다.")
+        st.divider()
+        _idx_dflt_ni = _latest_idx[0]["ni_index"] if _latest_idx else 17093.18
+        _idx_dflt_co = _latest_idx[0]["co_index"] if _latest_idx else 56598.72
+        with st.expander("표준 INDEX 추가 / 수정", expanded=False):
+            with st.form("add_idx"):
+                i1,i2,i3=st.columns(3)
+                with i1: im =st.text_input("기준월 (YYYY-MM)",placeholder="2026-04")
+                with i2: ini=st.number_input("Ni INDEX($/ton)",value=_idx_dflt_ni,step=10.0,format="%.2f")
+                with i3: ico=st.number_input("Co INDEX($/ton)",value=_idx_dflt_co,step=10.0,format="%.2f")
                 if st.form_submit_button("저장"):
-                    try: datetime.strptime(jm, "%Y-%m")
+                    try: datetime.strptime(im,"%Y-%m")
                     except: st.error("YYYY-MM 형식으로 입력하세요.")
                     else:
-                        _jrest = [h for h in cfg["index_history_alt"].get(_cix_bid, []) if h["month"] != jm]
-                        _jrec = {"month": jm, "ni_index": jni, "co_index": jco}
-                        if jnp > 0:
-                            _jrec["ni_payable"] = round(jnp / 100.0, 6)
-                            _jrec["co_payable"] = round((jcp or jnp) / 100.0, 6)
-                        _jrest.append(_jrec)
-                        cfg["index_history_alt"][_cix_bid] = sorted(_jrest, key=lambda x: x["month"])
-                        save_cfg(cfg); st.success(f"{_cix_sel_lbl}  {jm} 저장 — Ni \\${jni:,.2f} / Co \\${jco:,.2f}"); st.rerun()
+                        rest=[h for h in cfg["index_history"] if h["month"]!=im]
+                        rest.append({"month":im,"ni_index":ini,"co_index":ico})
+                        cfg["index_history"]=sorted(rest,key=lambda x:x["month"])
+                        save_cfg(cfg); st.success(f"{im} 저장 — Ni \\${ini:,.2f} / Co \\${ico:,.2f}"); st.rerun()
 
-    # ── EUR/USD 환율 관리 ─────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("월별 EUR/USD 환율")
-    st.caption("scrap보관비 계산에 사용됩니다. (EUR 1.5/톤백/day → USD 자동환산)\n"
-               "미등록 월은 직전 월 환율을 적용하며, 등록 환율이 없으면 기본값 1.10을 사용합니다.")
+        # ── 매입사별 자체 INDEX (예외) ─────────────────────────────────────────────
+        st.divider()
+        st.subheader("매입사별 자체 INDEX")
+        _cix_buyers = [b for b in cfg.get("buyers", []) if b.get("custom_index")]
+        if not _cix_buyers:
+            st.caption("'자체 INDEX 사용'으로 설정된 매입사가 없습니다. "
+                       "매입사 관리 탭에서 해당 매입사의 옵션을 켜면 여기에 표시됩니다.")
+        else:
+            cfg.setdefault("index_history_alt", {})
+            _cix_names = {b["id"]: f"{b['name']} ({b['product']})" for b in _cix_buyers}
+            _cix_sel_lbl = st.selectbox("매입사 선택", list(_cix_names.values()), key="idx_alt_buyer_sel")
+            _cix_bid = next(bid for bid, lbl in _cix_names.items() if lbl == _cix_sel_lbl)
+            _cix_hist = cfg["index_history_alt"].get(_cix_bid, [])
+            if _cix_hist:
+                _df_cix = pd.DataFrame([{
+                    "기준월": h["month"], "Ni INDEX($/ton)": h["ni_index"], "Co INDEX($/ton)": h["co_index"],
+                    "Ni payable(%)": (h["ni_payable"] * 100 if h.get("ni_payable") else None),
+                    "Co payable(%)": (h["co_payable"] * 100 if h.get("co_payable") else None),
+                } for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)])
+                st.dataframe(_df_cix, width="stretch", hide_index=True,
+                             column_config={"Ni INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
+                                            "Co INDEX($/ton)": st.column_config.NumberColumn(format="$%,.2f"),
+                                            "Ni payable(%)": st.column_config.NumberColumn(format="%.2f%%"),
+                                            "Co payable(%)": st.column_config.NumberColumn(format="%.2f%%")})
+                st.caption("payable이 빈 월은 계약·매입사 기본 지불율을 씁니다. 값이 있으면 그 월(QP)의 정산에 우선 적용됩니다.")
+                _cix_del_c1, _cix_del_c2 = st.columns([4, 1])
+                with _cix_del_c1:
+                    _cix_dm = st.selectbox("삭제할 월", [h["month"] for h in sorted(_cix_hist, key=lambda x: x["month"], reverse=True)], key="idx_alt_del_m")
+                with _cix_del_c2:
+                    st.markdown("&nbsp;", unsafe_allow_html=True)
+                    with st.popover("", width="stretch"):
+                        st.warning(f"{_cix_sel_lbl} 전용 INDEX **{_cix_dm}** 삭제")
+                        if st.button("삭제 확인", key="idx_alt_del_cfm", type="primary", width="stretch"):
+                            cfg["index_history_alt"][_cix_bid] = [h for h in _cix_hist if h["month"] != _cix_dm]
+                            save_cfg(cfg); st.toast(f"{_cix_dm} 삭제"); st.rerun()
+            else:
+                st.caption(f"{_cix_sel_lbl} 전용 INDEX 이력이 없습니다 — 아래에서 등록하세요.")
+            _cix_dflt_ni = _cix_hist[-1]["ni_index"] if _cix_hist else _idx_dflt_ni
+            _cix_dflt_co = _cix_hist[-1]["co_index"] if _cix_hist else _idx_dflt_co
+            with st.expander("매입사별 INDEX 추가 / 수정", expanded=False):
+                with st.form("add_idx_alt"):
+                    st.caption(f"대상: {_cix_sel_lbl}  ·  표준 INDEX와 동일한 월이어도 반드시 이 매입사 값을 별도로 입력하세요.")
+                    j1, j2, j3, j4, j5 = st.columns(5)
+                    with j1: jm = st.text_input("기준월 (YYYY-MM)", placeholder="2026-04", key="idx_alt_m")
+                    with j2: jni = st.number_input("Ni INDEX($/ton)", value=_cix_dflt_ni, step=10.0, format="%.2f", key="idx_alt_ni")
+                    with j3: jco = st.number_input("Co INDEX($/ton)", value=_cix_dflt_co, step=10.0, format="%.2f", key="idx_alt_co")
+                    with j4: jnp = st.number_input("Ni payable(%)", value=0.0, step=0.5, format="%.2f", key="idx_alt_np",
+                                                   help="0이면 계약·매입사 기본 지불율 사용")
+                    with j5: jcp = st.number_input("Co payable(%)", value=0.0, step=0.5, format="%.2f", key="idx_alt_cp",
+                                                   help="0이면 Ni payable과 같게 처리")
+                    if st.form_submit_button("저장"):
+                        try: datetime.strptime(jm, "%Y-%m")
+                        except: st.error("YYYY-MM 형식으로 입력하세요.")
+                        else:
+                            _jrest = [h for h in cfg["index_history_alt"].get(_cix_bid, []) if h["month"] != jm]
+                            _jrec = {"month": jm, "ni_index": jni, "co_index": jco}
+                            if jnp > 0:
+                                _jrec["ni_payable"] = round(jnp / 100.0, 6)
+                                _jrec["co_payable"] = round((jcp or jnp) / 100.0, 6)
+                            _jrest.append(_jrec)
+                            cfg["index_history_alt"][_cix_bid] = sorted(_jrest, key=lambda x: x["month"])
+                            save_cfg(cfg); st.success(f"{_cix_sel_lbl}  {jm} 저장 — Ni \\${jni:,.2f} / Co \\${jco:,.2f}"); st.rerun()
 
-    eur_rates = cfg.get("eur_usd_rates", [])
-    if eur_rates:
-        _df_eur = pd.DataFrame(sorted(eur_rates, key=lambda x: x["month"], reverse=True))
-        _df_eur.columns = ["기준월", "EUR/USD"]
-        st.dataframe(
-            _df_eur.style.format({"EUR/USD": "{:.4f}"}),
-            width="stretch", hide_index=True
-        )
-        _eur_del_c1, _eur_del_c2 = st.columns([4, 1])
-        with _eur_del_c1:
-            _eur_del_m = st.selectbox(
-                "삭제할 월",
-                [r["month"] for r in sorted(eur_rates, key=lambda x: x["month"], reverse=True)],
-                key="eur_del_sel"
+    if _ix_tab == "환율":
+        # ── EUR/USD 환율 관리 ─────────────────────────────────────────────────────
+        st.subheader("월별 EUR/USD 환율")
+        st.caption("scrap보관비 계산에 사용됩니다. (EUR 1.5/톤백/day → USD 자동환산)\n"
+                   "미등록 월은 직전 월 환율을 적용하며, 등록 환율이 없으면 기본값 1.10을 사용합니다.")
+
+        eur_rates = cfg.get("eur_usd_rates", [])
+        if eur_rates:
+            _df_eur = pd.DataFrame(sorted(eur_rates, key=lambda x: x["month"], reverse=True))
+            _df_eur.columns = ["기준월", "EUR/USD"]
+            st.dataframe(
+                _df_eur.style.format({"EUR/USD": "{:.4f}"}),
+                width="stretch", hide_index=True
             )
-        with _eur_del_c2:
+            _eur_del_c1, _eur_del_c2 = st.columns([4, 1])
+            with _eur_del_c1:
+                _eur_del_m = st.selectbox(
+                    "삭제할 월",
+                    [r["month"] for r in sorted(eur_rates, key=lambda x: x["month"], reverse=True)],
+                    key="eur_del_sel"
+                )
+            with _eur_del_c2:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                with st.popover("", width="stretch"):
+                    st.warning(f"EUR/USD **{_eur_del_m}** 삭제")
+                    if st.button("삭제 확인", key="eur_del_cfm", type="primary", width="stretch"):
+                        cfg["eur_usd_rates"] = [r for r in eur_rates if r["month"] != _eur_del_m]
+                        save_cfg(cfg); st.toast(f"{_eur_del_m} 삭제"); st.rerun()
+        else:
+            st.info("등록된 EUR/USD 환율이 없습니다. 기본값 1.10이 적용됩니다.")
+
+        st.divider()
+
+        # ── 자동 조회 (Frankfurter API) ───────────────────────────────────────────
+        st.subheader("EUR/USD · USD/KRW 자동 조회")
+        st.caption("Frankfurter.app (무료 API, 유럽중앙은행 기준) — API 키 불필요. 두 환율을 한 번에 월별 저장합니다.")
+
+        _af1, _af2, _af3 = st.columns([2, 2, 3])
+        with _af1:
+            _fetch_months = st.number_input(
+                "조회 개월 수 (최근 N개월)",
+                value=3, min_value=1, max_value=24, step=1,
+                help="현재 월 포함 최근 N개월의 말일 EUR/USD를 일괄 조회합니다."
+            )
+        with _af2:
+            _overwrite = st.checkbox("기존 값 덮어쓰기", value=False,
+                                     help="체크 해제 시 이미 등록된 월은 유지합니다.")
+        with _af3:
             st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", width="stretch"):
-                st.warning(f"EUR/USD **{_eur_del_m}** 삭제")
-                if st.button("삭제 확인", key="eur_del_cfm", type="primary", width="stretch"):
-                    cfg["eur_usd_rates"] = [r for r in eur_rates if r["month"] != _eur_del_m]
-                    save_cfg(cfg); st.toast(f"{_eur_del_m} 삭제"); st.rerun()
-    else:
-        st.info("등록된 EUR/USD 환율이 없습니다. 기본값 1.10이 적용됩니다.")
+            if st.button("자동 조회 & 저장", width="stretch", type="primary"):
+                import requests as _req
+                _existing_months = {r["month"] for r in cfg.get("eur_usd_rates", [])}
+                _saved, _skipped, _failed = [], [], []
+                _td = _today()
+                for _mi in range(int(_fetch_months)):
+                    # N개월 전부터 이번 달까지 역순 순회
+                    _y = _td.year
+                    _m = _td.month - _mi
+                    while _m <= 0:
+                        _m += 12; _y -= 1
+                    _month_str = f"{_y}-{_m:02d}"
+                    if not _overwrite and _month_str in _existing_months:
+                        _skipped.append(_month_str)
+                        continue
+                    # 해당 월 마지막 날 환율 조회
+                    import calendar
+                    _last_day = calendar.monthrange(_y, _m)[1]
+                    # 미래 월이면 오늘 날짜 기준
+                    _fetch_date = min(date(_y, _m, _last_day), _td).isoformat()
+                    try:
+                        _resp = _req.get(
+                            f"https://api.frankfurter.app/{_fetch_date}?from=EUR&to=USD",
+                            timeout=8
+                        )
+                        if _resp.status_code == 200:
+                            _rate_val = _resp.json()["rates"]["USD"]
+                            _actual_date = _resp.json()["date"][:7]  # 실제 데이터 월
+                            # 말일이 주말이면 직전 영업일 데이터 반환 → 해당 월로 저장
+                            _rest2 = [r for r in cfg.get("eur_usd_rates",[]) if r["month"] != _month_str]
+                            _rest2.append({"month": _month_str, "rate": round(_rate_val, 4)})
+                            cfg["eur_usd_rates"] = sorted(_rest2, key=lambda x: x["month"])
+                            _saved.append(f"{_month_str}: EUR/USD {_rate_val:.4f} (기준일 {_actual_date})")
+                        else:
+                            _failed.append(f"{_month_str} (HTTP {_resp.status_code})")
+                        # USD/KRW 도 같은 소스(ECB 기준)에서 함께 저장
+                        _resp_k = _req.get(
+                            f"https://api.frankfurter.app/{_fetch_date}?from=USD&to=KRW",
+                            timeout=8
+                        )
+                        if _resp_k.status_code == 200:
+                            _krw_val = _resp_k.json()["rates"]["KRW"]
+                            _rest3 = [r for r in cfg.get("usd_krw_rates",[]) if r["month"] != _month_str]
+                            _rest3.append({"month": _month_str, "rate": round(_krw_val, 2)})
+                            cfg["usd_krw_rates"] = sorted(_rest3, key=lambda x: x["month"])
+                            _saved.append(f"{_month_str}: USD/KRW {_krw_val:,.2f}")
+                    except Exception as _fe:
+                        _failed.append(f"{_month_str} ({_fe})")
+                if _saved:
+                    save_cfg(cfg)
+                    st.success(f"{len(_saved)}개월 저장 완료\n" + "\n".join(_saved))
+                if _skipped:
+                    st.info(f"⏭️ 기존값 유지 {len(_skipped)}개월: {', '.join(_skipped)}")
+                if _failed:
+                    st.error(f"조회 실패: {', '.join(_failed)}")
+                if _saved:
+                    st.rerun()
 
-    st.divider()
-
-    # ── 자동 조회 (Frankfurter API) ───────────────────────────────────────────
-    st.subheader("EUR/USD · USD/KRW 자동 조회")
-    st.caption("Frankfurter.app (무료 API, 유럽중앙은행 기준) — API 키 불필요. 두 환율을 한 번에 월별 저장합니다.")
-
-    _af1, _af2, _af3 = st.columns([2, 2, 3])
-    with _af1:
-        _fetch_months = st.number_input(
-            "조회 개월 수 (최근 N개월)",
-            value=3, min_value=1, max_value=24, step=1,
-            help="현재 월 포함 최근 N개월의 말일 EUR/USD를 일괄 조회합니다."
-        )
-    with _af2:
-        _overwrite = st.checkbox("기존 값 덮어쓰기", value=False,
-                                 help="체크 해제 시 이미 등록된 월은 유지합니다.")
-    with _af3:
-        st.markdown("&nbsp;", unsafe_allow_html=True)
-        if st.button("자동 조회 & 저장", width="stretch", type="primary"):
-            import requests as _req
-            _existing_months = {r["month"] for r in cfg.get("eur_usd_rates", [])}
-            _saved, _skipped, _failed = [], [], []
-            _td = _today()
-            for _mi in range(int(_fetch_months)):
-                # N개월 전부터 이번 달까지 역순 순회
-                _y = _td.year
-                _m = _td.month - _mi
-                while _m <= 0:
-                    _m += 12; _y -= 1
-                _month_str = f"{_y}-{_m:02d}"
-                if not _overwrite and _month_str in _existing_months:
-                    _skipped.append(_month_str)
-                    continue
-                # 해당 월 마지막 날 환율 조회
-                import calendar
-                _last_day = calendar.monthrange(_y, _m)[1]
-                # 미래 월이면 오늘 날짜 기준
-                _fetch_date = min(date(_y, _m, _last_day), _td).isoformat()
-                try:
-                    _resp = _req.get(
-                        f"https://api.frankfurter.app/{_fetch_date}?from=EUR&to=USD",
-                        timeout=8
-                    )
-                    if _resp.status_code == 200:
-                        _rate_val = _resp.json()["rates"]["USD"]
-                        _actual_date = _resp.json()["date"][:7]  # 실제 데이터 월
-                        # 말일이 주말이면 직전 영업일 데이터 반환 → 해당 월로 저장
-                        _rest2 = [r for r in cfg.get("eur_usd_rates",[]) if r["month"] != _month_str]
-                        _rest2.append({"month": _month_str, "rate": round(_rate_val, 4)})
-                        cfg["eur_usd_rates"] = sorted(_rest2, key=lambda x: x["month"])
-                        _saved.append(f"{_month_str}: EUR/USD {_rate_val:.4f} (기준일 {_actual_date})")
+        st.divider()
+        with st.expander("EUR/USD 수동 추가 / 수정", expanded=False):
+            with st.form("add_eur"):
+                _ec1, _ec2 = st.columns(2)
+                with _ec1: _eur_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-05")
+                with _ec2: _eur_r = st.number_input("EUR/USD", value=1.10, step=0.0001, format="%.4f")
+                if st.form_submit_button("저장"):
+                    try: datetime.strptime(_eur_m, "%Y-%m")
+                    except: st.error("YYYY-MM 형식으로 입력하세요.")
                     else:
-                        _failed.append(f"{_month_str} (HTTP {_resp.status_code})")
-                    # USD/KRW 도 같은 소스(ECB 기준)에서 함께 저장
-                    _resp_k = _req.get(
-                        f"https://api.frankfurter.app/{_fetch_date}?from=USD&to=KRW",
-                        timeout=8
-                    )
-                    if _resp_k.status_code == 200:
-                        _krw_val = _resp_k.json()["rates"]["KRW"]
-                        _rest3 = [r for r in cfg.get("usd_krw_rates",[]) if r["month"] != _month_str]
-                        _rest3.append({"month": _month_str, "rate": round(_krw_val, 2)})
-                        cfg["usd_krw_rates"] = sorted(_rest3, key=lambda x: x["month"])
-                        _saved.append(f"{_month_str}: USD/KRW {_krw_val:,.2f}")
-                except Exception as _fe:
-                    _failed.append(f"{_month_str} ({_fe})")
-            if _saved:
-                save_cfg(cfg)
-                st.success(f"{len(_saved)}개월 저장 완료\n" + "\n".join(_saved))
-            if _skipped:
-                st.info(f"⏭️ 기존값 유지 {len(_skipped)}개월: {', '.join(_skipped)}")
-            if _failed:
-                st.error(f"조회 실패: {', '.join(_failed)}")
-            if _saved:
-                st.rerun()
+                        _eur_rest = [r for r in cfg.get("eur_usd_rates",[]) if r["month"] != _eur_m]
+                        _eur_rest.append({"month": _eur_m, "rate": _eur_r})
+                        cfg["eur_usd_rates"] = sorted(_eur_rest, key=lambda x: x["month"])
+                        save_cfg(cfg); st.success(f"{_eur_m} 저장 — EUR/USD {_eur_r:.4f}"); st.rerun()
 
-    st.divider()
-    with st.expander("EUR/USD 수동 추가 / 수정", expanded=False):
-        with st.form("add_eur"):
-            _ec1, _ec2 = st.columns(2)
-            with _ec1: _eur_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-05")
-            with _ec2: _eur_r = st.number_input("EUR/USD", value=1.10, step=0.0001, format="%.4f")
-            if st.form_submit_button("저장"):
-                try: datetime.strptime(_eur_m, "%Y-%m")
-                except: st.error("YYYY-MM 형식으로 입력하세요.")
-                else:
-                    _eur_rest = [r for r in cfg.get("eur_usd_rates",[]) if r["month"] != _eur_m]
-                    _eur_rest.append({"month": _eur_m, "rate": _eur_r})
-                    cfg["eur_usd_rates"] = sorted(_eur_rest, key=lambda x: x["month"])
-                    save_cfg(cfg); st.success(f"{_eur_m} 저장 — EUR/USD {_eur_r:.4f}"); st.rerun()
+        # ── 월별 USD/KRW 환율 ─────────────────────────────────────────────────────
+        st.divider()
+        st.subheader("월별 USD/KRW 환율")
+        st.caption("원화 환산 KPI·엑셀 보고서에 사용. 기본값은 가장 최근 월 값이며 세션에서 덮어쓸 수 있습니다.")
+        _krw_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"], reverse=True)
+        if _krw_rates:
+            st.dataframe(pd.DataFrame([{"기준월": r["month"], "USD/KRW": float(r["rate"])} for r in _krw_rates])
+                         .style.format({"USD/KRW": "{:,.0f}"}), width="stretch", hide_index=True)
+            _kd1, _kd2 = st.columns([4, 1])
+            with _kd1:
+                _krw_dm = st.selectbox("삭제할 월", [r["month"] for r in _krw_rates], key="krw_del_sel")
+            with _kd2:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                with st.popover("", width="stretch"):
+                    st.warning(f"USD/KRW **{_krw_dm}** 삭제")
+                    if st.button("삭제 확인", key="krw_del_cfm", type="primary", width="stretch"):
+                        cfg["usd_krw_rates"] = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_dm]
+                        save_cfg(cfg); st.rerun()
+        else:
+            st.info("등록된 USD/KRW 환율이 없습니다. 기본값 1,380이 적용됩니다.")
+        with st.expander("USD/KRW 수동 추가 / 수정", expanded=False):
+            with st.form("add_krw"):
+                _kw1, _kw2 = st.columns(2)
+                with _kw1: _krw_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-09")
+                with _kw2: _krw_r = st.number_input("USD/KRW", value=1380.0, step=1.0, format="%.0f")
+                if st.form_submit_button("저장"):
+                    try: datetime.strptime(_krw_m, "%Y-%m")
+                    except ValueError: st.error("YYYY-MM 형식으로 입력하세요.")
+                    else:
+                        _krw_rest = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_m]
+                        _krw_rest.append({"month": _krw_m, "rate": float(_krw_r)})
+                        cfg["usd_krw_rates"] = sorted(_krw_rest, key=lambda x: x["month"])
+                        save_cfg(cfg); st.success(f"{_krw_m} 저장 — USD/KRW {_krw_r:,.0f}"); st.rerun()
 
-    # ── 월별 USD/KRW 환율 ─────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("월별 USD/KRW 환율")
-    st.caption("원화 환산 KPI·엑셀 보고서에 사용. 기본값은 가장 최근 월 값이며 세션에서 덮어쓸 수 있습니다.")
-    _krw_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"], reverse=True)
-    if _krw_rates:
-        st.dataframe(pd.DataFrame([{"기준월": r["month"], "USD/KRW": float(r["rate"])} for r in _krw_rates])
-                     .style.format({"USD/KRW": "{:,.0f}"}), width="stretch", hide_index=True)
-        _kd1, _kd2 = st.columns([4, 1])
-        with _kd1:
-            _krw_dm = st.selectbox("삭제할 월", [r["month"] for r in _krw_rates], key="krw_del_sel")
-        with _kd2:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", width="stretch"):
-                st.warning(f"USD/KRW **{_krw_dm}** 삭제")
-                if st.button("삭제 확인", key="krw_del_cfm", type="primary", width="stretch"):
-                    cfg["usd_krw_rates"] = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_dm]
-                    save_cfg(cfg); st.rerun()
-    else:
-        st.info("등록된 USD/KRW 환율이 없습니다. 기본값 1,380이 적용됩니다.")
-    with st.expander("USD/KRW 수동 추가 / 수정", expanded=False):
-        with st.form("add_krw"):
-            _kw1, _kw2 = st.columns(2)
-            with _kw1: _krw_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-09")
-            with _kw2: _krw_r = st.number_input("USD/KRW", value=1380.0, step=1.0, format="%.0f")
-            if st.form_submit_button("저장"):
-                try: datetime.strptime(_krw_m, "%Y-%m")
-                except ValueError: st.error("YYYY-MM 형식으로 입력하세요.")
-                else:
-                    _krw_rest = [r for r in cfg.get("usd_krw_rates", []) if r["month"] != _krw_m]
-                    _krw_rest.append({"month": _krw_m, "rate": float(_krw_r)})
-                    cfg["usd_krw_rates"] = sorted(_krw_rest, key=lambda x: x["month"])
-                    save_cfg(cfg); st.success(f"{_krw_m} 저장 — USD/KRW {_krw_r:,.0f}"); st.rerun()
-
-    # ── 월별 간접 판관비·기타 원가 ───────────────────────────────────────────
-    st.divider()
-    st.subheader("월별 간접 판관비·기타 원가")
-    st.caption("손익·시나리오 페이지의 영업이익(실질 손익)에 기간 합계로 차감됩니다. BP 사업 배분 기준이 정해지기 전까지는 "
-               "BP 귀속분만 입력하세요. (월별 배분은 미반영 — 합계로만 차감)")
-    _sga_rows = sorted(cfg.get("sga_monthly", []), key=lambda x: x["month"], reverse=True)
-    if _sga_rows:
-        st.dataframe(pd.DataFrame([{"기준월": r["month"],
-                                    "간접 판관비(USD)": float(r.get("sga") or 0),
-                                    "기타 원가(USD)":   float(r.get("other") or 0)} for r in _sga_rows])
-                     .style.format({"간접 판관비(USD)": "${:,.2f}", "기타 원가(USD)": "${:,.2f}"}),
-                     width="stretch", hide_index=True)
-        _sga_d1, _sga_d2 = st.columns([4, 1])
-        with _sga_d1:
-            _sga_dm = st.selectbox("삭제할 월", [r["month"] for r in _sga_rows], key="sga_del_sel")
-        with _sga_d2:
-            st.markdown("&nbsp;", unsafe_allow_html=True)
-            with st.popover("", width="stretch"):
-                st.warning(f"판관비 **{_sga_dm}** 삭제")
-                if st.button("삭제 확인", key="sga_del_cfm", type="primary", width="stretch"):
-                    cfg["sga_monthly"] = [r for r in cfg.get("sga_monthly", []) if r["month"] != _sga_dm]
-                    save_cfg(cfg); st.rerun()
-    else:
-        st.info("등록된 판관비가 없습니다 — 손익 분석의 영업이익이 판관비 0으로 계산됩니다.")
-    with st.expander("판관비 수동 추가 / 수정", expanded=False):
-        with st.form("add_sga"):
-            _sg1, _sg2, _sg3 = st.columns(3)
-            with _sg1: _sga_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-06")
-            with _sg2: _sga_v = st.number_input("간접 판관비 (USD)", value=0.0, step=100.0, format="%.2f")
-            with _sg3: _sga_o = st.number_input("기타 원가 (USD)",   value=0.0, step=100.0, format="%.2f")
-            if st.form_submit_button("저장"):
-                try: datetime.strptime(_sga_m, "%Y-%m")
-                except ValueError: st.error("YYYY-MM 형식으로 입력하세요.")
-                else:
-                    _sga_rest = [r for r in cfg.get("sga_monthly", []) if r["month"] != _sga_m]
-                    _sga_rest.append({"month": _sga_m, "sga": float(_sga_v), "other": float(_sga_o)})
-                    cfg["sga_monthly"] = sorted(_sga_rest, key=lambda x: x["month"])
-                    save_cfg(cfg); st.success(f"{_sga_m} 저장"); st.rerun()
+    if _ix_tab == "판관비":
+        # ── 월별 간접 판관비·기타 원가 ───────────────────────────────────────────
+        st.subheader("월별 간접 판관비·기타 원가")
+        st.caption("손익·시나리오 페이지의 영업이익(실질 손익)에 기간 합계로 차감됩니다. BP 사업 배분 기준이 정해지기 전까지는 "
+                   "BP 귀속분만 입력하세요. (월별 배분은 미반영 — 합계로만 차감)")
+        _sga_rows = sorted(cfg.get("sga_monthly", []), key=lambda x: x["month"], reverse=True)
+        if _sga_rows:
+            st.dataframe(pd.DataFrame([{"기준월": r["month"],
+                                        "간접 판관비(USD)": float(r.get("sga") or 0),
+                                        "기타 원가(USD)":   float(r.get("other") or 0)} for r in _sga_rows])
+                         .style.format({"간접 판관비(USD)": "${:,.2f}", "기타 원가(USD)": "${:,.2f}"}),
+                         width="stretch", hide_index=True)
+            _sga_d1, _sga_d2 = st.columns([4, 1])
+            with _sga_d1:
+                _sga_dm = st.selectbox("삭제할 월", [r["month"] for r in _sga_rows], key="sga_del_sel")
+            with _sga_d2:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                with st.popover("", width="stretch"):
+                    st.warning(f"판관비 **{_sga_dm}** 삭제")
+                    if st.button("삭제 확인", key="sga_del_cfm", type="primary", width="stretch"):
+                        cfg["sga_monthly"] = [r for r in cfg.get("sga_monthly", []) if r["month"] != _sga_dm]
+                        save_cfg(cfg); st.rerun()
+        else:
+            st.info("등록된 판관비가 없습니다 — 손익 분석의 영업이익이 판관비 0으로 계산됩니다.")
+        with st.expander("판관비 수동 추가 / 수정", expanded=False):
+            with st.form("add_sga"):
+                _sg1, _sg2, _sg3 = st.columns(3)
+                with _sg1: _sga_m = st.text_input("기준월 (YYYY-MM)", placeholder="2026-06")
+                with _sg2: _sga_v = st.number_input("간접 판관비 (USD)", value=0.0, step=100.0, format="%.2f")
+                with _sg3: _sga_o = st.number_input("기타 원가 (USD)",   value=0.0, step=100.0, format="%.2f")
+                if st.form_submit_button("저장"):
+                    try: datetime.strptime(_sga_m, "%Y-%m")
+                    except ValueError: st.error("YYYY-MM 형식으로 입력하세요.")
+                    else:
+                        _sga_rest = [r for r in cfg.get("sga_monthly", []) if r["month"] != _sga_m]
+                        _sga_rest.append({"month": _sga_m, "sga": float(_sga_v), "other": float(_sga_o)})
+                        cfg["sga_monthly"] = sorted(_sga_rest, key=lambda x: x["month"])
+                        save_cfg(cfg); st.success(f"{_sga_m} 저장"); st.rerun()
 if _page == PG_MASTER and _sub == SUB_SYNC:
     # ── 데이터 백업·복원 ──────────────────────────────────────────────────────
     st.divider()
