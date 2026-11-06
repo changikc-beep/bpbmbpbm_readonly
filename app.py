@@ -254,10 +254,10 @@ div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st
 .kpi-tile{box-sizing:border-box}
 
 /* Shipment list / detail panels (not stretched: the list stays put while the detail scrolls) */
-.st-key-panel_shiplist, .st-key-panel_shipdetail{
+div[class*="st-key-panel_"]{
     background:#1C1C20;border-radius:16px;padding:18px 18px !important
 }
-.st-key-panel_shiplist{position:sticky;top:4rem}
+div[class*="st-key-panel_"][class*="list"]{position:sticky;top:4rem}
 /* number inputs: drop the +/- steppers (amounts are typed), so values are not cut off */
 div[data-testid="stNumberInput"] button{display:none !important}
 .st-key-panel_shiplist div[data-testid="stDataFrame"]{background:transparent}
@@ -1903,6 +1903,53 @@ def _quarter_stats(f_rows, f_ships, q, days=None):
             "rows": _rs, "ships": _ss,
             "nobatch": [s for s in _ss if s["id"] not in {x["sid"] for x in _rs}]}
 
+def _usd_k(v):
+    """Compact signed dollars for narrow cells: -$12k, $1.2M."""
+    a = abs(float(v or 0))
+    s = f"${a/1_000_000:.1f}M" if a >= 1_000_000 else f"${a/1000:,.0f}k"
+    return ("-" if v < 0 else "") + s
+
+def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, title="", caption_of=None):
+    """월별로 묶은 클릭 목록(최근이 위, 월마다 옅은 띠) — 아무 셀이나 누르면 그 행이 선택된다.
+    items: [(id, obj)], date_of(obj) → 'YYYY-MM-DD', cols_of(obj) → 날짜 뒤에 붙일 열 dict(문자열),
+    widths: {열 이름: px}. 선택된 id 를 session_state[sel_key] 에 두고 돌려준다."""
+    order = sorted(items, key=lambda it: date_of(it[1]) or "", reverse=True)
+    ids = [i for i, _ in order]
+    ev = st.session_state.get(key)
+    sel = (ev.get("selection", {}) if isinstance(ev, dict) else getattr(ev, "selection", None)) if ev else None
+    cells = (sel.get("cells") if isinstance(sel, dict) else getattr(sel, "cells", None)) if sel else None
+    if cells:
+        c0 = cells[0]
+        row = c0.get("row") if isinstance(c0, dict) else c0[0]
+        if isinstance(row, int) and row < len(ids):
+            st.session_state[sel_key] = ids[row]
+    if st.session_state.get(sel_key) not in ids:
+        st.session_state[sel_key] = default_id if default_id in ids else (ids[0] if ids else None)
+    sel_id = st.session_state[sel_key]
+    if title:
+        st.markdown(title)
+    if caption_of and sel_id is not None:
+        st.caption(caption_of(dict(order)[sel_id]))
+    rows, grp, prev, g = [], [], None, -1
+    for _, obj in order:
+        d = date_of(obj) or ""
+        m = d[:7] or "미정"
+        rows.append({"선적월": ((f"{m[2:4]}.{m[5:7]}" if m != "미정" else m) if m != prev else ""),
+                     "일": d[8:10] or "—", **cols_of(obj)})
+        g += m != prev
+        grp.append(g)
+        prev = m
+    if not rows:
+        st.caption("항목 없음")
+        return sel_id
+    df = pd.DataFrame(rows)
+    sty = df.style.apply(lambda r: ["background-color:#24242A" if grp[r.name] % 2 else ""] * len(r), axis=1)
+    cc = {"선적월": st.column_config.TextColumn(width=52), "일": st.column_config.TextColumn(width=30)}
+    cc.update({k: st.column_config.TextColumn(width=w) for k, w in widths.items()})
+    st.dataframe(sty, key=key, on_select="rerun", selection_mode="single-cell", hide_index=True,
+                 width="stretch", height=min(36 * len(df) + 40, 640), column_config=cc)
+    return sel_id
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.spinner("데이터 불러오는 중..."):     # 캐시 히트 시엔 표시되지 않음
     cfg = load_cfg()
@@ -2245,60 +2292,25 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             })
 
         # ── 목록(왼쪽)에서 한 건을 고르면 그 건의 상세·편집 폼만 오른쪽에 그린다 ──────────
-        # 목록은 최근 선적이 위로, 선적월별로 묶어 보여 준다
-        _list_order = sorted(show_ships, key=lambda x: x.get("loading_date") or "", reverse=True)
-        _ids = [x["id"] for x in _list_order]
         # 홈 '할 일'의 HBL 링크(?hbl=)로 진입한 경우 해당 선적건을 먼저 선택
         _qp_hbl = str(st.query_params.get("hbl", "")).strip()
         if _qp_hbl and "ship_sel_sid" not in st.session_state:
             st.session_state["ship_sel_sid"] = next(
                 (x["id"] for x in show_ships if x.get("hbl", "").strip() == _qp_hbl), None)
-        # clicking any cell picks its row (single-cell mode: no need to hit the row checkbox)
-        _ev = st.session_state.get("ship_list")
-        _sel = (_ev.get("selection", {}) if isinstance(_ev, dict) else getattr(_ev, "selection", None)) if _ev else None
-        _cells = (_sel.get("cells") if isinstance(_sel, dict) else getattr(_sel, "cells", None)) if _sel else None
-        if _cells:
-            _c0 = _cells[0]
-            _row = _c0.get("row") if isinstance(_c0, dict) else _c0[0]
-            if isinstance(_row, int) and _row < len(_ids):
-                st.session_state["ship_sel_sid"] = _ids[_row]
-        if st.session_state.get("ship_sel_sid") not in _ids:
-            # 기본: 가장 최근의 미입금 건, 없으면 가장 최근 건
-            _open = [x for x in show_ships if x.get("status") != "paid"]
-            st.session_state["ship_sel_sid"] = (_open or show_ships)[-1]["id"]
-        _ed_sid = st.session_state["ship_sel_sid"]
-
+        _st_short = {"provisional": "가정산", "final": "확정산", "paid": "입금"}
+        _open = [x for x in show_ships if x.get("status") != "paid"]   # 기본: 가장 최근의 미입금 건
         _lc, _rc = st.columns([1.3, 2.6], gap="medium")
         with _lc, st.container(key="panel_shiplist"):
-            _sel_hbl = next((x.get("hbl", "") for x in show_ships if x["id"] == _ed_sid), "")
-            st.markdown(f"**선적 목록**  ·  {len(show_ships)}건")
-            st.caption(f"선택: {_sel_hbl or 'HBL미정'}")
-            _st_short = {"provisional": "가정산", "final": "확정산", "paid": "입금"}
-            _rows, _prev_m, _grp, _g = [], None, [], -1
-            for x in _list_order:
-                _ld = x.get("loading_date") or ""
-                _m = _ld[:7] or "미정"
-                _rows.append({
-                    "선적월": (f"{_m[2:4]}.{_m[5:7]}" if _m != "미정" else _m) if _m != _prev_m else "",
-                    "일": _ld[8:10] or "—",
-                    "매입사": buyer_map.get(x.get("buyer_id", ""), {}).get("name", "?"),
-                    "중량": f"{float(x.get('weight_kg') or 0)/1000:,.1f}t",
-                    "상태": _st_short.get(x.get("status", "provisional"), "—"),
-                })
-                _g += _m != _prev_m
-                _grp.append(_g)
-                _prev_m = _m
-            _list_df = pd.DataFrame(_rows)
-            # alternate a faint band per month so month boundaries read at a glance
-            _list_sty = _list_df.style.apply(
-                lambda r: ["background-color:#24242A" if _grp[r.name] % 2 else ""] * len(r), axis=1)
-            st.dataframe(_list_sty, key="ship_list", on_select="rerun", selection_mode="single-cell",
-                         hide_index=True, width="stretch", height=min(36 * len(_list_df) + 40, 640),
-                         column_config={"선적월": st.column_config.TextColumn(width=52),
-                                        "일": st.column_config.TextColumn(width=30),
-                                        "매입사": st.column_config.TextColumn(width=62),
-                                        "중량": st.column_config.TextColumn(width=48),
-                                        "상태": st.column_config.TextColumn(width=48)})
+            _ed_sid = _month_list(
+                "ship_list", "ship_sel_sid", [(x["id"], x) for x in show_ships],
+                date_of=lambda x: x.get("loading_date"),
+                cols_of=lambda x: {"매입사": buyer_map.get(x.get("buyer_id", ""), {}).get("name", "?"),
+                                   "중량": f"{float(x.get('weight_kg') or 0)/1000:,.1f}t",
+                                   "상태": _st_short.get(x.get("status", "provisional"), "—")},
+                widths={"매입사": 62, "중량": 48, "상태": 48},
+                default_id=(_open or show_ships)[-1]["id"],
+                title=f"**선적 목록**  ·  {len(show_ships)}건",
+                caption_of=lambda x: f"선택: {x.get('hbl', '').strip() or 'HBL미정'}")
 
         _ship_id_idx = {sh.get("id"): _ri for _ri, sh in enumerate(shipments)}
         for i,s in enumerate(show_ships):
@@ -3590,6 +3602,17 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 "실질손익":   round(_real_r, 2),
             })
 
+        _tot_real_hbl = sum(
+            (_h["bp_rev"] - _h["pf"] - _h["eu"]) - _h["raw"] - _h["stor"]
+            for _h in _hbl_agg.values()
+        )
+        _fm1, _fm2 = st.columns(2)
+        _fh_col = "#4ade80" if _tot_real_hbl >= 0 else "#f87171"
+        _unlinked = len(_ph_all) - len(_linked_pnl)
+        _fm1.markdown(_kpi_card("전체 HBL 합산 실질 손익", f"{_usd(_tot_real_hbl, 0)}", val_color=_fh_col), unsafe_allow_html=True)
+        _fm2.markdown(_kpi_card_badge("미연결 배치", f"{_unlinked}건", "#fb923c" if _unlinked else "#4ade80",
+                                  f"{_unlinked}건", "재고·임가공 > 임가공사·배치에서 HBL 연결"), unsafe_allow_html=True)
+
         # ── 요약 테이블 ──────────────────────────────────────────────────────
         _sum_rows = []
         for _hid, _h in sorted(_hbl_agg.items(),
@@ -3614,7 +3637,8 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 "마진율(%)":   round(_hmgr, 2) if _hmgr is not None else None,
             })
 
-        st.dataframe(
+        _sum_box = st.expander(f"HBL 전체 표 ({len(_sum_rows)}건) · Excel", expanded=False)
+        _sum_box.dataframe(
             pd.DataFrame(_sum_rows), width="stretch", hide_index=True,
             column_config=_cc_money("매출(BP)", "원료 매입비", "임가공비(순)", "매출총이익", "수출비",
                                     "보관비", "실질 손익", kg=("BP생산(kg)",), pct=("마진율(%)",)),
@@ -3626,7 +3650,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             with pd.ExcelWriter(_xl_buf, engine="openpyxl") as _xew:
                 pd.DataFrame(_sum_rows).to_excel(_xew, index=False, sheet_name="HBL손익요약")
             _xl_buf.seek(0)
-            st.download_button(
+            _sum_box.download_button(
                 "Excel 다운로드",
                 data=_xl_buf,
                 file_name=f"HBL_손익요약_{_today():%Y%m%d}.xlsx",
@@ -3635,36 +3659,34 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
         except Exception as _e_xl:
             st.caption(f"엑셀 파일을 만들지 못했습니다: {_e_xl}")
 
-        _tot_real_hbl = sum(
-            (_h["bp_rev"] - _h["pf"] - _h["eu"]) - _h["raw"] - _h["stor"]
-            for _h in _hbl_agg.values()
-        )
-        _fm1, _fm2 = st.columns(2)
-        _fh_col = "#4ade80" if _tot_real_hbl >= 0 else "#f87171"
-        _unlinked = len(_ph_all) - len(_linked_pnl)
-        _fm1.markdown(_kpi_card("전체 HBL 합산 실질 손익", f"{_usd(_tot_real_hbl, 0)}", val_color=_fh_col), unsafe_allow_html=True)
-        _fm2.markdown(_kpi_card_badge("미연결 배치", f"{_unlinked}건", "#fb923c" if _unlinked else "#4ade80",
-                                  f"{_unlinked}건", "재고·임가공 > 임가공사·배치에서 HBL 연결"), unsafe_allow_html=True)
 
         _pv = st.radio("보기 기준", ["HBL별", "매입사별", "임가공사별"], horizontal=True, key="pnl_view")
         if _pv == "HBL별":
             # ── HBL별 카드 ──────────────────────────────────────────────────────
-            st.markdown("---")
-            for _hid, _h in sorted(_hbl_agg.items(),
-                                    key=lambda x: x[1]["load_date"], reverse=True):
+            # 목록(왼쪽, 선적월별)에서 HBL 하나를 고르면 그 HBL의 손익 분해·배치·Lot만 오른쪽에 그린다
+            _hreal_of = lambda h: h["bp_rev"] - h["raw"] - h["pf"] - h["eu"] - h["stor"]
+            _plc, _prc = st.columns([1.3, 2.6], gap="medium")
+            with _plc, st.container(key="panel_pnllist"):
+                _sel_hid = _month_list(
+                    "pnl_hbl_list", "pnl_sel_hid", list(_hbl_agg.items()),
+                    date_of=lambda h: h["load_date"] if h["load_date"] != "—" else "",
+                    cols_of=lambda h: {"매입사": h["매입사"].split(" (")[0],
+                                       "실질손익": _usd_k(_hreal_of(h)),
+                                       "마진": (f"{_hreal_of(h) / h['bp_rev'] * 100:.0f}%" if h["bp_rev"] > 0 else "—")},
+                    widths={"매입사": 62, "실질손익": 56, "마진": 40},
+                    title=f"**HBL 목록**  ·  {len(_hbl_agg)}건",
+                    caption_of=lambda h: f"선택: {h['hbl']}")
+            for _hid, _h in _hbl_agg.items():
+                if _hid != _sel_hid:
+                    continue
                 _hgp    = _h["bp_rev"] - _h["raw"] - _h["pf"]   # 매출총이익
                 _hreal  = _hgp - _h["eu"] - _h["stor"]          # 실질 손익
                 _hmgr   = _hreal / _h["bp_rev"] * 100 if _h["bp_rev"] > 0 else 0
-                _icon   = "🟢" if _hreal >= 0 else "🔴"
-                _pnl_color = "🟢" if _hreal >= 0 else "🔴"
-                with st.expander(
-                    f"{_pnl_color}  {_h['hbl']}  ·  {_h['매입사']}"
-                    f"  │  {_h['load_date']}"
-                    f"  │  임가공비 \\${_h['pf']:,.0f}"
-                    f"  │  실질손익 {_usd(_hreal, 0, md=True)}  ({_hmgr:+.1f}%)",
-                    expanded=False,
-                ):
-                    _cl, _cr = st.columns([5, 7])
+                with _prc, st.container(key="panel_pnldetail"):
+                    st.markdown(f"**{_h['hbl']}**  ·  {_h['매입사']}  ·  {_h['load_date']}")
+                    st.caption(f"실질손익 {_usd(_hreal, 0, md=True)} ({_hmgr:+.1f}%)  ·  "
+                               f"임가공비 \\${_h['pf']:,.0f}  ·  임가공사 {'·'.join(sorted(_h['procs'])) or '—'}")
+                    _cl, _cr = st.container(), st.container()
                     with _cl:
                         st.markdown("**손익 분해**")
                         _wf_df = pd.DataFrame([
