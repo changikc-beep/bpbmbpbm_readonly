@@ -252,6 +252,9 @@ div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile)
 div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile) div:has(.kpi-tile),
 div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"]){height:100%}
 .kpi-tile{box-sizing:border-box}
+/* P&L waterfall: the chart grows to fill its (equal-height) card */
+.st-key-card_wf div[data-testid="stElementContainer"]:has([data-testid="stPlotlyChart"]){flex:1 1 auto;min-height:320px}
+.st-key-card_wf div[data-testid="stPlotlyChart"]{height:100%}
 
 /* Shipment list / detail panels (not stretched: the list stays put while the detail scrolls) */
 div[class*="st-key-panel_"]{
@@ -3177,9 +3180,10 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                     connector=dict(line=dict(color="#484848", width=1, dash="dot")),
                     hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
                 ))
-                _fig_style(_wf, height=362, legend=False, top=24)   # ≈ the stepped P&L card beside it
-                _wf.update_layout(margin=dict(l=8, r=8, b=8))
-                st.plotly_chart(_wf, width="stretch")
+                _fig_style(_wf, height=340, legend=False, top=24)
+                # no fixed height: the chart fills whatever height the card gets from the P&L table beside it
+                _wf.update_layout(margin=dict(l=8, r=8, b=8), height=None, autosize=True)
+                st.plotly_chart(_wf, width="stretch", height="stretch", config={"displayModeBar": False})
             except ImportError:
                 pass
 
