@@ -2262,7 +2262,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             st.session_state["ship_sel_sid"] = (_open or show_ships)[-1]["id"]
         _ed_sid = st.session_state["ship_sel_sid"]
 
-        _lc, _rc = st.columns([1.5, 2.5], gap="medium")
+        _lc, _rc = st.columns([1.3, 2.6], gap="medium")
         with _lc, st.container(key="panel_shiplist"):
             _sel_hbl = next((x.get("hbl", "") for x in show_ships if x["id"] == _ed_sid), "")
             st.markdown(f"**선적 목록**  ·  {len(show_ships)}건")
@@ -2275,9 +2275,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             } for x in show_ships])
             st.dataframe(_list_df, key="ship_list", on_select="rerun", selection_mode="single-row",
                          hide_index=True, width="stretch", height=min(36 * len(_list_df) + 40, 640),
-                         column_config={"HBL": st.column_config.TextColumn(width=134),
-                                        "매입사": st.column_config.TextColumn(width=68),
-                                        "상태": st.column_config.TextColumn(width=54)})
+                         column_config={"HBL": st.column_config.TextColumn(width=122),
+                                        "매입사": st.column_config.TextColumn(width=62),
+                                        "상태": st.column_config.TextColumn(width=50)})
 
         _ship_id_idx = {sh.get("id"): _ri for _ri, sh in enumerate(shipments)}
         for i,s in enumerate(show_ships):
