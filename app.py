@@ -2245,17 +2245,23 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             })
 
         # ── 목록(왼쪽)에서 한 건을 고르면 그 건의 상세·편집 폼만 오른쪽에 그린다 ──────────
-        _ids = [x["id"] for x in show_ships]
+        # 목록은 최근 선적이 위로, 선적월별로 묶어 보여 준다
+        _list_order = sorted(show_ships, key=lambda x: x.get("loading_date") or "", reverse=True)
+        _ids = [x["id"] for x in _list_order]
         # 홈 '할 일'의 HBL 링크(?hbl=)로 진입한 경우 해당 선적건을 먼저 선택
         _qp_hbl = str(st.query_params.get("hbl", "")).strip()
         if _qp_hbl and "ship_sel_sid" not in st.session_state:
             st.session_state["ship_sel_sid"] = next(
                 (x["id"] for x in show_ships if x.get("hbl", "").strip() == _qp_hbl), None)
+        # clicking any cell picks its row (single-cell mode: no need to hit the row checkbox)
         _ev = st.session_state.get("ship_list")
-        _ev_rows = (_ev.get("selection", {}).get("rows") if isinstance(_ev, dict)
-                    else getattr(getattr(_ev, "selection", None), "rows", None)) if _ev else None
-        if _ev_rows and _ev_rows[0] < len(_ids):
-            st.session_state["ship_sel_sid"] = _ids[_ev_rows[0]]
+        _sel = (_ev.get("selection", {}) if isinstance(_ev, dict) else getattr(_ev, "selection", None)) if _ev else None
+        _cells = (_sel.get("cells") if isinstance(_sel, dict) else getattr(_sel, "cells", None)) if _sel else None
+        if _cells:
+            _c0 = _cells[0]
+            _row = _c0.get("row") if isinstance(_c0, dict) else _c0[0]
+            if isinstance(_row, int) and _row < len(_ids):
+                st.session_state["ship_sel_sid"] = _ids[_row]
         if st.session_state.get("ship_sel_sid") not in _ids:
             # 기본: 가장 최근의 미입금 건, 없으면 가장 최근 건
             _open = [x for x in show_ships if x.get("status") != "paid"]
@@ -2268,16 +2274,31 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             st.markdown(f"**선적 목록**  ·  {len(show_ships)}건")
             st.caption(f"선택: {_sel_hbl or 'HBL미정'}")
             _st_short = {"provisional": "가정산", "final": "확정산", "paid": "입금"}
-            _list_df = pd.DataFrame([{
-                "HBL": x.get("hbl", "").strip() or "HBL미정",
-                "매입사": buyer_map.get(x.get("buyer_id", ""), {}).get("name", "?"),
-                "상태": _st_short.get(x.get("status", "provisional"), "—"),
-            } for x in show_ships])
-            st.dataframe(_list_df, key="ship_list", on_select="rerun", selection_mode="single-row",
+            _rows, _prev_m, _grp, _g = [], None, [], -1
+            for x in _list_order:
+                _ld = x.get("loading_date") or ""
+                _m = _ld[:7] or "미정"
+                _rows.append({
+                    "선적월": (f"{_m[2:4]}.{_m[5:7]}" if _m != "미정" else _m) if _m != _prev_m else "",
+                    "일": _ld[8:10] or "—",
+                    "매입사": buyer_map.get(x.get("buyer_id", ""), {}).get("name", "?"),
+                    "중량": f"{float(x.get('weight_kg') or 0)/1000:,.1f}t",
+                    "상태": _st_short.get(x.get("status", "provisional"), "—"),
+                })
+                _g += _m != _prev_m
+                _grp.append(_g)
+                _prev_m = _m
+            _list_df = pd.DataFrame(_rows)
+            # alternate a faint band per month so month boundaries read at a glance
+            _list_sty = _list_df.style.apply(
+                lambda r: ["background-color:#24242A" if _grp[r.name] % 2 else ""] * len(r), axis=1)
+            st.dataframe(_list_sty, key="ship_list", on_select="rerun", selection_mode="single-cell",
                          hide_index=True, width="stretch", height=min(36 * len(_list_df) + 40, 640),
-                         column_config={"HBL": st.column_config.TextColumn(width=122),
+                         column_config={"선적월": st.column_config.TextColumn(width=52),
+                                        "일": st.column_config.TextColumn(width=30),
                                         "매입사": st.column_config.TextColumn(width=62),
-                                        "상태": st.column_config.TextColumn(width=50)})
+                                        "중량": st.column_config.TextColumn(width=48),
+                                        "상태": st.column_config.TextColumn(width=48)})
 
         _ship_id_idx = {sh.get("id"): _ri for _ri, sh in enumerate(shipments)}
         for i,s in enumerate(show_ships):
