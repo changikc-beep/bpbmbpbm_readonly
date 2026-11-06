@@ -15,10 +15,12 @@ st.markdown("""
 
 /* ── Layout ── */
 .main .block-container, div[data-testid="stMainBlockContainer"]{
-    padding-top:1.25rem;padding-bottom:3rem;max-width:1320px
+    padding-top:3.4rem;padding-bottom:3rem;max-width:1320px
 }
+/* the fixed top header would otherwise sit over the first row (sub tabs) */
+header[data-testid="stHeader"]{background:transparent !important}
 section[data-testid="stSidebar"]{
-    min-width:232px;max-width:260px;
+    min-width:252px;max-width:280px;
     border-right:1px solid #2A2A30 !important
 }
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
@@ -219,27 +221,37 @@ div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !i
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
 section[data-testid="stSidebar"]{background:#16161A !important}
 section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding-top:.5rem}
-.sb-title{font-size:1.15rem;font-weight:700;letter-spacing:-.02em;color:#ECECEF;line-height:1.25;margin:0 0 14px 4px}
-.sb-title span{font-size:.82rem;font-weight:500;color:#9A9AA6}
+.sb-title{font-size:1.5rem;font-weight:700;letter-spacing:-.02em;color:#ECECEF;line-height:1.25;margin:0 0 16px 4px}
+.sb-title span{font-size:.95rem;font-weight:500;color:#9A9AA6}
+section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
 .st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
 .st-key-nav_top label[data-baseweb="radio"]{
-    width:100%;margin:0 !important;padding:9px 12px !important;border-radius:10px;
+    width:100%;margin:0 !important;padding:11px 14px !important;border-radius:10px;
     cursor:pointer;transition:background .15s
 }
 .st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
-.st-key-nav_top label[data-baseweb="radio"] p{font-size:.95rem !important;font-weight:500;color:#9A9AA6}
+.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.08rem !important;font-weight:500;color:#9A9AA6}
+.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.25rem !important}
 .st-key-nav_top label[data-baseweb="radio"]:hover{background:#1F1F24}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#26262C}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#FFFFFF;font-weight:600}
 .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{margin-right:6px}
 section[data-testid="stSidebar"] hr{margin:.8rem 0}
-section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.74rem;line-height:1.55}
+section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.86rem;line-height:1.6}
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button p{font-size:.98rem}
 
-/* KPI row: cards with and without sparklines share one height */
-.st-key-kpi_row div[data-testid="stColumn"]{display:flex}
-.st-key-kpi_row div[data-testid="stColumn"] > div{flex:1}
-.st-key-kpi_row div[data-testid="stElementContainer"],
-.st-key-kpi_row div[data-testid="stMetric"]{height:100%}
+/* Equal heights: cards placed side by side in columns (metrics, stat tiles, bordered cards)
+   stretch to the tallest one in their row, whatever their line count */
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"])){
+    align-items:stretch !important
+}
+div[data-testid="stColumn"]:has(:is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"])){display:flex;flex-direction:column}
+div[data-testid="stColumn"]:has(:is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"])) > div{flex:1}
+div[data-testid="stColumn"] div:has(> :is([data-testid="stMetric"], [class*="st-key-card_"])),
+div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile),
+div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile) div:has(.kpi-tile),
+div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"]){height:100%}
+.kpi-tile{box-sizing:border-box}
 
 .st-key-nav_sub{align-items:stretch !important}
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
