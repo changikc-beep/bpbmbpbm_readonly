@@ -253,6 +253,15 @@ div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile)
 div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"]){height:100%}
 .kpi-tile{box-sizing:border-box}
 
+/* Shipment list / detail panels (not stretched: the list stays put while the detail scrolls) */
+.st-key-panel_shiplist, .st-key-panel_shipdetail{
+    background:#1C1C20;border-radius:16px;padding:18px 18px !important
+}
+.st-key-panel_shiplist{position:sticky;top:4rem}
+/* number inputs: drop the +/- steppers (amounts are typed), so values are not cut off */
+div[data-testid="stNumberInput"] button{display:none !important}
+.st-key-panel_shiplist div[data-testid="stDataFrame"]{background:transparent}
+
 .st-key-nav_sub{align-items:stretch !important}
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
 .st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
@@ -2220,7 +2229,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         st.info("등록된 선적건이 없습니다. 아래에서 추가하세요.")
     else:
         # ── 항차 일정 타임라인 ──────────────────────────────────────────────
-        st.markdown("#### 항차 일정")
         _tl = []
         for _si, _s in enumerate(show_ships, 1):
             _b2  = buyer_map.get(_s.get("buyer_id",""), {})
@@ -2235,89 +2243,41 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 "중량(kg)": _s.get("weight_kg",0),
                 "상태":   {"provisional":"🟡 Provisional","final":"🟢 최종","paid":"🔵 입금"}.get(_s.get("status","provisional"),"—"),
             })
-        st.dataframe(pd.DataFrame(_tl), width="stretch", hide_index=True,
-                     column_config=_cc_money(kg=("중량(kg)",), small=("No.",)))
 
-        # Gantt 차트 — 기본은 미정산(provisional·final)만, 입금완료는 토글
-        _g_paid = st.toggle("입금완료 건도 일정에 표시", value=False, key="gantt_paid")
-        try:
-            import plotly.express as px
-            _gantt = []
-            for _r in _tl:
-                if _r["선적일"] == "미정": continue
-                if not _g_paid and _r["상태"].endswith("입금"): continue
-                try:
-                    _s_dt = datetime.strptime(_r["선적일"], "%Y-%m-%d")
-                    _e_dt = (datetime.strptime(_r["ETA"], "%Y-%m-%d")
-                             if _r["ETA"] != "TBD" else _s_dt + timedelta(days=60))
-                    _gantt.append({
-                        "항차":   _r["HBL"],
-                        "매입사": _r["매입사"],
-                        "ETD":    _s_dt,
-                        "ETA":    _e_dt,
-                        "상태":   _r["상태"],
-                    })
-                except ValueError:
-                    pass   # 선적일·ETA 형식이 아닌 행은 일정 차트에서만 제외 (표에는 그대로 표시)
-            if _gantt:
-                _df_g = pd.DataFrame(_gantt)
-                # 막대 안 라벨: 매입사 약칭 + 항해일수
-                _df_g["라벨"] = _df_g.apply(
-                    lambda r: f"{r['매입사'].split('(')[0].strip()}  "
-                              f"({(r['ETA']-r['ETD']).days}일)", axis=1)
-                # 상태별 색상 — 색 규칙(가정산 노랑 / 최종 초록 / 입금 파랑)과 통일
-                _cmap = {"🟡 Provisional": "#b45309", "🟢 최종": "#15803d", "🔵 입금": "#1d4ed8"}
-                _fig  = px.timeline(
-                    _df_g, x_start="ETD", x_end="ETA", y="항차",
-                    color="상태", text="라벨",
-                    hover_name="항차",
-                    hover_data={"매입사":True,"ETD":True,"ETA":True,"라벨":False,"상태":False},
-                    color_discrete_map=_cmap,
-                )
-                _today_dt = _now()
-                _fig.update_traces(
-                    textposition="inside", insidetextanchor="middle",
-                    textfont=dict(color="white", size=10),
-                    marker_line=dict(color="rgba(255,255,255,0.35)", width=1),
-                )
-                # 이미 도착(ETA 경과)한 항차는 흐리게
-                for _tr in _fig.data:
-                    _tr.marker.opacity = [0.45 if _e < _today_dt else 1.0
-                                          for _e in pd.to_datetime(_df_g.loc[_df_g["상태"] == _tr.name, "ETA"])]
-                _fig.add_vline(
-                    # plotly는 tz 없는 날짜를 그대로(UTC 표기로) 그리므로, 서버 시간대와 무관하게 epoch ms로 변환
-                    x=(_today_dt - datetime(1970, 1, 1)).total_seconds() * 1000,
-                    line_dash="dot", line_color=_C_NEG, line_width=2,
-                    annotation_text=f"오늘 {_today_dt.strftime('%m/%d')}",
-                    annotation_font=dict(color=_C_NEG, size=10),
-                    annotation_position="top left",
-                )
-                _fig_style(_fig, height=max(220, len(_gantt)*38+90), y_fmt=None)
-                _fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor=_GRID,
-                                  tickfont=dict(size=11, color="#D0D0E8"))
-                _fig.update_xaxes(showgrid=True, gridcolor=_GRID, tickformat="%m/%d")
-                st.plotly_chart(_fig, width="stretch")
-        except ImportError:
-            st.caption("plotly 설치 시 Gantt 차트 표시 — `pip install plotly`")
-
-        st.divider()
-
-        # ── 편집할 선적건 선택 — 한 건의 편집 폼만 렌더링 ────────────────────────
-        # (예전엔 필터된 모든 선적건의 편집 폼(각 30여 개 위젯)을 전부 그렸음)
-        _ed_opts = {}
-        for _ei, _es in enumerate(show_ships):
-            _eb = buyer_map.get(_es.get("buyer_id",""), {})
-            _ed_opts[f"#{_ei+1}  {_es.get('hbl','').strip() or 'HBL미정'}  ·  {_eb.get('name','?')}  ·  "
-                     f"{_es.get('loading_date','') or '선적일 미정'}  ·  {_es.get('status','provisional')}"] = _es["id"]
-        # 홈 '할 일'의 HBL 링크(?hbl=)로 진입한 경우 해당 선적건을 편집 대상으로 선택
+        # ── 목록(왼쪽)에서 한 건을 고르면 그 건의 상세·편집 폼만 오른쪽에 그린다 ──────────
+        _ids = [x["id"] for x in show_ships]
+        # 홈 '할 일'의 HBL 링크(?hbl=)로 진입한 경우 해당 선적건을 먼저 선택
         _qp_hbl = str(st.query_params.get("hbl", "")).strip()
-        if _qp_hbl and "ship_edit_sel" not in st.session_state:
-            _qp_sid = next((x["id"] for x in show_ships if x.get("hbl","").strip() == _qp_hbl), None)
-            _qp_lbl = next((k for k, v in _ed_opts.items() if v == _qp_sid), None)
-            if _qp_lbl:
-                st.session_state["ship_edit_sel"] = _qp_lbl
-        _ed_sel = st.selectbox("편집할 선적건", list(_ed_opts), key="ship_edit_sel")
-        _ed_sid = _ed_opts[_ed_sel]
+        if _qp_hbl and "ship_sel_sid" not in st.session_state:
+            st.session_state["ship_sel_sid"] = next(
+                (x["id"] for x in show_ships if x.get("hbl", "").strip() == _qp_hbl), None)
+        _ev = st.session_state.get("ship_list")
+        _ev_rows = (_ev.get("selection", {}).get("rows") if isinstance(_ev, dict)
+                    else getattr(getattr(_ev, "selection", None), "rows", None)) if _ev else None
+        if _ev_rows and _ev_rows[0] < len(_ids):
+            st.session_state["ship_sel_sid"] = _ids[_ev_rows[0]]
+        if st.session_state.get("ship_sel_sid") not in _ids:
+            # 기본: 가장 최근의 미입금 건, 없으면 가장 최근 건
+            _open = [x for x in show_ships if x.get("status") != "paid"]
+            st.session_state["ship_sel_sid"] = (_open or show_ships)[-1]["id"]
+        _ed_sid = st.session_state["ship_sel_sid"]
+
+        _lc, _rc = st.columns([1.5, 2.5], gap="medium")
+        with _lc, st.container(key="panel_shiplist"):
+            _sel_hbl = next((x.get("hbl", "") for x in show_ships if x["id"] == _ed_sid), "")
+            st.markdown(f"**선적 목록**  ·  {len(show_ships)}건")
+            st.caption(f"선택: {_sel_hbl or 'HBL미정'}")
+            _st_short = {"provisional": "가정산", "final": "확정산", "paid": "입금"}
+            _list_df = pd.DataFrame([{
+                "HBL": x.get("hbl", "").strip() or "HBL미정",
+                "매입사": buyer_map.get(x.get("buyer_id", ""), {}).get("name", "?"),
+                "상태": _st_short.get(x.get("status", "provisional"), "—"),
+            } for x in show_ships])
+            st.dataframe(_list_df, key="ship_list", on_select="rerun", selection_mode="single-row",
+                         hide_index=True, width="stretch", height=min(36 * len(_list_df) + 40, 640),
+                         column_config={"HBL": st.column_config.TextColumn(width=134),
+                                        "매입사": st.column_config.TextColumn(width=68),
+                                        "상태": st.column_config.TextColumn(width=54)})
 
         _ship_id_idx = {sh.get("id"): _ri for _ri, sh in enumerate(shipments)}
         for i,s in enumerate(show_ships):
@@ -2347,7 +2307,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                    f"  │  {s.get('hbl','—')}  ·  {buyer_lbl}"
                    f"  │  {ld_disp} → ETA {eta_disp}"
                    f"  │  {s.get('weight_kg',0):,.0f} kg{_inv_hdr}{_settle_hdr}{_eu_hdr}")
-            with st.expander(hdr,expanded=True):
+            with _rc, st.container(key="panel_shipdetail"):
+                st.markdown(f"**{s.get('hbl','—') or 'HBL미정'}**  ·  {buyer_lbl}  ·  {stat_txt}")
+                st.caption(hdr.split("│", 2)[-1].strip())
                 # 컨테이너 가중평균 계산기의 '적용' 값 반영 — 위젯이 생성되기 전에
                 # session_state에 넣어야 하므로 expander 최상단에서 처리
                 _ctr_pend = st.session_state.pop(f"ctr_apply_{real_i}", None)
@@ -2831,6 +2793,70 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         st.warning(f"**{s.get('hbl','?')}** 선적건을 삭제합니다.")
                         if st.button("삭제 확인", key=f"sh_del_cfm_{real_i}", type="primary", width="stretch"):
                             cfg["shipments"].pop(real_i); save_cfg(cfg); st.rerun()
+
+        st.divider()
+        with st.expander("항차 일정 (Gantt)", expanded=False):
+            # Gantt 차트 — 기본은 미정산(provisional·final)만, 입금완료는 토글
+            _g_paid = st.toggle("입금완료 건도 일정에 표시", value=False, key="gantt_paid")
+            try:
+                import plotly.express as px
+                _gantt = []
+                for _r in _tl:
+                    if _r["선적일"] == "미정": continue
+                    if not _g_paid and _r["상태"].endswith("입금"): continue
+                    try:
+                        _s_dt = datetime.strptime(_r["선적일"], "%Y-%m-%d")
+                        _e_dt = (datetime.strptime(_r["ETA"], "%Y-%m-%d")
+                                 if _r["ETA"] != "TBD" else _s_dt + timedelta(days=60))
+                        _gantt.append({
+                            "항차":   _r["HBL"],
+                            "매입사": _r["매입사"],
+                            "ETD":    _s_dt,
+                            "ETA":    _e_dt,
+                            "상태":   _r["상태"],
+                        })
+                    except ValueError:
+                        pass   # 선적일·ETA 형식이 아닌 행은 일정 차트에서만 제외 (표에는 그대로 표시)
+                if _gantt:
+                    _df_g = pd.DataFrame(_gantt)
+                    # 막대 안 라벨: 매입사 약칭 + 항해일수
+                    _df_g["라벨"] = _df_g.apply(
+                        lambda r: f"{r['매입사'].split('(')[0].strip()}  "
+                                  f"({(r['ETA']-r['ETD']).days}일)", axis=1)
+                    # 상태별 색상 — 색 규칙(가정산 노랑 / 최종 초록 / 입금 파랑)과 통일
+                    _cmap = {"🟡 Provisional": "#b45309", "🟢 최종": "#15803d", "🔵 입금": "#1d4ed8"}
+                    _fig  = px.timeline(
+                        _df_g, x_start="ETD", x_end="ETA", y="항차",
+                        color="상태", text="라벨",
+                        hover_name="항차",
+                        hover_data={"매입사":True,"ETD":True,"ETA":True,"라벨":False,"상태":False},
+                        color_discrete_map=_cmap,
+                    )
+                    _today_dt = _now()
+                    _fig.update_traces(
+                        textposition="inside", insidetextanchor="middle",
+                        textfont=dict(color="white", size=10),
+                        marker_line=dict(color="rgba(255,255,255,0.35)", width=1),
+                    )
+                    # 이미 도착(ETA 경과)한 항차는 흐리게
+                    for _tr in _fig.data:
+                        _tr.marker.opacity = [0.45 if _e < _today_dt else 1.0
+                                              for _e in pd.to_datetime(_df_g.loc[_df_g["상태"] == _tr.name, "ETA"])]
+                    _fig.add_vline(
+                        # plotly는 tz 없는 날짜를 그대로(UTC 표기로) 그리므로, 서버 시간대와 무관하게 epoch ms로 변환
+                        x=(_today_dt - datetime(1970, 1, 1)).total_seconds() * 1000,
+                        line_dash="dot", line_color=_C_NEG, line_width=2,
+                        annotation_text=f"오늘 {_today_dt.strftime('%m/%d')}",
+                        annotation_font=dict(color=_C_NEG, size=10),
+                        annotation_position="top left",
+                    )
+                    _fig_style(_fig, height=max(220, len(_gantt)*38+90), y_fmt=None)
+                    _fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor=_GRID,
+                                      tickfont=dict(size=11, color="#D0D0E8"))
+                    _fig.update_xaxes(showgrid=True, gridcolor=_GRID, tickformat="%m/%d")
+                    st.plotly_chart(_fig, width="stretch")
+            except ImportError:
+                st.caption("plotly 설치 시 Gantt 차트 표시 — `pip install plotly`")
 
         # ── 전체 요약 테이블 ──
         if show_ships:
