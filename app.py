@@ -2097,7 +2097,7 @@ _SUBS = {
 }
 # Hidden from the menu but kept working: open by link (?page=pnl&sub=직접 판매), e.g. when cell/module
 # direct sales start again. A hidden sub shows in the menu only while it is the one open.
-_HIDDEN_SUBS = {SUB_PNL_DS}
+_HIDDEN_SUBS = {SUB_PNL_DS, SUB_BUYER, SUB_SCRAP}   # 매입사·스크랩 유형: 견적·계약 단위 관리로 전환 중 (데이터는 유지)
 _sub = None
 if _page in _SUBS:
     _sub_key = f"sub_nav_{_PAGE_SLUGS[_page]}"
