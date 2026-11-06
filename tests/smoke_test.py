@@ -272,6 +272,24 @@ def main():
     check("sync: production tab with a bad row keeps existing rows",
           len(sc2["production_monthly"]) == 1 and "생산 탭 반영 안 함" in log2)
 
+    # contract terms: Co basis Low uses INDEX column Co Low, contract contents beat buyer defaults
+    ct_cfg = {"buyers": [{"id": "B", "name": "POSCO", "product": "BM", "ni_payable": 1.0, "co_payable": 1.0,
+                          "ni_content": 10.0, "co_content": 2.0, "custom_index": True}],
+              "index_history": [{"month": "2026-10", "ni_index": 15000.0, "co_index": 50000.0, "co_low": 40000.0}],
+              "index_history_alt": {"B": [{"month": "2026-10", "ni_index": 1.0, "co_index": 1.0}]},
+              "contracts": [{"id": "K", "buyer_id": "B", "co_basis": "Low", "ni_content": 20.0, "co_content": 5.0,
+                             "ni_payable_pct": 100.0, "co_payable_pct": 100.0, "final_pay_days": 45}],
+              "shipments": [{"id": "S1", "buyer_id": "B", "linked_contract_id": "K", "weight_kg": 1000.0,
+                             "final_month": "2026-10", "prov_month": "2026-10", "loading_date": "2026-10-05"}]}
+    _, _, _, pkg = f["bp_price"](15000.0, 40000.0, 20.0, 5.0, 1.0, 1.0)
+    got = f["_recompute_final_settlement"](ct_cfg, ct_cfg["shipments"][0])
+    ct_cfg["contracts"][0]["co_basis"] = ""          # no basis → buyer custom INDEX as before
+    _, _, _, pkg_alt = f["bp_price"](1.0, 1.0, 20.0, 5.0, 1.0, 1.0)
+    got_alt = f["_recompute_final_settlement"](ct_cfg, ct_cfg["shipments"][0])
+    check("contract terms: Co Low basis + contract contents",
+          abs(got - round(pkg * 1000.0, 2)) < 0.01 and abs(got_alt - round(pkg_alt * 1000.0, 2)) < 0.01
+          and f["_with_contract"](ct_cfg["buyers"][0], ct_cfg["contracts"][0])["final_pay_days"] == 45)
+
     # 계약 / 견적 / 실사 tabs: the sheet is the source; unknown bidders become buyers; allocations follow contract ids
     sc3 = _sync_cfg()
     sc3["contracts"] = [{"id": "OLD", "buyer_id": "?"}]

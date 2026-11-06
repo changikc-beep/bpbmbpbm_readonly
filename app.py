@@ -287,13 +287,13 @@ div[data-testid="stNumberInput"] button{display:none !important}
 }
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
 /* in-page pickers (scrap type, processor): larger pills, the chosen one filled with the accent */
-:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick) div[data-testid="stButtonGroup"] button{
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] button{
     min-height:38px;padding:6px 20px !important;border-radius:999px !important;font-size:.98rem !important;font-weight:600 !important
 }
-:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
     background:#3B82F6 !important;border-color:#3B82F6 !important;color:#FFFFFF !important
 }
-:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick){margin-bottom:6px}
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick){margin-bottom:6px}
 /* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
 .nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
 .nav-crumb a{color:#9A9AA6 !important}
@@ -1014,11 +1014,27 @@ def _resolve_idx_month(basis, loading_date, prov_month, final_month):
     return prov_month  # fallback
 
 
-def _hm_for(cfg, buyer):
+def _with_contract(buyer, contract):
+    """매입사 기본값 위에 계약(견적) 조건을 덮어쓴 사본 — 함유량·입금 조건.
+    계약에 빈 값은 매입사 값을 그대로 쓴다(시트 계약 탭 이전 계약은 모두 빈 값 → 기존과 동일)."""
+    b = dict(buyer or {})
+    for k in ("ni_content", "co_content", "prov_pay_days", "final_pay_days"):
+        if (contract or {}).get(k) not in (None, ""):
+            b[k] = contract[k]
+    return b
+
+def _hm_for(cfg, buyer, contract=None):
     """매입사별 INDEX 이력 {월: row} 딕셔너리 반환.
-    매입사가 '자체 INDEX' 사용으로 설정된 경우 index_history_alt[buyer_id]만 참조
-    (표준 INDEX와 섞지 않음 — 해당 월이 없으면 미등록으로 취급).
-    그 외에는 표준 index_history 사용."""
+    계약에 Co 기준(Low/Mid)이 있으면 그것이 우선: 표준 INDEX의 Ni(LME)와, Low면 7열 Co Low
+    (Low 값이 없는 월은 미등록으로 취급), Mid면 표준 Co. QP 표 payable 대신 계약 지불율을 쓴다.
+    없으면 기존 규칙: 매입사가 '자체 INDEX' 사용이면 index_history_alt[buyer_id]만,
+    그 외에는 표준 index_history."""
+    basis = str((contract or {}).get("co_basis") or "").strip().lower()
+    if basis in ("low", "mid"):
+        std = {h["month"]: h for h in cfg.get("index_history", [])}
+        if basis == "mid":
+            return std
+        return {m: {**h, "co_index": h["co_low"]} for m, h in std.items() if h.get("co_low")}
     b = buyer or {}
     if b.get("custom_index") and b.get("id"):
         alt = cfg.get("index_history_alt", {}).get(b["id"], [])
@@ -1035,15 +1051,15 @@ def _recompute_final_settlement(cfg, s, fallback_index=None):
     (현금흐름 전망의 '추정치' 용도 — 확정 계산에는 절대 사용하지 말 것).
     """
     buyers = {b["id"]: b for b in cfg.get("buyers", [])}
-    b = buyers.get(s.get("buyer_id", ""), {})
-    hm_all = _hm_for(cfg, b)   # 매입사별 INDEX 예외(custom_index) 반영
+    ct = _get_contract_for_shipment(cfg, s.get("id", ""))
+    b = _with_contract(buyers.get(s.get("buyer_id", ""), {}), ct)
+    hm_all = _hm_for(cfg, b, ct)   # 계약 Co 기준 → 매입사별 INDEX 예외(custom_index) 순
     final_month = s.get("final_month", "—")
     if not final_month or final_month == "—" or final_month not in hm_all:
         if fallback_index is None:
             return None
         # Final월 INDEX 미등록 → 추정 INDEX로 대체해 계속 진행
         final_month = None
-    ct = _get_contract_for_shipment(cfg, s.get("id", ""))
     st_terms = _settle_terms(ct, b)
     if final_month is None:
         # 추정 모드: fallback_index를 그대로 사용
@@ -1081,12 +1097,13 @@ def _prov_invoice_calc(cfg, s):
     """가정산 Invoice 계산값 = 가정산 단가(소수 2자리) × 선적 중량. 계산 불가 시 None.
     입력된 invoice_usd 와 비교해 오타·INDEX 기준월 오류를 잡는 데 쓴다."""
     buyers = {b["id"]: b for b in cfg.get("buyers", [])}
-    b  = buyers.get(s.get("buyer_id", ""), {})
+    ct = _get_contract_for_shipment(cfg, s.get("id", ""))
+    b  = _with_contract(buyers.get(s.get("buyer_id", ""), {}), ct)
     pm = s.get("prov_month", "—")
     if not b or not pm or pm == "—":
         return None
-    hm = _hm_for(cfg, b)
-    terms = _settle_terms(_get_contract_for_shipment(cfg, s.get("id", "")), b)
+    hm = _hm_for(cfg, b, ct)
+    terms = _settle_terms(ct, b)
     m   = _resolve_idx_month(terms["prov_idx"], s.get("loading_date", ""), pm, pm)
     row = hm.get(m) or hm.get(pm)
     if not row:
@@ -1118,9 +1135,11 @@ def _prov_month_hint(cfg, s):
     b  = next((x for x in cfg.get("buyers", []) if x.get("id") == s.get("buyer_id")), None)
     if iv <= 0 or w <= 0 or not b:
         return []
-    terms = _settle_terms(_get_contract_for_shipment(cfg, s.get("id", "")), b)
+    ct = _get_contract_for_shipment(cfg, s.get("id", ""))
+    b = _with_contract(b, ct)
+    terms = _settle_terms(ct, b)
     out = []
-    for m, row in sorted(_hm_for(cfg, b).items()):
+    for m, row in sorted(_hm_for(cfg, b, ct).items()):
         _, _, _, pkg = bp_price(row["ni_index"], row["co_index"],
                                 b.get("ni_content", 0), b.get("co_content", 0),
                                 *_pay_at(terms, row))
@@ -1755,7 +1774,8 @@ def _todo_items(cfg):
     _td_ready = [s for s in _td_ships
                  if s.get("status") == "provisional"
                  and s.get("final_month", "—") not in ("—", "")
-                 and s.get("final_month") in _hm_for(cfg, _td_buyers.get(s.get("buyer_id",""), {}))]
+                 and s.get("final_month") in _hm_for(cfg, _td_buyers.get(s.get("buyer_id",""), {}),
+                                                     _get_contract_for_shipment(cfg, s.get("id", "")))]
     if _td_ready:
         _todo.append(("🟡", f"확정산 진행 가능 {len(_td_ready)}건",
                       _td_hbls(_td_ready), "선적·계약 > 선적 정산"))
@@ -1816,7 +1836,8 @@ def _receivable_rows(cfg, latest_index):
     for _cs in _td_ships:
         if _cs.get("status") not in ("provisional", "final"):
             continue
-        _cb    = _td_buyers.get(_cs.get("buyer_id", ""), {})
+        _cb    = _with_contract(_td_buyers.get(_cs.get("buyer_id", ""), {}),
+                                _get_contract_for_shipment(cfg, _cs.get("id", "")))
         _cst   = _settle_terms(_get_contract_for_shipment(cfg, _cs.get("id", "")), _cb)
         _cpp   = float(_cs.get("invoice_usd") or 0) * (_cst["prov_pct"] / 100.0)
         _cadj  = float(_cs.get("other_adj_usd") or 0)
@@ -2084,13 +2105,13 @@ if st.query_params.get("page") != _PAGE_SLUGS[_page]:
 
 # ── 서브 페이지 (페이지별 2단계 내비게이션) — 선택한 서브 페이지의 코드만 실행된다 ──
 SUB_DASH, SUB_CLOSE = "대시보드", "월 마감"
-SUB_SHIP, SUB_CONTRACT = "선적 정산", "계약 이행"
+SUB_SHIP, SUB_CONTRACT, SUB_RFQ = "선적 정산", "계약 이행", "견적 비교"
 SUB_PNL_SUM, SUB_PNL_UNIT, SUB_PNL_DS = "손익 요약", "HBL·매입사·임가공사별", "직접 판매"
 SUB_INOUT, SUB_PROC = "원료 입출고", "임가공사·배치"
 SUB_BUYER, SUB_SCRAP, SUB_INDEX, SUB_SYNC = "매입사", "스크랩 유형", "INDEX·환율·판관비", "동기화·백업"
 _SUBS = {
     PG_HOME:   [SUB_DASH, SUB_CLOSE],
-    PG_SHIP:   [SUB_SHIP, SUB_CONTRACT],
+    PG_SHIP:   [SUB_SHIP, SUB_RFQ, SUB_CONTRACT],
     PG_PNL:    [SUB_PNL_SUM, SUB_PNL_UNIT, SUB_PNL_DS],
     PG_STOCK:  [SUB_INOUT, SUB_PROC],
     PG_MASTER: [SUB_BUYER, SUB_SCRAP, SUB_INDEX, SUB_SYNC],
@@ -2328,8 +2349,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             if s["id"] != _ed_sid:
                 continue
             real_i=_ship_id_idx[s["id"]]
-            b=buyer_map.get(s.get("buyer_id"),{})
-            hm_all_b=_hm_for(cfg, b)  # 매입사별 INDEX 예외 반영
+            _s_ct=_get_contract_for_shipment(cfg, s.get("id",""))
+            b=_with_contract(buyer_map.get(s.get("buyer_id"),{}), _s_ct)
+            hm_all_b=_hm_for(cfg, b, _s_ct)  # 계약 Co 기준 → 매입사별 INDEX 예외 순
             buyer_lbl=f"{b.get('name','?')} ({b.get('product','?')})"
             # 상태 텍스트 (expander는 HTML 미지원 → 이모지 사용)
             stat_txt={"provisional":"🟡 Provisional 정산","final":"🟢 최종정산","paid":"🔵 입금완료"}.get(s.get("status","provisional"),"—")
@@ -2907,8 +2929,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
             st.divider()
             tbl_rows=[]
             for s in show_ships:
-                bx=buyer_map.get(s.get("buyer_id",""),{})
-                hm_all_x=_hm_for(cfg, bx)  # 매입사별 INDEX 예외 반영
+                _x_ct=_get_contract_for_shipment(cfg, s.get("id",""))
+                bx=_with_contract(buyer_map.get(s.get("buyer_id",""),{}), _x_ct)
+                hm_all_x=_hm_for(cfg, bx, _x_ct)  # 계약 Co 기준 → 매입사별 INDEX 예외 순
                 # 추가정산 계산 (가능한 경우)
                 net_disp="—"
                 pm2=s.get("prov_month","—"); fm2=s.get("final_month","—")
@@ -2952,8 +2975,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         _today_d = _today()
         _aging_rows = []
         for _as in shipments:
-            _ab  = buyer_map.get(_as.get("buyer_id",""), {})
-            _ast = _settle_terms(_get_contract_for_shipment(cfg, _as.get("id","")), _ab)
+            _a_ct = _get_contract_for_shipment(cfg, _as.get("id",""))
+            _ab  = _with_contract(buyer_map.get(_as.get("buyer_id",""), {}), _a_ct)
+            _ast = _settle_terms(_a_ct, _ab)
             _inv = float(_as.get("invoice_usd") or 0)
             _prov_exp  = _inv * (_ast["prov_pct"] / 100.0)
             _prov_open = _prov_exp - float(_as.get("prov_paid_usd") or 0)
@@ -7231,7 +7255,8 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
                     "; ".join(f"{_hbl(s)} ({_inv_hint_text(cfg, s)})" for s in _mm) or "없음"))
     _ready = [s for s in _mc_S if s.get("status") == "provisional" and s.get("final_month") not in (None, "", "—")
               and s.get("final_month") <= _mc_m
-              and s.get("final_month") in _hm_for(cfg, _mc_B.get(s.get("buyer_id"), {}))]
+              and s.get("final_month") in _hm_for(cfg, _mc_B.get(s.get("buyer_id"), {}),
+                                                  _get_contract_for_shipment(cfg, s.get("id", "")))]
     _checks.append(("선적·정산", "확정산 진행 가능 (Final월 INDEX 등록됨)", not _ready,
                     ", ".join(f"{_hbl(s)} (Final {s.get('final_month')})" for s in _ready) or "없음"))
     _nosnap = [s for s in _mc_S if s.get("status") in ("final", "paid") and not s.get("final_amount_usd")]
@@ -7245,7 +7270,7 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
     # ── 3) 입금 (마감월 말일까지 만기가 지난 건) ──
     _late_p, _late_f = [], []
     for s in _mc_S:
-        b = _mc_B.get(s.get("buyer_id"), {})
+        b = _with_contract(_mc_B.get(s.get("buyer_id"), {}), _get_contract_for_shipment(cfg, s.get("id", "")))
         try:
             _ld = date.fromisoformat(s.get("loading_date", ""))
         except Exception:
@@ -7319,6 +7344,84 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
     with _mcb2:
         if _closed:
             st.caption(f"{_closed.get('closed_at')} 마감 표시 · 당시 확인 필요 {_closed.get('open_items', 0)}개")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 견적 비교 — 시트 '견적' 탭의 RFQ별 업체 응찰 조건을 같은 INDEX로 환산해 나란히 비교
+# ══════════════════════════════════════════════════════════════════════════════
+if _page == PG_SHIP and _sub == SUB_RFQ:
+    _rfqs = cfg.get("rfqs", [])
+    if not _rfqs:
+        st.info("시트 '견적' 탭에 RFQ별 응찰 조건을 한 줄씩(업체 1곳 = 1줄) 넣고 시트 동기화하면 여기서 비교됩니다. "
+                "선정한 업체는 '선정(O)' 칸에 O를 넣고, 계약 탭에 같은 RFQ ID로 한 줄 추가하면 계약 이행에 나타납니다.")
+    else:
+        # 같은 INDEX로 환산: Ni = 표준(LME) 최신, Co = 응찰 조건의 기준(Low → 7열 Co Low 최신, Mid → 표준 Co)
+        _ih = sorted(cfg.get("index_history", []), key=lambda h: h["month"])
+        _ni_ref = _ih[-1] if _ih else None
+        _low_ref = next((h for h in reversed(_ih) if h.get("co_low")), None)
+        _by_rfq = defaultdict(list)
+        for _r in _rfqs:
+            _by_rfq[_r["rfq_id"]].append(_r)
+        _rfq_ids = sorted(_by_rfq, key=lambda k: max((r.get("date") or "") for r in _by_rfq[k]), reverse=True)
+        _rfq_pick = st.segmented_control("RFQ", _rfq_ids, key="rfq_pick", default=_rfq_ids[0],
+                                         label_visibility="collapsed") or _rfq_ids[0]
+        _bids = _by_rfq[_rfq_pick]
+        _r0 = _bids[0]
+        _sel = [r for r in _bids if r.get("selected")]
+        _rk = st.columns(4)
+        _rk[0].metric("품목 · 수량", f"{_r0.get('product', '—')} · {(_r0.get('qty_mt') or 0):,.0f} MT", border=True)
+        _rk[1].metric("응찰", f"{len(_bids)}곳", border=True)
+        _rk[2].metric("선정", ", ".join(r["bidder"] for r in _sel) if _sel else "미정", border=True)
+        _rk[3].metric("접수일", min((r.get("date") or "—") for r in _bids), border=True)
+
+        def _rfq_price(r):
+            """같은 INDEX 기준 예상 단가($/kg). 함유량·지불율이 없거나 Co 기준 INDEX가 없으면 None."""
+            if not _ni_ref or None in (r.get("ni_content"), r.get("co_content"), r.get("ni_payable_pct"), r.get("co_payable_pct")):
+                return None
+            _cb = str(r.get("co_basis") or "Low").strip().lower()
+            _co = (_low_ref or {}).get("co_low") if _cb == "low" else _ni_ref.get("co_index")
+            if not _co:
+                return None
+            return bp_price(_ni_ref["ni_index"], _co, r["ni_content"], r["co_content"],
+                            r["ni_payable_pct"] / 100.0, r["co_payable_pct"] / 100.0)[3]
+
+        _prices = {id(r): _rfq_price(r) for r in _bids}
+        _best = max((p for p in _prices.values() if p), default=None)
+        _ncol = st.column_config.NumberColumn
+        _rfq_df = pd.DataFrame([{
+            "선정": "O" if r.get("selected") else "",
+            "업체": r["bidder"],
+            "예상 단가($/kg)": _prices[id(r)],
+            "최고 대비(%)": ((_prices[id(r)] / _best - 1) * 100) if (_prices[id(r)] and _best) else None,
+            "Ni 지불율(%)": r.get("ni_payable_pct"), "Co 지불율(%)": r.get("co_payable_pct"),
+            "Ni 함유량(%)": r.get("ni_content"), "Co 함유량(%)": r.get("co_content"),
+            "Co 기준": r.get("co_basis") or "Low",
+            "가정산(%)": r.get("prov_pct"),
+            "INDEX 기준(Prov/Final)": f"{r.get('prov_index_basis') or '가정산월'} / {r.get('final_index_basis') or '확정월'}",
+            "입금(가정산/확정산, 일)": f"{r.get('prov_pay_days') or '—'} / {r.get('final_pay_days') or '—'}",
+            "비고": r.get("notes", ""),
+        } for r in sorted(_bids, key=lambda r: -(_prices[id(r)] or 0))])
+        _rfq_df = _rfq_df.dropna(axis=1, how="all")
+        with st.container(key="card_rfq"):
+            st.markdown(f"**{_rfq_pick} 응찰 비교**",
+                        help="예상 단가 = 같은 INDEX(Ni: 표준 LME 최신월, Co: 응찰 조건의 기준 — Low면 INDEX 탭 7열 Co Low 최신월, "
+                             "Mid면 표준 Co)에 각 업체의 함유량·지불율을 넣은 BP/BM 단가입니다. "
+                             "INDEX 기준월·가정산 비율·입금 조건 차이는 반영하지 않으니 표에서 함께 보세요.")
+            st.dataframe(_rfq_df, width="stretch", hide_index=True, column_config={
+                "예상 단가($/kg)": _ncol(format="$%.4f"), "최고 대비(%)": _ncol(format="%+.2f%%"),
+                "Ni 지불율(%)": _ncol(format="%.2f"), "Co 지불율(%)": _ncol(format="%.2f"),
+                "Ni 함유량(%)": _ncol(format="%.2f"), "Co 함유량(%)": _ncol(format="%.2f"),
+                "가정산(%)": _ncol(format="%.0f")})
+            st.caption(
+                (f"INDEX 기준: Ni {_ni_ref['month']} \\${_ni_ref['ni_index']:,.0f}" if _ni_ref else "INDEX 미등록")
+                + (f" · Co Low {_low_ref['month']} \\${_low_ref['co_low']:,.0f}" if _low_ref else " · Co Low 미등록(INDEX 탭 7열)")
+                + (f" · Co Mid {_ni_ref['month']} \\${_ni_ref['co_index']:,.0f}" if _ni_ref else ""))
+        _ct_of = [c for c in cfg.get("contracts", []) if c.get("rfq_id") == _rfq_pick]
+        if _ct_of:
+            st.caption("이 RFQ로 등록된 계약: " + ", ".join(
+                f"{next((b['name'] for b in cfg['buyers'] if b['id'] == c['buyer_id']), '?')} "
+                f"{c.get('contract_qty_mt', 0):,.0f} MT" for c in _ct_of) + " — 계약 이행 탭에서 진행 상황 확인")
+        elif _sel:
+            st.caption("선정 업체가 있으나 계약 탭에 이 RFQ ID로 등록된 계약이 아직 없습니다.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 계약 이행
@@ -7531,7 +7634,9 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
 </div>""", unsafe_allow_html=True)
 
             with _ct_box:
-                st.caption(f"{_ct_cst_ico} {_ct_cst_lbl}  ·  {_ct.get('product','BP')} / {_scname}"
+                st.caption(f"{_ct_cst_ico} {_ct_cst_lbl}"
+                           + (f"  ·  RFQ {_ct['rfq_id']}" if _ct.get("rfq_id") else "")
+                           + f"  ·  {_ct.get('product','BP')} / {_scname}"
                            + (f" / {_prname}" if _prname else "")
                            + f"  ·  계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%")
                 # 상한 초과 / 하한 미달 경고 (협의 하에 발생 가능 — 저장은 항상 허용, 안내만 표시)
