@@ -6658,83 +6658,7 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
         _ct_by_opts[_lbl] = _b["id"]
     _ct_pr_opts = {"전체 (구분 없음)": ""} | {p["name"]: p["id"] for p in cfg.get("processors", []) if p.get("active", True)}
 
-    # ── 계약 등록 ────────────────────────────────────────────────────────────
-    with st.expander("계약 등록", expanded=not _ct_list):
-        _cf1, _cf2 = st.columns(2)
-        _ct_buyer_sel = _cf1.selectbox("매입사",   list(_ct_by_opts), key="ct_buyer")
-        _ct_sc_sel    = _cf2.selectbox("원료 유형", list(_ct_sc_opts), key="ct_sc")
-        _cf3, _cf4, _cf5 = st.columns(3)
-        _ct_qty  = _cf3.number_input("계약량 (MT)", min_value=0.0, step=1.0, format="%.1f", key="ct_qty")
-        _ct_tol  = _cf4.number_input("허용 오차 (%)", min_value=0.0, max_value=20.0, value=5.0, step=1.0, format="%.0f", key="ct_tol")
-        _ct_prod = _cf5.selectbox("제품", ["BP", "BM"], key="ct_prod")
-        _cf6, _cf7, _cf8 = st.columns(3)
-        _ct_start  = _cf6.text_input("계약 시작일 (YYYY-MM-DD)", key="ct_start")
-        _ct_end    = _cf7.text_input("계약 종료일 (YYYY-MM-DD)", key="ct_end")
-        _ct_pr_sel = _cf8.selectbox("임가공사 (선택)", list(_ct_pr_opts), key="ct_proc",
-                                     help="지정 시 해당 임가공사 재고만 충당에 반영")
-        # ── 가격·정산 조건 ────────────────────────────────────────────────
-        st.markdown("**가격·정산 조건** (선택 — 미입력 시 매입사 기본값 사용)")
-        _cp1, _cp2, _cp3 = st.columns(3)
-        _ct_ni_pay = _cp1.number_input("Ni 지불율 (%)",  min_value=0.0, value=0.0,
-                                        step=0.1, format="%.2f", key="ct_ni_pay",
-                                        help="0이면 매입사 기본 지불율 사용")
-        _ct_co_pay = _cp2.number_input("Co 지불율 (%)",  min_value=0.0, value=0.0,
-                                        step=0.1, format="%.2f", key="ct_co_pay",
-                                        help="0이면 매입사 기본 지불율 사용")
-        _ct_prov_pct = _cp3.number_input("가정산 비율 (%)", min_value=0.0, value=100.0,
-                                          step=5.0, format="%.0f", key="ct_prov_pct",
-                                          help="예: 80 → Invoice의 80%, 125 → Invoice의 125% 지급")
-        _cp4, _cp5 = st.columns(2)
-        _prov_idx_map  = {"가정산월 INDEX": "prov", "선적월 INDEX": "loading", "특정월 지정": "custom"}
-        _final_idx_map = {"확정정산월 INDEX": "final", "선적월 INDEX": "loading", "가정산월 INDEX": "prov", "특정월 지정": "custom"}
-        _ct_prov_idx  = _cp4.selectbox("Provisional INDEX 기준", list(_prov_idx_map),  key="ct_prov_idx")
-        _ct_final_idx = _cp5.selectbox("Final INDEX 기준",       list(_final_idx_map), key="ct_final_idx")
-        # 특정월 지정 시 월 입력
-        _ct_prov_month_fixed = ""
-        _ct_final_month_fixed = ""
-        if _prov_idx_map[_ct_prov_idx] == "custom":
-            _ct_prov_month_fixed = _cp4.text_input("Provisional 기준월 (YYYY-MM)", placeholder="예: 2025-03", key="ct_prov_fixed_m")
-        if _final_idx_map[_ct_final_idx] == "custom":
-            _ct_final_month_fixed = _cp5.text_input("Final 기준월 (YYYY-MM)", placeholder="예: 2025-06", key="ct_final_fixed_m")
-        _ct_notes = st.text_input("메모", key="ct_notes")
-        if st.button("계약 등록", key="ct_add_btn"):
-            def _is_valid_date(s):
-                if not s.strip(): return True
-                try: date.fromisoformat(s.strip()); return True
-                except ValueError: return False
-            _prov_basis_val  = _ct_prov_month_fixed.strip()  if _prov_idx_map[_ct_prov_idx]  == "custom" else _prov_idx_map[_ct_prov_idx]
-            _final_basis_val = _ct_final_month_fixed.strip() if _final_idx_map[_ct_final_idx] == "custom" else _final_idx_map[_ct_final_idx]
-            if not _ct_buyer_sel or not _ct_sc_sel or _ct_qty <= 0:
-                st.error("매입사, 원료 유형, 계약량을 입력하세요.")
-            elif not _is_valid_date(_ct_start) or not _is_valid_date(_ct_end):
-                st.error("날짜 형식 오류 — YYYY-MM-DD 형식으로 입력하세요. (예: 2026-05-01)")
-            elif _prov_idx_map[_ct_prov_idx] == "custom" and (not _prov_basis_val or len(_prov_basis_val) != 7):
-                st.error("Provisional 기준월을 YYYY-MM 형식으로 입력하세요. (예: 2025-03)")
-            elif _final_idx_map[_ct_final_idx] == "custom" and (not _final_basis_val or len(_final_basis_val) != 7):
-                st.error("Final 기준월을 YYYY-MM 형식으로 입력하세요. (예: 2025-06)")
-            else:
-                _ct_list.append({
-                    "id":                str(uuid.uuid4())[:8],
-                    "buyer_id":          _ct_by_opts[_ct_buyer_sel],
-                    "product":           _ct_prod,
-                    "scrap_type_id":     _ct_sc_opts[_ct_sc_sel],
-                    "processor_id":      _ct_pr_opts[_ct_pr_sel],
-                    "contract_qty_mt":   _ct_qty,
-                    "tolerance_pct":     _ct_tol,
-                    "start_date":        _ct_start.strip(),
-                    "end_date":          _ct_end.strip(),
-                    "notes":             _ct_notes.strip(),
-                    "contract_status":   "active",
-                    "ni_payable_pct":    _ct_ni_pay   if _ct_ni_pay   > 0 else None,
-                    "co_payable_pct":    _ct_co_pay   if _ct_co_pay   > 0 else None,
-                    "prov_pct":          _ct_prov_pct if _ct_prov_pct != 100.0 else None,
-                    "prov_index_basis":  _prov_basis_val,
-                    "final_index_basis": _final_basis_val,
-                })
-                cfg["contracts"] = _ct_list
-                save_cfg(cfg)
-                st.success("계약 등록 완료")
-                st.rerun()
+    st.caption("계약 등록·수정은 시트 '계약' 탭에서 합니다(견적 비교에서 선정한 업체를 RFQ ID와 함께 한 줄). B/L 연결은 시트 선적 탭의 '계약ID' 열.")
 
     if not _ct_list:
         st.info("등록된 계약이 없습니다.")
@@ -6902,183 +6826,26 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
                 if _ct.get("start_date") or _ct.get("end_date"):
                     st.caption(f"계약 기간: {_ct.get('start_date','—')} ~ {_ct.get('end_date','—')}")
 
-                # ── 계약 편집 ────────────────────────────────────────────────
-                with st.expander("계약 수정", expanded=False):
-                    _edf1, _edf2, _edf3 = st.columns(3)
-                    _ed_qty  = _edf1.number_input("계약량 (MT)", value=float(_ct.get("contract_qty_mt",0)),
-                                                   step=1.0, format="%.1f", key=f"ed_qty_{_ct_id}")
-                    _ed_tol  = _edf2.number_input("허용 오차 (%)", value=float(_ct.get("tolerance_pct",5)),
-                                                   min_value=0.0, max_value=20.0, step=1.0, format="%.0f",
-                                                   key=f"ed_tol_{_ct_id}")
-                    _ed_cst  = _edf3.selectbox("계약 상태", _ct_status_opts,
-                                                index=_ct_status_opts.index(_ct.get("contract_status","active")),
-                                                format_func=lambda s: _ct_status_labels.get(s, s),
-                                                key=f"ed_cst_{_ct_id}")
-                    _edf4, _edf5 = st.columns(2)
-                    _ed_start = _edf4.text_input("계약 시작일", value=_ct.get("start_date",""), key=f"ed_start_{_ct_id}")
-                    _ed_end   = _edf5.text_input("계약 종료일", value=_ct.get("end_date",""), key=f"ed_end_{_ct_id}")
-                    _edf6, _edf7, _edf8 = st.columns(3)
-                    _ed_ni_pay = _edf6.number_input("Ni 지불율 (%)", value=float(_ct.get("ni_payable_pct") or 0),
-                                                     min_value=0.0, step=0.1, format="%.2f",
-                                                     key=f"ed_ni_{_ct_id}", help="0이면 매입사 기본값")
-                    _ed_co_pay = _edf7.number_input("Co 지불율 (%)", value=float(_ct.get("co_payable_pct") or 0),
-                                                     min_value=0.0, step=0.1, format="%.2f",
-                                                     key=f"ed_co_{_ct_id}", help="0이면 매입사 기본값")
-                    _ed_prov_pct = _edf8.number_input("가정산 비율 (%)", value=float(_ct.get("prov_pct") or 100),
-                                                       min_value=0.0, step=5.0, format="%.0f",
-                                                       key=f"ed_pp_{_ct_id}")
-                    _edp1, _edp2 = st.columns(2)
-                    # 기존 저장값이 YYYY-MM 고정월이면 "특정월 지정"으로 표시
-                    _cur_prov_basis  = _ct.get("prov_index_basis",  "prov")
-                    _cur_final_basis = _ct.get("final_index_basis", "final")
-                    _prov_is_custom  = _cur_prov_basis  not in _prov_idx_map.values()
-                    _final_is_custom = _cur_final_basis not in _final_idx_map.values()
-                    _ed_prov_idx = _edp1.selectbox(
-                        "Provisional INDEX 기준",
-                        list(_prov_idx_map),
-                        index=list(_prov_idx_map.keys()).index("특정월 지정") if _prov_is_custom
-                              else (list(_prov_idx_map.values()).index(_cur_prov_basis)
-                                    if _cur_prov_basis in _prov_idx_map.values() else 0),
-                        key=f"ed_pidx_{_ct_id}",
-                    )
-                    _ed_final_idx = _edp2.selectbox(
-                        "Final INDEX 기준",
-                        list(_final_idx_map),
-                        index=list(_final_idx_map.keys()).index("특정월 지정") if _final_is_custom
-                              else (list(_final_idx_map.values()).index(_cur_final_basis)
-                                    if _cur_final_basis in _final_idx_map.values() else 0),
-                        key=f"ed_fidx_{_ct_id}",
-                    )
-                    # 특정월 지정 선택 시 월 입력
-                    _ed_prov_month_fixed  = ""
-                    _ed_final_month_fixed = ""
-                    if _prov_idx_map[_ed_prov_idx] == "custom":
-                        _ed_prov_month_fixed  = _edp1.text_input("Provisional 기준월 (YYYY-MM)",
-                            value=_cur_prov_basis if _prov_is_custom else "",
-                            placeholder="예: 2025-03", key=f"ed_prov_fm_{_ct_id}")
-                    if _final_idx_map[_ed_final_idx] == "custom":
-                        _ed_final_month_fixed = _edp2.text_input("Final 기준월 (YYYY-MM)",
-                            value=_cur_final_basis if _final_is_custom else "",
-                            placeholder="예: 2025-06", key=f"ed_final_fm_{_ct_id}")
-                    _ed_notes = st.text_input("메모", value=_ct.get("notes",""), key=f"ed_notes_{_ct_id}")
-                    if st.button("수정 저장", key=f"ed_save_{_ct_id}"):
-                        _ed_prov_basis_val  = _ed_prov_month_fixed.strip()  if _prov_idx_map[_ed_prov_idx]  == "custom" else _prov_idx_map[_ed_prov_idx]
-                        _ed_final_basis_val = _ed_final_month_fixed.strip() if _final_idx_map[_ed_final_idx] == "custom" else _final_idx_map[_ed_final_idx]
-                        if _prov_idx_map[_ed_prov_idx] == "custom" and (not _ed_prov_basis_val or len(_ed_prov_basis_val) != 7):
-                            st.error("Provisional 기준월을 YYYY-MM 형식으로 입력하세요.")
-                        elif _final_idx_map[_ed_final_idx] == "custom" and (not _ed_final_basis_val or len(_ed_final_basis_val) != 7):
-                            st.error("Final 기준월을 YYYY-MM 형식으로 입력하세요.")
-                        else:
-                            for _c2 in cfg["contracts"]:
-                                if _c2.get("id") == _ct_id:
-                                    _c2.update({
-                                        "contract_qty_mt":   _ed_qty,
-                                        "tolerance_pct":     _ed_tol,
-                                        "contract_status":   _ed_cst,
-                                        "start_date":        _ed_start.strip(),
-                                        "end_date":          _ed_end.strip(),
-                                        "ni_payable_pct":    _ed_ni_pay   if _ed_ni_pay   > 0 else None,
-                                        "co_payable_pct":    _ed_co_pay   if _ed_co_pay   > 0 else None,
-                                        "prov_pct":          _ed_prov_pct if _ed_prov_pct != 100.0 else None,
-                                        "prov_index_basis":  _ed_prov_basis_val,
-                                        "final_index_basis": _ed_final_basis_val,
-                                        "notes":             _ed_notes.strip(),
-                                    })
-                                    break
-                            save_cfg(cfg)
-                            st.toast("계약 수정 완료")
-                            st.rerun()
 
-                # ── 선적 배분 관리 ──────────────────────────────────────────
+                # ── 이 계약으로 나간 B/L — 시트 선적 탭 '계약ID' 연결, 또는 기존 배분 기록(나눠 배정한 B/L) ──
                 st.divider()
-                st.markdown("**선적 배분 (계약별 부분 배정)**")
-
-                _allocs = cfg.setdefault("contract_allocations", [])
-                _ct_allocs_cur = [a for a in _allocs if a.get("contract_id") == _ct_id]
-
-                if _ct_allocs_cur:
-                    _alloc_rows = []
-                    for _a in _ct_allocs_cur:
-                        _s = _ship_map_disp.get(_a.get("shipment_id", ""), {})
-                        _alloc_rows.append({
-                            "HBL": _s.get("hbl","—"),
-                            "선적일": _s.get("loading_date", "—"),
-                            "배분량 (MT)": round(float(_a.get("allocated_kg") or 0) / 1000, 3),
-                            "_alloc_id": _a.get("id", ""),
-                        })
-                    for _ar in _alloc_rows:
-                        _ac1, _ac2, _ac3, _ac4 = st.columns([3, 2, 2, 1])
-                        _ac1.write(_ar["HBL"])
-                        _ac2.write(_ar["선적일"])
-                        _ac3.write(f"{_ar['배분량 (MT)']:,.3f} MT")
-                        if _ac4.button("삭제", key=f"alloc_del_{_ar['_alloc_id']}"):
-                            cfg["contract_allocations"] = [
-                                x for x in _allocs if x.get("id") != _ar["_alloc_id"]
-                            ]
-                            save_cfg(cfg)
-                            st.rerun()
+                st.markdown("**연결된 B/L**")
+                _ct_bl = []
+                for _s in cfg.get("shipments", []):
+                    _al = next((a for a in cfg.get("contract_allocations", [])
+                                if a.get("contract_id") == _ct_id and a.get("shipment_id") == _s.get("id")), None)
+                    if _al or _s.get("linked_contract_id") == _ct_id:
+                        _w = float(_s.get("weight_kg") or 0)
+                        _ct_bl.append({"HBL": _s.get("hbl", "—"), "선적일": _s.get("loading_date", "—"),
+                                       "선적 중량(MT)": _w / 1000,
+                                       "이 계약 배정(MT)": (float(_al.get("allocated_kg") or 0) if _al else _w) / 1000,
+                                       "구분": "나눠 배정" if _al and abs(float(_al.get("allocated_kg") or 0) - _w) > 1 else ""})
+                if _ct_bl:
+                    st.dataframe(pd.DataFrame(sorted(_ct_bl, key=lambda r: r["선적일"])), width="stretch", hide_index=True,
+                                 column_config={"선적 중량(MT)": st.column_config.NumberColumn(format="%,.3f"),
+                                                "이 계약 배정(MT)": st.column_config.NumberColumn(format="%,.3f")})
                 else:
-                    st.caption("배분 기록 없음 — 아래에서 추가하세요.")
-
-                # 배분 추가 폼
-                _buyer_ships = [
-                    s for s in cfg.get("shipments", [])
-                    if s.get("buyer_id") == _ct.get("buyer_id", "")
-                ]
-                if _buyer_ships:
-                    _ship_opts = {
-                        f"{s.get('hbl','—')}  ({s.get('loading_date','—')}, {float(s.get('weight_kg') or 0)/1000:,.2f} MT)": s["id"]
-                        for s in _buyer_ships if s.get("id")
-                    }
-                    with st.form(key=f"alloc_form_{_ct_id}"):
-                        _fa1, _fa2 = st.columns([4, 2])
-                        _sel_ship_label = _fa1.selectbox("선적건 선택", list(_ship_opts), key=f"alloc_ship_{_ct_id}")
-                        _alloc_kg_input = _fa2.number_input("배분량 (MT)", min_value=0.0, step=0.001, format="%.3f", key=f"alloc_kg_{_ct_id}")
-                        # 선택한 선적건의 기배분/잔여 표시
-                        _preview_sid = _ship_opts.get(_sel_ship_label, "")
-                        _preview_total = float(next((s.get("weight_kg",0) for s in _buyer_ships if s.get("id")==_preview_sid), 0) or 0)
-                        _preview_used  = sum(float(a.get("allocated_kg",0)) for a in _allocs if a.get("shipment_id")==_preview_sid)
-                        _preview_rem   = _preview_total - _preview_used
-                        st.caption(f"선적 합계 {_preview_total/1000:,.3f} MT  ·  기배분 {_preview_used/1000:,.3f} MT  ·  잔여 **{_preview_rem/1000:,.3f} MT**")
-                        _add_alloc = st.form_submit_button("배분 추가")
-                    if _add_alloc:
-                        _sel_sid   = _preview_sid
-                        _remain_kg = _preview_rem
-                        # 계약 상한 초과 검증
-                        _cur_alloc_mt = sum(
-                            float(a.get("allocated_kg",0)) for a in _allocs if a.get("contract_id") == _ct_id
-                        ) / 1000
-                        _after_mt = _cur_alloc_mt + _alloc_kg_input
-                        if _alloc_kg_input <= 0:
-                            st.error("배분량은 0보다 커야 합니다.")
-                        elif _alloc_kg_input * 1000 > _remain_kg + 0.1:
-                            st.error(f"배분량이 잔여량을 초과합니다. 잔여: {_remain_kg/1000:,.3f} MT")
-                        else:
-                            # 계약 상한 초과 시에도 저장은 허용 (양사 협의 하에 발생 가능) — 초과분은 배너로 안내
-                            if _m["max_mt"] > 0 and _after_mt > _m["max_mt"] + 0.001:
-                                st.toast(f"배분 후 총량이 계약 상한을 {(_after_mt-_m['max_mt']):.3f} MT 초과합니다 — 저장은 진행됩니다.")
-                            _allocs.append({
-                                "id":           str(uuid.uuid4())[:8],
-                                "contract_id":  _ct_id,
-                                "shipment_id":  _sel_sid,
-                                "allocated_kg": round(_alloc_kg_input * 1000, 3),
-                            })
-                            cfg["contract_allocations"] = _allocs
-                            save_cfg(cfg)
-                            st.rerun()
-                else:
-                    st.caption("이 매입사의 선적 기록이 없습니다.")
-
-                # 삭제
-                with st.popover("계약 삭제"):
-                    st.warning(f"**{_bname}** {_ct.get('product','')} {_m['qty_mt']:,.0f} MT 계약을 삭제합니다.")
-                    if st.button("확인 삭제", key=f"ct_del_{_ct_id}"):
-                        cfg["contracts"] = [c for c in _ct_list if c.get("id") != _ct_id]
-                        cfg["contract_allocations"] = [
-                            a for a in cfg.get("contract_allocations", []) if a.get("contract_id") != _ct_id
-                        ]
-                        save_cfg(cfg)
-                        st.rerun()
+                    st.caption(f"연결된 B/L 없음 — 시트 선적 탭의 '계약ID' 열에 {_ct_id}를 넣으면 연결됩니다.")
 
 # ── 상단 '시트 동기화' 버튼 처리 ─────────────────────────────────────────────
 # 동기화 함수가 파일 중간에 정의되므로 버튼은 플래그만 세우고, 여기(스크립트 끝)에서 실행한 뒤
