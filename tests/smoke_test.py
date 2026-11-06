@@ -290,6 +290,16 @@ def main():
           abs(got - round(pkg * 1000.0, 2)) < 0.01 and abs(got_alt - round(pkg_alt * 1000.0, 2)) < 0.01
           and f["_with_contract"](ct_cfg["buyers"][0], ct_cfg["contracts"][0])["final_pay_days"] == 45)
 
+    # 선적 tab column 26 (확정액) sets the stored final amount; blank keeps it
+    sc4 = _sync_cfg(); sc4["buyers"] = [{"id": "B", "name": "POSCO", "product": "BM"}]
+    sc4["shipments"] = [{"id": "X", "hbl": "H1", "loading_date": "2026-02-10", "buyer_id": "B",
+                         "weight_kg": 1.0, "final_amount_usd": 111.0}, {"id": "Y", "hbl": "H2", "loading_date": "2026-02-11",
+                         "buyer_id": "B", "weight_kg": 1.0, "final_amount_usd": 222.0}]
+    _base = ["2026-02-10", "POSCO (BM)", "1", "100", "2026-01", "2026-02", "final", "", "", ""] + [""] * 12
+    run_sync(sc4, {"선적": [["HBL"], ["H1", "INV"] + _base + ["", "999.5"], ["H2", "INV"] + _base[:1] + ["POSCO (BM)"] + _base[2:] + ["", ""]]})
+    _fa = {s["hbl"]: s.get("final_amount_usd") for s in sc4["shipments"]}
+    check("sync: 선적 tab 확정액 column", _fa == {"H1": 999.5, "H2": 222.0})
+
     # 계약 / 견적 / 실사 tabs: the sheet is the source; unknown bidders become buyers; allocations follow contract ids
     sc3 = _sync_cfg()
     sc3["contracts"] = [{"id": "OLD", "buyer_id": "?"}]

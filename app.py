@@ -1935,6 +1935,30 @@ def _quarter_stats(f_rows, f_ships, q, days=None):
             "rows": _rs, "ships": _ss,
             "nobatch": [s for s in _ss if s["id"] not in {x["sid"] for x in _rs}]}
 
+_LOCKABLE_INPUTS = ("text_input", "number_input", "selectbox", "multiselect", "checkbox", "toggle",
+                    "radio", "text_area", "date_input")
+
+def _install_input_lock():
+    """입력 위젯이 이 세션의 '_inputs_locked' 표시가 켜져 있는 동안 disabled 로 그려지게 한 번만 감싼다.
+    세션별 상태로 판단하므로 같은 서버의 다른 세션에는 영향이 없다."""
+    from streamlit.delta_generator import DeltaGenerator as _DG
+    if getattr(_DG, "_input_lock_installed", False):
+        return
+    for owner in (st, _DG):
+        for name in _LOCKABLE_INPUTS:
+            orig = getattr(owner, name)
+            def _wrapped(*a, _orig=orig, **k):
+                if st.session_state.get("_inputs_locked"):
+                    k["disabled"] = True
+                return _orig(*a, **k)
+            setattr(owner, name, _wrapped)
+    _DG._input_lock_installed = True
+
+def _lock_inputs():
+    """이후 그리는 입력칸을 읽기 전용으로. 돌려주는 함수를 부르면 해제된다."""
+    st.session_state["_inputs_locked"] = True
+    return lambda: st.session_state.__setitem__("_inputs_locked", False)
+
 def _usd_k(v):
     """Compact signed dollars for narrow cells: -$12k, $1.2M."""
     a = abs(float(v or 0))
@@ -2020,6 +2044,10 @@ NI, CO = _latest_index(cfg)
 # ── 환율 — INDEX·환율·판관비에 저장된 최근 월 USD/KRW (자동 조회됨, 미등록 시 1,380) ──
 _xr_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"])
 XR = float(_xr_rates[-1]["rate"]) if _xr_rates else 1380.0
+
+# 데이터는 시트가 원본 — 읽기 전용으로 보여 줄 화면은 _lock_inputs() 로 입력칸을 잠근다(매 실행 시작 시 해제)
+_install_input_lock()
+st.session_state["_inputs_locked"] = False
 
 # ── 좌측 사이드바: 앱 이름 · 페이지 메뉴(아래 내비게이션에서 채움) · 상태 · 새로고침/시트 동기화 ──
 # 동기화 함수는 파일 뒤쪽에 정의되어 있으므로, 버튼은 요청 플래그만 세우고 실제 동기화는
@@ -2253,23 +2281,14 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         if _recalc_candidates:
             with st.expander(f"재계산 필요 — {len(_recalc_candidates)}건 (저장된 확정액이 현재 계산식과 다름)",
                               expanded=False):
-                st.caption("계산식 개선(반올림 순서, 수분공제 방식 등) 이후 저장된 확정 스냅샷이 최신 결과와 어긋난 건입니다.")
+                st.caption("저장된 확정액이 현재 계산식 결과와 다른 건입니다. 바꾸려면 시트 선적 탭 Z열(확정액)을 고치고 시트 동기화하세요.")
                 for _rs, _live in _recalc_candidates:
                     _rb = buyer_map.get(_rs.get("buyer_id", ""), {})
                     _diff = _live - float(_rs["final_amount_usd"])
-                    _rc1, _rc2 = st.columns([5, 1])
+                    _rc1 = st.container()
                     _rc1.write(f"**{_rs.get('hbl', '—')}** · {_rb.get('name', '?')}  "
                                f"저장 \\${float(_rs['final_amount_usd']):,.2f} → 현재 \\${_live:,.2f}  "
                                f"(차이 {_usd(_diff, 2, md=True)})")
-                    if _rc2.button("재계산", key=f"bulk_recalc_{_rs['id']}"):
-                        _rs["final_amount_usd"] = _live
-                        save_cfg(cfg); st.toast("재계산 완료"); st.rerun()
-                if st.button(f"전체 {len(_recalc_candidates)}건 일괄 재계산", key="bulk_recalc_all"):
-                    for _rs, _live in _recalc_candidates:
-                        _rs["final_amount_usd"] = _live
-                    save_cfg(cfg)
-                    st.toast(f"{len(_recalc_candidates)}건 일괄 재계산 완료")
-                    st.rerun()
 
         # ── 확정 상태인데 저장된 확정액이 없는 건 (시트 동기화로 final 전환된 경우 등) ──
         _no_snap = [(_ns, _recompute_final_settlement(cfg, _ns)) for _ns in shipments
@@ -2278,16 +2297,12 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         if _no_snap:
             with st.expander(f"확정액 미확정 — {len(_no_snap)}건 (final/paid 상태이나 저장된 확정액 없음)",
                              expanded=False):
-                st.caption("시트 동기화로 상태만 final이 된 건입니다. 화면의 '(추정)' 값을 저장된 확정액으로 확정합니다. "
-                           "분석값·수분율·계약 조건이 정확히 입력됐는지 먼저 확인하세요.")
+                st.caption("확정 상태지만 확정액이 비어 매출이 가정산 Invoice로 잡혀 있는 건입니다. 아래 계산값(또는 확정산 엑셀 금액)을 "
+                           "시트 선적 탭 Z열(확정액)에 넣고 시트 동기화하면 반영됩니다.")
                 for _ns, _nv in _no_snap:
                     _nb = buyer_map.get(_ns.get("buyer_id", ""), {})
                     st.write(f"**{_ns.get('hbl','—')}** · {_nb.get('name','?')}  →  "
                              + (f"\\${_nv:,.2f}" if _nv is not None else "계산 불가 (Final월 INDEX·계약 확인)"))
-                if _no_snap_ok and st.button(f"계산 가능한 {len(_no_snap_ok)}건 일괄 확정", key="bulk_snap_all"):
-                    for _ns, _nv in _no_snap_ok:
-                        _ns["final_amount_usd"] = _nv
-                    save_cfg(cfg); st.toast(f"{len(_no_snap_ok)}건 확정"); st.rerun()
         st.divider()
 
     # ── 필터 ──
@@ -2345,6 +2360,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 caption_of=lambda x: f"선택: {x.get('hbl', '').strip() or 'HBL미정'}")
 
         _ship_id_idx = {sh.get("id"): _ri for _ri, sh in enumerate(shipments)}
+        _unlock_inputs = _lock_inputs()   # 상세 카드의 입력칸은 표시 전용 — 수정은 시트에서
         for i,s in enumerate(show_ships):
             if s["id"] != _ed_sid:
                 continue
@@ -2519,63 +2535,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                            help="확정산 청구액(④)으로 실제 입금된 금액. 반환한 경우 음수")
 
                 # ── 컨테이너별 가중평균 계산기 ──────────────────────────────
-                with st.popover("컨테이너별 가중평균 계산기"):
-                    st.caption("매입사가 컨테이너 단위로 성분분석·정산한 경우: 컨테이너별 값을 "
-                               "입력하면 HBL 하나로 반영할 가중평균을 계산합니다. "
-                               "'적용'을 누르면 위 분석값·수분율 필드에 채워지고, "
-                               "여기 입력한 컨테이너별 원본값도 이 선적건에 함께 저장됩니다. "
-                               "잔여 반올림 차이는 기타 조정에 기재하세요.")
-                    _ctr_saved = s.get("container_calc", {}).get("containers", [])
-                    # 시트 동기화는 컨테이너 1개짜리 HBL에도 container_calc를 저장하므로 최소 1
-                    _ctr_n = int(st.number_input("컨테이너 수", min_value=1, max_value=12,
-                                                 value=max(1, len(_ctr_saved)) if _ctr_saved else 2,
-                                                 step=1, key=f"ctr_n_{real_i}"))
-                    _ctr_rows = []
-                    for _cj in range(_ctr_n):
-                        _cr_saved = _ctr_saved[_cj] if _cj < len(_ctr_saved) else {}
-                        _cc1, _cc2, _cc3, _cc4 = st.columns(4)
-                        _cw = _cc1.number_input(f"#{_cj+1} 중량(kg)", min_value=0.0, step=1.0,
-                                                format="%.0f", value=float(_cr_saved.get("w", 0.0)),
-                                                key=f"ctr_w_{real_i}_{_cj}")
-                        _cn = _cc2.number_input(f"#{_cj+1} Ni(%)", min_value=0.0, step=0.01,
-                                                format="%.2f", value=float(_cr_saved.get("ni", 0.0)),
-                                                key=f"ctr_ni_{real_i}_{_cj}")
-                        _cc = _cc3.number_input(f"#{_cj+1} Co(%)", min_value=0.0, step=0.01,
-                                                format="%.2f", value=float(_cr_saved.get("co", 0.0)),
-                                                key=f"ctr_co_{real_i}_{_cj}")
-                        _cm = _cc4.number_input(f"#{_cj+1} 수분(%)", min_value=0.0, max_value=20.0,
-                                                step=0.01, format="%.2f", value=float(_cr_saved.get("moist", 0.0)),
-                                                key=f"ctr_m_{real_i}_{_cj}")
-                        _ctr_rows.append((_cw, _cn, _cc, _cm))
-                    _ctr_gw = sum(r[0] for r in _ctr_rows)                    # 총 중량
-                    _ctr_sw = sum(r[0] * (1 - r[3]/100) for r in _ctr_rows)   # 정산중량 합
-                    if _ctr_gw > 0 and _ctr_sw > 0:
-                        # Ni/Co는 '정산중량' 가중평균 — 정산액이 함유량에 선형이라
-                        # 컨테이너별 합계가 정확히 재현됨 (반올림 차이 제외).
-                        # 수분율은 총중량 대비 정산중량으로 역산.
-                        _ctr_eni = sum(r[1] * r[0] * (1 - r[3]/100) for r in _ctr_rows) / _ctr_sw
-                        _ctr_eco = sum(r[2] * r[0] * (1 - r[3]/100) for r in _ctr_rows) / _ctr_sw
-                        _ctr_em  = (1 - _ctr_sw / _ctr_gw) * 100
-                        st.markdown(f"가중평균 — Ni **{_ctr_eni:.4f}%** · Co **{_ctr_eco:.4f}%** · "
-                                    f"수분 **{_ctr_em:.4f}%**  "
-                                    f"(총 {_ctr_gw:,.0f} kg → 정산 {_ctr_sw:,.1f} kg)")
-                        if abs(_ctr_gw - new_wkg) > 1:
-                            st.caption(f"컨테이너 중량 합({_ctr_gw:,.0f} kg)이 "
-                                       f"선적 중량({new_wkg:,.0f} kg)과 다릅니다.")
-                        if st.button("분석값·수분율에 적용 + 저장", key=f"ctr_apply_btn_{real_i}"):
-                            st.session_state[f"ctr_apply_{real_i}"] = {
-                                "ni":    round(_ctr_eni, 4),
-                                "co":    round(_ctr_eco, 4),
-                                "moist": round(_ctr_em, 4),
-                            }
-                            cfg["shipments"][real_i]["container_calc"] = {
-                                "containers": [{"w": r[0], "ni": r[1], "co": r[2], "moist": r[3]}
-                                               for r in _ctr_rows]
-                            }
-                            save_cfg(cfg)
-                            st.rerun()
-                    else:
-                        st.caption("컨테이너별 중량을 입력하면 가중평균이 계산됩니다.")
 
                 # ── 정산 요약 계산 ──
                 # 계약 조건 조회 (계약 있으면 ni/co 지불율·가정산비율·INDEX기준 계약 우선)
@@ -2696,9 +2655,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                                 f"확정 스냅샷(\\${_snapped_final:,.2f})이 현재 계산식(\\${final_amt:,.2f})과 "
                                 f"{_usd(_snapped_final - final_amt, 2, md=True)} 차이납니다 — 단가 반올림 방식 개선 이전 값일 수 있습니다."
                             )
-                            if st.button("최신 계산식으로 재계산", key=f"sh_recalc_{real_i}"):
-                                cfg["shipments"][real_i]["final_amount_usd"] = final_amt
-                                save_cfg(cfg); st.toast("재계산 완료"); st.rerun()
 
                         # ── 정산 흐름표 ───────────────────────────────────────
                         _prov_pkg_disp   = f"{prov_pkg:.2f}" if prov_pkg is not None else "—"
@@ -2779,88 +2735,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         else:
                             st.caption(f"Provisional월({_prov_idx_month}) INDEX 이력이 없어 가정산 단가를 계산할 수 없습니다.")
 
-                ca,cb=st.columns(2)
-                with ca:
-                    if st.button("저장",key=f"sh_save_{real_i}"):
-                        _save_err = []
-                        # 선적일 형식·정합성 검사
-                        if new_ld and not _valid_date_str(new_ld):
-                            _save_err.append("선적일 형식이 잘못됐습니다 (YYYY-MM-DD, 연도 1990~2100)")
-                        # ETA > 선적일 검사
-                        if new_ld and new_eta and new_eta < new_ld:
-                            _save_err.append(f"ETA({new_eta})가 선적일({new_ld})보다 앞섭니다")
-                        for _pd_lbl, _pd_val in (("가정산 입금일", new_ppd), ("확정산 입금일", new_fpd)):
-                            if _pd_val.strip() and not _valid_date_str(_pd_val.strip()):
-                                _save_err.append(f"{_pd_lbl} 형식이 잘못됐습니다 (YYYY-MM-DD)")
-                        # Final월 >= Provisional월 검사
-                        if new_pm != "—" and new_fm != "—" and new_fm < new_pm:
-                            _save_err.append(f"Final월({new_fm})이 Provisional월({new_pm})보다 앞섭니다")
-                        # HBL 중복 체크 (자기 자신 제외)
-                        if new_hbl:
-                            _dup = [s2 for j2,s2 in enumerate(shipments) if j2!=real_i and s2.get("hbl","").strip()==new_hbl.strip()]
-                            if _dup: _save_err.append(f"HBL '{new_hbl}' 이(가) 이미 존재합니다")
-                        # 빈 HBL 동일 조합 중복 체크
-                        if not new_hbl.strip() and new_ld and new_wkg:
-                            _dup2 = [s2 for j2,s2 in enumerate(shipments)
-                                     if j2!=real_i
-                                     and not s2.get("hbl","").strip()
-                                     and s2.get("loading_date","") == new_ld
-                                     and s2.get("buyer_id","") == buyer_opts[new_b]
-                                     and abs(float(s2.get("weight_kg",0)) - new_wkg) < 1]
-                            if _dup2: _save_err.append("HBL 미입력인 동일 매입사·선적일·중량 선적건이 이미 있습니다")
-                        if _save_err:
-                            for _e in _save_err: st.error(_e)
-                        else:
-                            # Final 스냅샷: final 상태인데 스냅샷이 없으면 저장 시점에 확정
-                            # (앱에서 직접 전환한 경우뿐 아니라, 구글시트 동기화로 이미
-                            #  final 상태가 된 뒤 스냅샷만 비어있는 경우도 포함)
-                            _snap_final = s.get("final_amount_usd")
-                            if new_stat == "final" and not _snap_final:
-                                # 현재 계산값으로 스냅샷 저장
-                                _snap_ct  = _get_contract_for_shipment(cfg, s.get("id",""))
-                                _snap_st  = _settle_terms(_snap_ct, b)
-                                if new_fm != "—" and new_fm in hm_all_b:
-                                    _snap_fidx = _resolve_idx_month(_snap_st["final_idx"], new_ld, new_pm, new_fm)
-                                    if _snap_fidx not in hm_all_b: _snap_fidx = new_fm
-                                    _sfmd = hm_all_b[_snap_fidx]
-                                    _,_,_,_sfpkg_raw = bp_price(_sfmd["ni_index"],_sfmd["co_index"],
-                                                            _eff_ni, _eff_co,
-                                                            *_pay_at(_snap_st, _sfmd))
-                                    _snap_rbm = b.get("round_price_before_moisture", False) if b else False
-                                    _snap_price = round(_sfpkg_raw, 2) if _snap_rbm else _sfpkg_raw
-                                    _snap_final = round(_snap_price * new_wkg * (1 - new_moisture/100), 2)
-                            elif new_stat == "provisional":
-                                _snap_final = None  # final 상태 해제(재정산) 시에만 스냅샷 제거 — paid는 final 스냅샷을 유지
-                            cfg["shipments"][real_i].update({
-                                "hbl":new_hbl,"invoice_no":new_inv,
-                                "loading_date":new_ld,"buyer_id":buyer_opts[new_b],
-                                "weight_kg":new_wkg,"invoice_usd":new_iusd,
-                                # 0은 '수출비 없음'(예: 임가공비에 포함) — 이미 0으로 입력된 건은 0을 유지
-                                "export_cost_usd":(new_eusd if new_eusd > 0
-                                                   else (0.0 if s.get("export_cost_usd") == 0 else None)),
-                                "prov_month":new_pm,"final_month":new_fm,
-                                "status":new_stat,"etd":new_etd,"eta":new_eta,"notes":new_note,
-                                "moisture_pct":new_moisture if new_moisture > 0 else None,
-                                "buyer_ni_content":new_buyer_ni if new_buyer_ni!=default_ni or s.get("buyer_ni_content") else None,
-                                "buyer_co_content":new_buyer_co if new_buyer_co!=default_co or s.get("buyer_co_content") else None,
-                                "ni_content_src":_ni_src,
-                                "co_content_src":_co_src,
-                                "linked_contract_id": new_linked_ct_id if new_linked_ct_id else None,
-                                "other_adj_usd":new_other_adj if new_other_adj else None,
-                                "other_adj_desc":new_other_desc,
-                                "prov_paid_date":  new_ppd.strip() or None,
-                                "prov_paid_usd":   new_ppu if new_ppu else None,
-                                "final_paid_date": new_fpd.strip() or None,
-                                "final_paid_usd":  new_fpu if new_fpu else None,
-                                "final_amount_usd": _snap_final})
-                            save_cfg(cfg); st.toast("저장 완료"); st.rerun()
-                with cb:
-                    with st.popover("삭제", width="stretch"):
-                        st.warning(f"**{s.get('hbl','?')}** 선적건을 삭제합니다.")
-                        if st.button("삭제 확인", key=f"sh_del_cfm_{real_i}", type="primary", width="stretch"):
-                            cfg["shipments"].pop(real_i); save_cfg(cfg); st.rerun()
 
         st.divider()
+        _unlock_inputs()
         with st.expander("항차 일정 (Gantt)", expanded=False):
             # Gantt 차트 — 기본은 미정산(provisional·final)만, 입금완료는 토글
             _g_paid = st.toggle("입금완료 건도 일정에 표시", value=False, key="gantt_paid")
@@ -3041,20 +2918,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                 )
 
     st.divider()
-    with st.expander("새 선적건 수동 추가 (시트 동기화가 기본)", expanded=False):
-        with st.form("add_ship"):
-            a1,a2,a3,a4=st.columns(4)
-            with a1: a_hbl=st.text_input("HBL"); a_inv=st.text_input("Invoice No.")
-            with a2: a_buy=st.selectbox("매입사",list(buyer_opts.keys())); a_ld=st.text_input("선적일 (YYYY-MM-DD)",placeholder="2026-04-01")
-            with a3: a_etd=st.text_input("ETD (YYYY-MM-DD)",placeholder="2026-04-05"); a_wkg=st.number_input("중량 (kg)",value=0.0,step=1.0,format="%.0f")
-            with a4: a_iusd=st.number_input("Invoice (USD)",value=0.0,step=1.0,format="%.2f"); a_pm=st.selectbox("Provisional 월",["—"]+hist_opts); a_fm=st.selectbox("Final 월",["—"]+hist_opts)
-            if st.form_submit_button("추가"):
-                cfg["shipments"].append({"id":str(uuid.uuid4())[:8],"hbl":a_hbl,"invoice_no":a_inv,
-                    "loading_date":a_ld,"etd":a_etd.strip(),"buyer_id":buyer_opts[a_buy],"weight_kg":a_wkg,"invoice_usd":a_iusd,
-                    "prov_month":a_pm,"final_month":a_fm,"status":"provisional","eta":"","notes":"",
-                    "moisture_pct":None,"buyer_ni_content":None,"buyer_co_content":None,
-                    "other_adj_usd":None,"other_adj_desc":""})
-                save_cfg(cfg); st.toast("추가 완료!"); st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4768,6 +4631,8 @@ def _sync_from_gsheets(cfg_ref):
                 _extra = {}
                 if row[24].strip():                       # 25열: 비고 (빈칸=기존값 유지)
                     _extra["notes"] = row[24].strip()
+                if row[25].strip():                       # 26열: 확정액(USD) — 확정산 금액 (빈칸=기존값 유지)
+                    _extra["final_amount_usd"] = _to_float(row[25]) or None
                 try:
                     if _x[0].strip():  _extra["moisture_pct"]     = _xf(_x[0]) or None
                     if _x[1].strip():  _extra["buyer_ni_content"] = _xf(_x[1])
@@ -6522,13 +6387,10 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
 
     # ── 요약 + 구역별 표 ──
     _open = [c for c in _checks if not c[2]]
-    _k1, _k2, _k3 = st.columns(3)
+    _k1, _k2 = st.columns(2)
     _k1.metric("점검 항목", f"{len(_checks)}개", border=True)
     _k2.metric("확인 필요", f"{len(_open)}개", border=True,
                delta=("모두 완료" if not _open else None), delta_color="off")
-    _closed = (cfg.get("month_close") or {}).get(_mc_m)
-    _k3.metric("마감 상태", "마감 완료" if _closed else "진행 중", border=True,
-               delta=(f"{_closed.get('closed_at', '')[:16]}" if _closed else None), delta_color="off")
     for _sec in ("기준 데이터", "선적·정산", "입금", "생산·재고"):
         _rows = [c for c in _checks if c[0] == _sec]
         _n_open = sum(1 for c in _rows if not c[2])
@@ -6541,21 +6403,6 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
                                         "내용": st.column_config.TextColumn(width="large")})
 
     st.caption("재고 실사는 시트 '실사' 탭(월 / 제품 / 실사 kg / 비고)에 넣고 시트 동기화하면 위 '생산·재고'에 반영됩니다.")
-    _mcb1, _mcb2 = st.columns([1, 3])
-    with _mcb1:
-        if not _closed:
-            if st.button(f"{_mc_m} 마감 완료 표시", type="primary", width="stretch", key="mc_close_btn",
-                         help="확인 필요 항목이 남아 있어도 표시할 수 있습니다. 남은 항목 수가 함께 기록됩니다."):
-                cfg.setdefault("month_close", {})[_mc_m] = {"closed_at": _now().strftime("%Y-%m-%d %H:%M"),
-                                                           "open_items": len(_open)}
-                save_cfg(cfg); st.rerun()
-        else:
-            if st.button(f"{_mc_m} 마감 해제", width="stretch", key="mc_reopen_btn"):
-                cfg.get("month_close", {}).pop(_mc_m, None)
-                save_cfg(cfg); st.rerun()
-    with _mcb2:
-        if _closed:
-            st.caption(f"{_closed.get('closed_at')} 마감 표시 · 당시 확인 필요 {_closed.get('open_items', 0)}개")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 견적 비교 — 시트 '견적' 탭의 RFQ별 업체 응찰 조건을 같은 INDEX로 환산해 나란히 비교
