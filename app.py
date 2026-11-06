@@ -8,117 +8,120 @@ st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", init
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
-   Notion Dark — custom theme layer
-   bg:#191919  surface:#252525  border:#373737
-   accent:#2383e2  text-2:#9b9b9b
+   Refined dark — borderless surfaces, one accent
+   bg:#131316  surface:#1C1C20  surface-2:#26262C  line:#2A2A30
+   text:#ECECEF  text-2:#9A9AA6  accent:#3B82F6
    ══════════════════════════════════════════════ */
 
 /* ── Layout ── */
-.main .block-container{
-    padding-top:1.5rem;padding-bottom:2.5rem
+.main .block-container, div[data-testid="stMainBlockContainer"]{
+    padding-top:1.25rem;padding-bottom:3rem;max-width:1320px
 }
 section[data-testid="stSidebar"]{
     min-width:260px;
-    border-right:1px solid #2d2d2d !important
+    border-right:1px solid #2A2A30 !important
 }
+h1{font-weight:700 !important;letter-spacing:-.03em}
+h2,h3,h4{font-weight:650 !important;letter-spacing:-.02em}
 
-/* ── Tab bar — pill strip on dark ── */
+/* ── Tab bar — quiet segmented strip ── */
 div[data-testid="stTabs"] div[data-baseweb="tab-list"]{
-    background:#252525;border-radius:10px;padding:3px;
-    border:1px solid #333;gap:2px
+    background:#1C1C20;border-radius:12px;padding:4px;border:none;gap:2px
 }
 div[data-testid="stTabs"] button[role="tab"]{
-    border-radius:7px !important;font-size:.82rem;font-weight:500;
-    padding:5px 13px !important;color:#9b9b9b;
+    border-radius:9px !important;font-size:.85rem;font-weight:500;
+    padding:6px 14px !important;color:#9A9AA6;
     transition:background .15s,color .15s;border:none !important;
     white-space:nowrap
 }
-div[data-testid="stTabs"] button[role="tab"]:hover{
-    background:rgba(255,255,255,.06) !important;color:#e5e5e5
-}
+div[data-testid="stTabs"] button[role="tab"]:hover{color:#ECECEF}
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
-    background:#2383e2 !important;color:#fff !important;
-    font-weight:600;box-shadow:0 1px 6px rgba(35,131,226,.40) !important
+    background:#2E2E35 !important;color:#ECECEF !important;font-weight:600
 }
 div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
 div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
 div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
-/* ── Expanders — elevated dark card ── */
-div[data-testid="stExpander"] details{
-    border-radius:12px !important;
-    border:1px solid #333 !important;
-    background:#252525 !important;
-    overflow:hidden;
-    transition:border-color .15s,box-shadow .15s;
-    box-shadow:0 1px 3px rgba(0,0,0,.35)
+/* ── Cards: bordered containers (key="card_*"), metrics, expanders, forms ── */
+div[class*="st-key-card_"]{
+    background:#1C1C20 !important;border:none !important;
+    border-radius:16px !important;padding:20px 22px !important
 }
-div[data-testid="stExpander"] details:hover{
-    border-color:#4a4a4a !important;
-    box-shadow:0 2px 8px rgba(0,0,0,.45) !important
+div[data-testid="stMetric"]{
+    background:#1C1C20 !important;border:none !important;
+    border-radius:16px !important;padding:16px 18px !important
+}
+div[data-testid="stMetricValue"]{
+    font-size:1.6rem !important;font-weight:700;letter-spacing:-.03em;
+    font-variant-numeric:tabular-nums
+}
+div[data-testid="stMetricLabel"] p{font-size:.8rem !important;color:#9A9AA6 !important;font-weight:500}
+div[data-testid="stMetricDelta"]{font-size:.78rem !important}
+div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
+div[data-testid="stMetric"] svg{background:transparent !important}
+/* nested stat tiles inside a card sit one step lighter */
+div[class*="st-key-card_"] .kpi-tile{background:#26262C !important}
+
+div[data-testid="stExpander"] details{
+    border-radius:14px !important;border:none !important;
+    background:#1C1C20 !important;overflow:hidden
 }
 div[data-testid="stExpander"] details summary{
-    padding:13px 18px !important;font-weight:500;
-    background:#2a2a2a !important
+    padding:14px 18px !important;font-weight:600;background:transparent !important
 }
-div[data-testid="stExpander"] details[open]>summary{
-    border-bottom:1px solid #333 !important
-}
+div[data-testid="stExpander"] details summary:hover{background:#222227 !important}
+div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid #2A2A30 !important}
 div[data-testid="stExpander"] details>div,
-div[data-testid="stExpander"] details>div>div{
-    padding:16px 20px !important
+div[data-testid="stExpander"] details>div>div{padding:16px 20px !important}
+
+div[data-testid="stForm"]{
+    border-radius:16px !important;border:none !important;
+    background:#1C1C20 !important;padding:20px !important
 }
 
-/* ── Metric cards — dark surface ── */
-div[data-testid="metric-container"]{
-    background:#252525 !important;
-    border:1px solid #333 !important;
-    border-radius:12px !important;
-    padding:14px 18px !important;
-    transition:border-color .15s,box-shadow .15s;
-    box-shadow:0 1px 3px rgba(0,0,0,.3)
-}
-div[data-testid="metric-container"]:hover{
-    border-color:#4a4a4a !important;
-    box-shadow:0 2px 8px rgba(0,0,0,.4) !important
-}
-div[data-testid="stMetricValue"]{font-size:1.45rem !important;letter-spacing:-.5px;font-weight:600}
-div[data-testid="stMetricLabel"] p{font-size:.78rem !important;color:#9b9b9b !important}
-div[data-testid="stMetricDelta"] svg{width:14px;height:14px}
-
-/* ── Sidebar metric cards — slightly different shade ── */
-section[data-testid="stSidebar"] div[data-testid="metric-container"]{
-    background:#2a2a2a !important;border-color:#363636 !important
-}
+/* ── Sidebar metric cards ── */
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:#1C1C20 !important}
 
 /* ── Buttons ── */
 div[data-testid="stButton"]>button,
 div[data-testid="stPopover"]>button,
+div[data-testid="stDownloadButton"]>button,
 div[data-testid="stFormSubmitButton"]>button{
-    border-radius:8px !important;font-weight:500;
-    transition:all .15s;
-    border:1px solid #3d3d3d !important
+    border-radius:10px !important;font-weight:600;
+    transition:background .15s,border-color .15s;
+    border:1px solid #2A2A30 !important;background:#26262C !important
 }
 div[data-testid="stButton"]>button:hover,
+div[data-testid="stPopover"]>button:hover,
+div[data-testid="stDownloadButton"]>button:hover,
 div[data-testid="stFormSubmitButton"]>button:hover{
-    border-color:#555 !important;
-    box-shadow:0 0 0 2px rgba(35,131,226,.25) !important
+    background:#2E2E35 !important;border-color:#3A3A42 !important
 }
+div[data-testid="stButton"]>button[kind="primary"],
+div[data-testid="stFormSubmitButton"]>button[kind="primaryFormSubmit"]{
+    background:#3B82F6 !important;border-color:#3B82F6 !important;color:#fff !important
+}
+div[data-testid="stButton"]>button[kind="primary"]:hover,
+div[data-testid="stFormSubmitButton"]>button[kind="primaryFormSubmit"]:hover{
+    background:#2F74E8 !important
+}
+button:focus-visible{outline:2px solid #3B82F6 !important;outline-offset:2px}
 
 /* ── Inputs ── */
 div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input,
-div[data-testid="stTextAreaInput"] textarea{
-    border-radius:8px !important;
-    background:#2e2e2e !important;
-    border:1px solid #575757 !important;
-    color:#e5e5e5 !important
+div[data-testid="stTextAreaInput"] textarea,
+div[data-testid="stDateInput"] input{
+    border-radius:10px !important;
+    background:#26262C !important;
+    border:1px solid transparent !important;
+    color:#ECECEF !important
 }
 div[data-testid="stTextInput"] input:focus,
 div[data-testid="stNumberInput"] input:focus,
 div[data-testid="stTextAreaInput"] textarea:focus{
-    border-color:#2383e2 !important;
-    box-shadow:0 0 0 2px rgba(35,131,226,.25) !important;
+    border-color:#3B82F6 !important;
+    box-shadow:0 0 0 3px rgba(59,130,246,.22) !important;
     outline:none !important
 }
 /* baseweb 버전에 따라 select 내부 div 깊이가 달라질 수 있어 루트와 1단계 자식 모두에
@@ -127,169 +130,135 @@ div[data-testid="stSelectbox"] [data-baseweb="select"],
 div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
 div[data-testid="stMultiSelect"] [data-baseweb="select"],
 div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
-    border-radius:8px !important;
-    background:#2e2e2e !important;
-    border:1px solid #575757 !important
+    border-radius:10px !important;
+    background:#26262C !important;
+    border:1px solid transparent !important
 }
 div[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
 div[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within{
-    border-color:#2383e2 !important;
-    box-shadow:0 0 0 2px rgba(35,131,226,.25) !important
+    border-color:#3B82F6 !important;
+    box-shadow:0 0 0 3px rgba(59,130,246,.22) !important
 }
-div[data-testid="stDateInput"] input{
-    border-radius:8px !important;
-    background:#2e2e2e !important;
-    border:1px solid #575757 !important;
-    color:#e5e5e5 !important
-}
+div[data-testid="stWidgetLabel"] p{color:#9A9AA6 !important;font-size:.8rem !important;font-weight:500}
 
 /* ── Progress bars — slim accent ── */
 div[data-testid="stProgress"]{margin-bottom:14px !important;margin-top:2px !important}
 div[data-testid="stProgress"]>div{
     border-radius:20px !important;height:6px !important;
-    overflow:hidden;background:#333 !important
+    overflow:hidden;background:#2A2A30 !important
 }
-div[data-testid="stProgress"]>div>div{
-    border-radius:20px !important;
-    background:linear-gradient(90deg,#2383e2,#60a5fa) !important
+div[data-testid="stProgress"]>div>div{border-radius:20px !important;background:#3B82F6 !important}
+div[data-testid="stProgress"] p{font-size:.8rem;color:#9A9AA6;margin-bottom:5px}
+
+/* ── Alerts — muted tint instead of saturated blocks ── */
+div[data-testid="stAlertContainer"]{
+    border-radius:12px !important;border:none !important;padding:12px 16px !important
 }
-div[data-testid="stProgress"] p{font-size:.8rem;color:#9b9b9b;margin-bottom:5px}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){background:rgba(245,158,11,.08) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){background:rgba(59,130,246,.08) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){background:rgba(34,197,94,.08) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){background:rgba(239,68,68,.09) !important}
+div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#D6D6DC !important}
 
-/* ── Alert / info boxes ── */
-div[data-testid="stAlert"]{border-radius:10px !important}
+/* ── Spacing & dividers ── */
+div[data-testid="stHorizontalBlock"]{margin-bottom:12px !important}
+hr{border-color:#2A2A30 !important;margin:1.4rem 0}
+div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] p{color:#8A8A95 !important}
 
-/* ── Forms ── */
-div[data-testid="stForm"]{
-    border-radius:12px !important;
-    border:1px solid #333 !important;
-    background:#252525 !important;
-    padding:16px !important
-}
-
-/* ── Column row bottom spacing ── */
-div[data-testid="stHorizontalBlock"]{margin-bottom:16px !important}
-
-/* ── Dividers ── */
-hr{border-color:#2d2d2d !important;margin:1.2rem 0}
-
-/* ── Dataframes — dark card container ── */
+/* ── Dataframes ── */
 div[data-testid="stDataFrame"]{
-    border:1px solid #383838 !important;
-    border-radius:10px !important;
-    overflow:hidden !important;
-    box-shadow:0 2px 8px rgba(0,0,0,.35) !important;
-    margin-bottom:8px !important
+    border:none !important;border-radius:12px !important;
+    overflow:hidden !important;margin-bottom:8px !important
 }
 
-/* ── Markdown tables — dark card style ── */
+/* ── Markdown tables ── */
 div[data-testid="stMarkdown"] table{
-    border-collapse:separate !important;
-    border-spacing:0 !important;
-    border:1px solid #383838 !important;
-    border-radius:10px !important;
-    overflow:hidden !important;
-    width:100%;
-    margin-bottom:12px !important
+    border-collapse:separate !important;border-spacing:0 !important;
+    border:none !important;border-radius:12px !important;
+    overflow:hidden !important;width:100%;margin-bottom:12px !important;
+    background:#1C1C20;font-variant-numeric:tabular-nums
 }
 div[data-testid="stMarkdown"] table thead tr th{
-    background:#2d2d2d !important;
-    color:#e5e5e5 !important;
-    font-weight:600 !important;
-    padding:10px 14px !important;
-    border-bottom:1px solid #383838 !important;
-    font-size:.82rem !important;
+    background:#1C1C20 !important;color:#9A9AA6 !important;
+    font-weight:600 !important;padding:10px 14px !important;
+    border-bottom:1px solid #2A2A30 !important;font-size:.8rem !important;
     white-space:nowrap
 }
 div[data-testid="stMarkdown"] table tbody tr td{
-    padding:8px 14px !important;
-    border-bottom:1px solid #2d2d2d !important;
-    color:#c5c5c5 !important;
-    font-size:.82rem !important
+    padding:9px 14px !important;border-bottom:1px solid #222227 !important;
+    color:#D6D6DC !important;font-size:.84rem !important
 }
-div[data-testid="stMarkdown"] table tbody tr:last-child td{
-    border-bottom:none !important
-}
-div[data-testid="stMarkdown"] table tbody tr:hover td{
-    background:rgba(255,255,255,.04) !important
-}
+div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !important}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
-    background:#252525 !important;
-    border:1px solid #333 !important;
-    border-radius:12px !important;
-    padding:14px 18px;margin:6px 0;
-    transition:border-color .15s,box-shadow .15s;
-    box-shadow:0 1px 3px rgba(0,0,0,.3)
-}
-.mbox:hover{
-    border-color:#4a4a4a !important;
-    box-shadow:0 3px 10px rgba(0,0,0,.4) !important
+    background:#1C1C20 !important;border:none !important;
+    border-radius:16px !important;padding:16px 18px;margin:6px 0
 }
 .ph{
-    font-size:1.35rem !important;font-weight:700 !important;
-    color:#e5e5e5 !important;letter-spacing:-.4px
+    font-size:1.4rem !important;font-weight:700 !important;
+    color:#ECECEF !important;letter-spacing:-.03em;font-variant-numeric:tabular-nums
 }
-.sp{font-size:.82rem;color:#9b9b9b;margin-bottom:3px}
+.sp{font-size:.8rem;color:#9A9AA6;margin-bottom:3px}
 
-/* ── Status badges ── */
-.b-bp{background:rgba(35,131,226,.18);color:#60a5fa;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(35,131,226,.3)}
-.b-bm{background:rgba(34,197,94,.15);color:#4ade80;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(34,197,94,.25)}
-.b-sc{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
-.b-ok{background:rgba(34,197,94,.15);color:#4ade80;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(34,197,94,.25)}
-.b-wn{background:rgba(251,191,36,.13);color:#fbbf24;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(251,191,36,.25)}
-/* ── 페이지 내비게이션 (상위: 채워진 필 스트립 / 하위: 밑줄 탭) ── */
+/* ── Status badges — tint only, no outline ── */
+.b-bp,.b-bm,.b-sc,.b-ok,.b-wn,.b-ng{padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:600}
+.b-bp{background:rgba(59,130,246,.15);color:#7AA7F8}
+.b-bm{background:rgba(34,197,94,.13);color:#5FD68A}
+.b-sc{background:rgba(245,158,11,.13);color:#F2B544}
+.b-ok{background:rgba(34,197,94,.13);color:#5FD68A}
+.b-wn{background:rgba(245,158,11,.13);color:#F2B544}
+.b-ng{background:rgba(239,68,68,.14);color:#F47A7A}
+
+/* ── 페이지 내비게이션 (상위: 세그먼트 / 하위: 밑줄 탭) ── */
 .st-key-nav_top div[data-testid="stSegmentedControl"]{margin-top:-4px}
 /* 컨테이너가 자식을 내용 폭으로 줄이지 않고 화면 폭 전체로 늘리게 */
 .st-key-nav_top, .st-key-nav_sub{align-items:stretch !important}
 .st-key-nav_top div[data-testid="stElementContainer"],
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
 .st-key-nav_top div[data-testid="stButtonGroup"]{
-    width:100%;background:#252525;border:1px solid #333;border-radius:14px;padding:5px;
-    box-shadow:0 1px 3px rgba(0,0,0,.35)
+    width:100%;background:#1C1C20;border:none;border-radius:14px;padding:4px
 }
 /* 버튼 줄을 화면 폭 전체로 늘리고 5개 메뉴를 같은 폭으로 */
 .st-key-nav_top div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
     display:flex;gap:4px;flex-wrap:nowrap}
 .st-key-nav_top div[data-testid="stButtonGroup"] button{
-    flex:1 1 0 !important;min-height:46px;justify-content:center;
+    flex:1 1 0 !important;min-height:44px;justify-content:center;
     border-radius:10px !important;border:none !important;background:transparent !important;
-    color:#9b9b9b !important;font-size:1.02rem !important;font-weight:600 !important;
+    color:#9A9AA6 !important;font-size:.98rem !important;font-weight:600 !important;
     padding:10px 16px !important;transition:background .15s,color .15s;box-shadow:none !important
 }
-.st-key-nav_top div[data-testid="stButtonGroup"] button:hover{
-    background:rgba(255,255,255,.06) !important;color:#e5e5e5 !important
-}
+.st-key-nav_top div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
 .st-key-nav_top div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
 .st-key-nav_top div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
-    background:#2383e2 !important;color:#fff !important;
-    box-shadow:0 1px 6px rgba(35,131,226,.45) !important
+    background:#2E2E35 !important;color:#FFFFFF !important
 }
 .st-key-nav_top div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
 
 .st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
 .st-key-nav_sub div[data-testid="stButtonGroup"]{
-    background:transparent;border:none;border-bottom:1px solid #3a3a3a;border-radius:0;
+    background:transparent;border:none;border-bottom:1px solid #2A2A30;border-radius:0;
     padding:0;width:100%
 }
 .st-key-nav_sub div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
     display:flex;gap:6px;flex-wrap:wrap}
 .st-key-nav_sub div[data-testid="stButtonGroup"] button{
-    border:none !important;border-bottom:3px solid transparent !important;border-radius:0 !important;
-    background:transparent !important;color:#8a8a8a !important;min-height:42px;
-    font-size:.93rem !important;font-weight:500 !important;padding:8px 22px 9px !important;
+    border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
+    background:transparent !important;color:#8A8A95 !important;min-height:42px;
+    font-size:.92rem !important;font-weight:500 !important;padding:8px 18px 9px !important;
     margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
 }
-.st-key-nav_sub div[data-testid="stButtonGroup"] button:hover{color:#e5e5e5 !important}
+.st-key-nav_sub div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
 .st-key-nav_sub div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
 .st-key-nav_sub div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
-    color:#e5e5e5 !important;font-weight:600 !important;border-bottom:3px solid #2383e2 !important
+    color:#ECECEF !important;font-weight:600 !important;border-bottom:2px solid #ECECEF !important
 }
 .st-key-nav_sub div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
-.nav-crumb{font-size:.78rem;color:#7a7a7a;letter-spacing:.02em;margin:4px 0 0 2px}
-.nav-crumb b{color:#c5c5c5;font-weight:600}
-.b-ng{background:rgba(239,68,68,.15);color:#f87171;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600;border:1px solid rgba(239,68,68,.25)}
+/* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
+.nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
+.nav-crumb a{color:#9A9AA6 !important}
 
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
@@ -1211,7 +1180,7 @@ def _sync_checks(before, after):
 
 
 # ── 차트 공통 스타일 (plotly) — 색 규칙: BP 파랑 / BM 초록 / 흑자 초록 / 적자 빨강 / 총계 보라 ──
-_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#2383e2", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#f59e0b"
+_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#3B82F6", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#f59e0b"
 _C_COST = {"원료 매입비": "#6b7280", "임가공비(순)": "#a16207", "수출비": "#0e7490", "보관비": "#7c3aed"}
 _GRID = "rgba(255,255,255,0.07)"
 
@@ -1220,19 +1189,19 @@ def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None
     fig.update_layout(
         height=height,
         # empty text, not None: plotly.js draws the literal "undefined" for a None title
-        title=dict(text=title or "", font=dict(size=13, color="#e5e5e5"), x=0, xanchor="left"),
+        title=dict(text=title or "", font=dict(size=13, color="#ECECEF"), x=0, xanchor="left"),
         margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
-        plot_bgcolor="#1e1e1e", paper_bgcolor="#252525",
-        font=dict(color="#c5c5c5", size=11),
+        plot_bgcolor="#1C1C20", paper_bgcolor="#1C1C20",
+        font=dict(color="#C4C4CC", size=11),
         showlegend=legend,
         legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
         xaxis_title="", yaxis_title="",
-        hoverlabel=dict(bgcolor="#2a2a2a", bordercolor="#444", font=dict(color="#e5e5e5", size=11)),
+        hoverlabel=dict(bgcolor="#1C1C20", bordercolor="#34343B", font=dict(color="#ECECEF", size=11)),
     )
-    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#c5c5c5"), zeroline=False)
+    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#C4C4CC"), zeroline=False)
     fig.update_yaxes(showgrid=True, gridcolor=_GRID, tickformat=y_fmt, automargin=True,
-                     tickfont=dict(size=10, color="#c5c5c5"), zeroline=False)
+                     tickfont=dict(size=10, color="#C4C4CC"), zeroline=False)
     return fig
 
 def _fig_monthly_pnl(rows, height=320, title=None):
@@ -1251,7 +1220,7 @@ def _fig_monthly_pnl(rows, height=320, title=None):
         x=_x, y=_real, name="실질 손익", mode="lines+markers+text",
         line=dict(color=_C_LINE, width=2),
         marker=dict(size=8, color=[_C_POS if v >= 0 else _C_NEG for v in _real],
-                    line=dict(color="#1e1e1e", width=1)),
+                    line=dict(color="#1C1C20", width=1)),
         text=[f"${v:+,.0f}" for v in _real], textposition="top center",
         textfont=dict(size=9, color=_C_LINE),
         hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>",
@@ -1283,34 +1252,34 @@ def status_badge(s):
     lbl,cls=m.get(s,("—","b-ng"))
     return f'<span class="{cls}">{lbl}</span>'
 
-def _kpi_card(label, value, sub="", val_color="#e5e5e5", left_border=""):
+def _kpi_card(label, value, sub="", val_color="#ECECEF", left_border=""):
     _bl    = f"border-left:3px solid {left_border};" if left_border else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#9b9b9b;margin-top:6px;line-height:1.4">'
+    _sub_h = (f'<div style="font-size:.75rem;color:#9A9AA6;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
-    return (f'<div style="background:#2a2a2a;border:1px solid #383838;border-radius:12px;'
-            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4);'
+    return (f'<div class="kpi-tile" style="background:#1C1C20;border:none;border-radius:16px;'
+            f'padding:16px 18px;{_bl}'
             f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#9b9b9b;margin-bottom:8px;font-weight:500">{label}</div>'
-            f'<div style="font-size:1.5rem;font-weight:700;color:{val_color};'
-            f'letter-spacing:-.5px;line-height:1.15">{value}</div>'
+            f'<div style="font-size:.75rem;color:#9A9AA6;margin-bottom:8px;font-weight:500">{label}</div>'
+            f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
+            f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
             f'{_sub_h}</div>')
 
 def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
-                    val_color="#e5e5e5", left_border=""):
+                    val_color="#ECECEF", left_border=""):
     _bl  = f"border-left:3px solid {left_border};" if left_border else ""
     _bdg = (f'<span style="background:{badge_color}26;color:{badge_color};padding:1px 8px;'
             f'border-radius:20px;font-size:.68rem;font-weight:600;'
             f'border:1px solid {badge_color}44;margin-left:7px;'
             f'vertical-align:middle">{badge_txt}</span>') if badge_txt else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#9b9b9b;margin-top:6px;line-height:1.4">'
+    _sub_h = (f'<div style="font-size:.75rem;color:#9A9AA6;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
-    return (f'<div style="background:#2a2a2a;border:1px solid #383838;border-radius:12px;'
-            f'padding:16px 18px;{_bl}box-shadow:0 2px 8px rgba(0,0,0,.4);'
+    return (f'<div class="kpi-tile" style="background:#1C1C20;border:none;border-radius:16px;'
+            f'padding:16px 18px;{_bl}'
             f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#9b9b9b;margin-bottom:8px;font-weight:500">'
+            f'<div style="font-size:.75rem;color:#9A9AA6;margin-bottom:8px;font-weight:500">'
             f'{label}{_bdg}</div>'
-            f'<div style="font-size:1.5rem;font-weight:700;color:{val_color};'
-            f'letter-spacing:-.5px;line-height:1.15">{value}</div>'
+            f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
+            f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
             f'{_sub_h}</div>')
 
 def _conv_rate_for(cfg, scrap_id, processor_id=None):
@@ -2043,9 +2012,8 @@ if _page in _SUBS:
     from urllib.parse import quote as _q_url
     _hid_links = " · ".join(f'<a href="?page={_PAGE_SLUGS[_page]}&sub={_q_url(h)}" target="_self">{h}</a>'
                             for h in _SUBS[_page] if h in _HIDDEN_SUBS and h != _sub)
-    st.markdown(f'<div class="nav-crumb">{_page} &rsaquo; <b>{_sub}</b>'
-                + (f'<span style="float:right">숨긴 메뉴: {_hid_links}</span>' if _hid_links else "")
-                + '</div>', unsafe_allow_html=True)
+    if _hid_links:
+        st.markdown(f'<div class="nav-crumb">숨긴 메뉴: {_hid_links}</div>', unsafe_allow_html=True)
     if st.query_params.get("sub") != _sub:
         st.query_params["sub"] = _sub
 elif "sub" in st.query_params:
@@ -2089,7 +2057,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         m1,m2,m3,m4,m5=st.columns(5)
         m1.markdown(_kpi_card("총 선적건", f"{len(shipments)}건"), unsafe_allow_html=True)
         m2.markdown(_kpi_card("총 중량", f"{total_wkg/1000:,.1f} MT"), unsafe_allow_html=True)
-        _p_col = "#fb923c" if prov_cnt else "#e5e5e5"
+        _p_col = "#fb923c" if prov_cnt else "#ECECEF"
         m3.markdown(_kpi_card("Provisional 정산", f"{prov_cnt}건", val_color=_p_col), unsafe_allow_html=True)
         m4.markdown(_kpi_card("최종정산", f"{final_cnt}건"), unsafe_allow_html=True)
         m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#4ade80"), unsafe_allow_html=True)
@@ -4696,7 +4664,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
             if _avg_cur is not None:
                 st.markdown("---")
                 _im1,_im2,_im3 = st.columns(3)
-                _bal_col = "#f87171" if _bal_cur < 0 else "#e5e5e5"
+                _bal_col = "#f87171" if _bal_cur < 0 else "#ECECEF"
                 _im1.markdown(_kpi_card("현재 이동평균단가", f"${_avg_cur:.4f}/kg"), unsafe_allow_html=True)
                 _im2.markdown(_kpi_card("누적 입고량",       f"{_qty_cur:,.0f} kg"), unsafe_allow_html=True)
                 _im3.markdown(_kpi_card("잔량 (추정)", f"{_bal_cur:,.0f} kg",
@@ -6722,7 +6690,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
         return f"[{label}](?page={_pg}&sub={_urlq(_sb)})" if _pg else f"`{label}`"
 
     _todo = _todo_items(cfg)
-    with _hl, st.container(border=True):
+    with _hl, st.container(border=True, key="card_todo"):
         st.markdown(f"#### 할 일  ·  {len(_todo)}개" if _todo else "#### 할 일")
         if _todo:
             for _dot, _title, _detail, _tab in _todo:
@@ -6734,7 +6702,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
     # 미수 현금 전망 — 미입금 선적건의 확정산 잔액 (청구 가능 vs INDEX 대기)
     # ══════════════════════════════════════════════════════════════════════════
     _cf_rows = _receivable_rows(cfg, (NI, CO))
-    with _hr, st.container(border=True):
+    with _hr, st.container(border=True, key="card_ar"):
         st.markdown("#### 미수 현금 전망")
         if not _cf_rows:
             st.caption("미입금 선적건이 없습니다.")
@@ -6749,7 +6717,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
                            unsafe_allow_html=True)
             _cfc2.markdown(_kpi_card("INDEX 대기 (추정)", f"${_cf_wait:+,.0f}",
                                      "최신 INDEX 기준 추정 — Final월 INDEX 등록 시 변동",
-                                     val_color="#9b9b9b"),
+                                     val_color="#9A9AA6"),
                            unsafe_allow_html=True)
             _cfc3.markdown(_kpi_card("합계 (미수 확정산)", f"${_cf_tot:+,.0f}",
                                      f"KRW ₩{_cf_tot*XR:+,.0f}",
@@ -6785,7 +6753,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
     #         + 월 고정 지출(입력값, 없으면 등록된 월별 판관비 평균)
     # ══════════════════════════════════════════════════════════════════════════
     if _more:
-        with _slot_cash, st.container(border=True):
+        with _slot_cash, st.container(border=True, key="card_cash"):
             st.markdown("#### 간이 현금 전망 (3개월)")
             _cs = cfg.get("cash_forecast", {}) or {}
             _cs_month   = _cs.get("month") or _today().strftime("%Y-%m")
@@ -6922,7 +6890,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
             _k3.markdown(_kpi_card("3개월 예상 지출", f"${-sum(r['임가공비 지급'] + r['원료 매입 지급'] + r['고정 지출'] for r in _cash_rows):,.0f}",
                                    f"임가공비·원료·고정 ${_fixed_m:,.0f}/월"), unsafe_allow_html=True)
             _k4.markdown(_kpi_card("최저 월말 잔액", f"${_min_row['월말 잔액']:,.0f}", f"{_min_row['월']} · 3개월 후 ${_cash_rows[-1]['월말 잔액']:,.0f}",
-                                   val_color=(_C_NEG if _min_row["월말 잔액"] < 0 else "#e5e5e5"),
+                                   val_color=(_C_NEG if _min_row["월말 잔액"] < 0 else "#ECECEF"),
                                    left_border=(_C_NEG if _min_row["월말 잔액"] < 0 else "")), unsafe_allow_html=True)
             if not _cs.get("balance_usd"):
                 st.warning("기초 현금이 입력되지 않아 잔액이 0에서 시작합니다. 위 '전망 설정'에서 월초 잔액을 넣어 주세요.")
@@ -7029,7 +6997,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
         fig.update_yaxes(showgrid=False, tickformat=None, type="category")
         return fig
     def _panel(slot, title, sub, build):
-        with slot, st.container(border=True):
+        with slot, st.container(border=True, key=f"card_panel_{title}"):
             st.markdown(f"**{title}**")
             st.caption(sub)
             try:
@@ -7228,7 +7196,7 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
     for _sec in ("기준 데이터", "선적·정산", "입금", "생산·재고"):
         _rows = [c for c in _checks if c[0] == _sec]
         _n_open = sum(1 for c in _rows if not c[2])
-        with st.container(border=True):
+        with st.container(border=True, key=f"card_close_{_sec}"):
             st.markdown(f"**{_sec}**  ·  " + (f":orange[확인 필요 {_n_open}]" if _n_open else ":green[완료]"))
             st.dataframe(pd.DataFrame([{"항목": c[1], "상태": "완료" if c[2] else "확인 필요", "내용": c[3]} for c in _rows]),
                          width="stretch", hide_index=True,
@@ -7237,7 +7205,7 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
                                         "내용": st.column_config.TextColumn(width="large")})
 
     # ── 재고 실사 입력 · 마감 표시 ──
-    with st.container(border=True):
+    with st.container(border=True, key="card_count"):
         st.markdown("**재고 실사 입력**")
         st.caption("월말 창고 실물 수량을 넣으면 앱 추정 재고와의 차이가 위 '생산·재고'에 표시됩니다. "
                    "센 제품만 넣으세요 — 빈칸은 저장하지 않습니다(재고가 실제로 0이면 0 입력). "
@@ -7445,14 +7413,14 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
             # 이행률 progress bar — expander 바깥에서 항상 표시
             _prog_pct  = min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0
             _prog_pct  = 1.0 if _m["status"] == "complete" else _prog_pct
-            _bar_color = {"complete": "#4ade80", "ok": "#2383e2", "short": "#ef4444"}.get(_m["status"], "#9b9b9b")
-            _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#333")
+            _bar_color = {"complete": "#4ade80", "ok": "#3B82F6", "short": "#ef4444"}.get(_m["status"], "#9A9AA6")
+            _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#2A2A30")
             _sub_lbl   = f" / {_prname}" if _prname else ""
             st.markdown(f"""
-<div style="background:#252525;border:1px solid #383838;border-radius:10px;
+<div style="background:#1C1C20;border:none;border-radius:14px;
             padding:11px 16px 10px;margin-bottom:10px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span style="font-size:.85rem;font-weight:600;color:#e5e5e5">
+    <span style="font-size:.85rem;font-weight:600;color:#ECECEF">
       {_bname} &nbsp;·&nbsp; {_scname}{_sub_lbl}
     </span>
     <span style="font-size:.75rem;font-weight:600;color:{_bar_color};
@@ -7461,12 +7429,12 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
     </span>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
-    <div style="flex:1;background:#383838;border-radius:20px;height:7px;overflow:hidden">
+    <div style="flex:1;background:#2A2A30;border-radius:20px;height:7px;overflow:hidden">
       <div style="width:{_prog_pct*100:.1f}%;height:100%;
                   background:linear-gradient(90deg,{_bar_color}cc,{_bar_color});
                   border-radius:20px"></div>
     </div>
-    <span style="font-size:.78rem;color:#9b9b9b;white-space:nowrap;min-width:160px;text-align:right">
+    <span style="font-size:.78rem;color:#9A9AA6;white-space:nowrap;min-width:160px;text-align:right">
       {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT &nbsp;({_m['fulfill_pct']:.1f}%)
     </span>
   </div>

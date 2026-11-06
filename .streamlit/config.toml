@@ -1,17 +1,21 @@
 # base = "dark" pinned: app.py's custom CSS hard-codes dark surfaces/text colours.
 [theme]
 base                     = "dark"
-primaryColor             = "#2383e2"
-backgroundColor          = "#191919"
-secondaryBackgroundColor = "#252525"
-textColor                = "#e5e5e5"
-borderColor              = "#333333"
-dataframeHeaderBackgroundColor = "#222222"
-showWidgetBorder         = true
-baseRadius               = "0.6rem"
-metricValueFontSize      = "1.75rem"
+primaryColor             = "#3B82F6"
+backgroundColor          = "#131316"
+secondaryBackgroundColor = "#1C1C20"
+textColor                = "#ECECEF"
+borderColor              = "#2A2A30"
+dataframeHeaderBackgroundColor = "#1C1C20"
+showWidgetBorder         = false
+baseRadius               = "0.625rem"
+metricValueFontSize      = "1.6rem"
 # 한글 가독성: Pretendard (CDN). 로드 실패 시 브라우저 기본 sans-serif로 대체된다.
 font        = "'Pretendard Variable':https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
 headingFont = "'Pretendard Variable':https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
 # 차트 기본 색 — 앱 색 규칙(BP 파랑 / BM 초록 / 추세 주황 / 총계 보라 / 적자 빨강)과 통일
-chartCategoricalColors   = ["#2383e2", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#0e7490", "#a16207", "#6b7280"]
+chartCategoricalColors   = ["#3B82F6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#0e7490", "#a16207", "#6b7280"]
+
+[client]
+# Hide the Deploy/developer toolbar entries for a cleaner header
+toolbarMode = "minimal"
