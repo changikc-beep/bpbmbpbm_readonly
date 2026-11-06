@@ -3132,27 +3132,61 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         _km4.markdown(_kpi_card("영업이익 (실질)", f"{_usd(_tot_op_s1, 0)}",
                                 f"영업이익률 {_op_pct_s1:+.1f}%", val_color=_op_col), unsafe_allow_html=True)
 
-        # ── 단계식 손익계산서 (상계 기준) ─────────────────────────────────────
-        def _pl_pct(v):
-            return f"{v/_tot_bp*100:+.1f}%" if _tot_bp > 0 else "—"
-        _pl_rows = [
-            f"| 매출 — BP 매각 | **\\${_tot_bp:,.0f}** | 100.0% |",
-            f"| (−) 원료 매입비 (FIFO) | −\\${_raw_fifo_s1:,.0f} | {_pl_pct(-_raw_fifo_s1)} |",
-            f"| (−) 임가공비 (순 — 스크랩 매각·재매입 상계) | −\\${_tot_pf:,.0f} | {_pl_pct(-_tot_pf)} |",
-            f"| **= 매출총이익** | **{_usd(_tot_gp_s1, 0, md=True)}** | **{_pl_pct(_tot_gp_s1)}** |",
-            f"| (−) 수출비 | −\\${_tot_eu:,.0f} | {_pl_pct(-_tot_eu)} |",
-            f"| (−) 보관비 | −\\${_stor_s1:,.0f} | {_pl_pct(-_stor_s1)} |",
-            f"| (−) 간접 판관비·기타 | −\\${_sga_s1 + _other_s1:,.0f} | {_pl_pct(-(_sga_s1 + _other_s1))} |",
-            f"| **= 영업이익 (실질 손익)** | **{_usd(_tot_op_s1, 0, md=True)}** | **{_pl_pct(_tot_op_s1)}** |",
-        ]
-        st.markdown("| 구분 | 금액 | 매출 대비 |\n|------|-----:|-----:|\n" + "\n".join(_pl_rows))
-        _rb_cnt = defaultdict(int)
-        for _rb in _rev_map.values():
-            _rb_cnt[_rb[1]] += 1
-        st.caption("매출은 선적 확정액(확정 전이면 가정산 Invoice)에 기타 조정을 더해 배치 생산량 비율로 나눈 금액입니다 "
-                   f"(배치 기준: 확정 {_rb_cnt['확정']} · 가정산 {_rb_cnt['가정산']} · 단가 {_rb_cnt['단가']}). "
-                   "스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
-                   "원료 매입비는 FIFO 기준, 간접 판관비·기타는 마스터·동기화 > INDEX·환율·판관비의 월별 등록값 합계입니다.")
+        # ── 손익 흐름(왼쪽) · 단계식 손익계산서(오른쪽) — 같은 숫자를 그림과 표로 나란히 ──
+        _wfc, _plc = st.columns([1.6, 1], gap="medium")
+        with _wfc, st.container(key="card_wf"):
+            st.markdown("**손익 흐름**  ·  매출 → 영업이익 (원료비 FIFO 기준)")
+            # P&L Waterfall 차트 (관리회계 기준: 매출 → 영업이익)
+            try:
+                import plotly.graph_objects as go
+                _op_sign  = "▲" if _tot_op_s1 >= 0 else "▼"
+                _wf = go.Figure(go.Waterfall(
+                    orientation="v",
+                    measure=["absolute", "relative", "relative", "total",
+                             "relative", "relative", "relative", "total"],
+                    x=["매출 (BP 매각)", "원료 매입비", "임가공비 (순)", "매출총이익",
+                       "수출비", "보관비", "판관비·기타", "영업이익 (실질)"],
+                    y=[_tot_bp, -_raw_fifo_s1, -_tot_pf, 0,
+                       -_tot_eu, -_stor_s1, -(_sga_s1 + _other_s1), 0],
+                    text=[f"${_tot_bp:,.0f}", f"-${abs(_raw_fifo_s1):,.0f}", f"-${_tot_pf:,.0f}",
+                          f"{_usd(_tot_gp_s1, 0)}",
+                          f"-${_tot_eu:,.0f}", f"-${abs(_stor_s1):,.0f}",
+                          f"-${_sga_s1 + _other_s1:,.0f}", f"{_usd(_tot_op_s1, 0)}"],
+                    textposition="outside",
+                    increasing=dict(marker=dict(color=_C_BP)),
+                    decreasing=dict(marker=dict(color=_C_NEG)),
+                    totals=dict(marker=dict(color=_C_TOT)),
+                    connector=dict(line=dict(color="#484848", width=1, dash="dot")),
+                    hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
+                ))
+                _fig_style(_wf, height=360, legend=False)
+                st.plotly_chart(_wf, width="stretch")
+            except ImportError:
+                pass
+
+        with _plc, st.container(key="card_pl"):
+            st.markdown("**단계식 손익계산서**")
+            # ── 단계식 손익계산서 (상계 기준) ─────────────────────────────────────
+            def _pl_pct(v):
+                return f"{v/_tot_bp*100:+.1f}%" if _tot_bp > 0 else "—"
+            _pl_rows = [
+                f"| 매출 — BP 매각 | **\\${_tot_bp:,.0f}** | 100.0% |",
+                f"| (−) 원료 매입비 (FIFO) | −\\${_raw_fifo_s1:,.0f} | {_pl_pct(-_raw_fifo_s1)} |",
+                f"| (−) 임가공비 (순 — 스크랩 매각·재매입 상계) | −\\${_tot_pf:,.0f} | {_pl_pct(-_tot_pf)} |",
+                f"| **= 매출총이익** | **{_usd(_tot_gp_s1, 0, md=True)}** | **{_pl_pct(_tot_gp_s1)}** |",
+                f"| (−) 수출비 | −\\${_tot_eu:,.0f} | {_pl_pct(-_tot_eu)} |",
+                f"| (−) 보관비 | −\\${_stor_s1:,.0f} | {_pl_pct(-_stor_s1)} |",
+                f"| (−) 간접 판관비·기타 | −\\${_sga_s1 + _other_s1:,.0f} | {_pl_pct(-(_sga_s1 + _other_s1))} |",
+                f"| **= 영업이익 (실질 손익)** | **{_usd(_tot_op_s1, 0, md=True)}** | **{_pl_pct(_tot_op_s1)}** |",
+            ]
+            st.markdown("| 구분 | 금액 | 매출 대비 |\n|------|-----:|-----:|\n" + "\n".join(_pl_rows))
+            _rb_cnt = defaultdict(int)
+            for _rb in _rev_map.values():
+                _rb_cnt[_rb[1]] += 1
+            st.caption("매출은 선적 확정액(확정 전이면 가정산 Invoice)에 기타 조정을 더해 배치 생산량 비율로 나눈 금액입니다 "
+                       f"(배치 기준: 확정 {_rb_cnt['확정']} · 가정산 {_rb_cnt['가정산']} · 단가 {_rb_cnt['단가']}). "
+                       "스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
+                       "원료 매입비는 FIFO 기준, 간접 판관비·기타는 마스터·동기화 > INDEX·환율·판관비의 월별 등록값 합계입니다.")
 
         # ── 세금계산서 기준 총액 흐름 (상계 전 — 백데이터 검증용) ─────────────
         with st.expander("세금계산서 기준 총액 흐름 (스크랩 매각·BP 재매입 상계 전)", expanded=False):
@@ -3230,35 +3264,6 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                 st.caption("'단가($/kg투입)' = 계약서 기준 단가. '임가공비/kg BP' = 전환율 반영 후 BP 생산량 기준 환산값")
 
         # (원료비·보관비는 섹션 상단에서 이미 계산 — _raw_fifo_s1/_raw_mavg_s1/_stor_s1)
-
-        # P&L Waterfall 차트 (관리회계 기준: 매출 → 영업이익)
-        try:
-            import plotly.graph_objects as go
-            _op_sign  = "▲" if _tot_op_s1 >= 0 else "▼"
-            _wf = go.Figure(go.Waterfall(
-                orientation="v",
-                measure=["absolute", "relative", "relative", "total",
-                         "relative", "relative", "relative", "total"],
-                x=["매출 (BP 매각)", "원료 매입비", "임가공비 (순)", "매출총이익",
-                   "수출비", "보관비", "판관비·기타", "영업이익 (실질)"],
-                y=[_tot_bp, -_raw_fifo_s1, -_tot_pf, 0,
-                   -_tot_eu, -_stor_s1, -(_sga_s1 + _other_s1), 0],
-                text=[f"${_tot_bp:,.0f}", f"-${abs(_raw_fifo_s1):,.0f}", f"-${_tot_pf:,.0f}",
-                      f"{_usd(_tot_gp_s1, 0)}",
-                      f"-${_tot_eu:,.0f}", f"-${abs(_stor_s1):,.0f}",
-                      f"-${_sga_s1 + _other_s1:,.0f}", f"{_usd(_tot_op_s1, 0)}"],
-                textposition="outside",
-                increasing=dict(marker=dict(color=_C_BP)),
-                decreasing=dict(marker=dict(color=_C_NEG)),
-                totals=dict(marker=dict(color=_C_TOT)),
-                connector=dict(line=dict(color="#484848", width=1, dash="dot")),
-                hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
-            ))
-            _fig_style(_wf, height=380, legend=False,
-                       title=f"매출 ${_tot_bp:,.0f}  →  영업이익 {_op_sign} {_usd(_tot_op_s1, 0)}  (원료비 FIFO 기준)")
-            st.plotly_chart(_wf, width="stretch")
-        except ImportError:
-            pass
 
         # ── BP 1kg당 단가 분해 ────────────────────────────────────────────────
         st.markdown("---")
