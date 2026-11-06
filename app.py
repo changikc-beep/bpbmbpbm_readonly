@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -18,7 +18,7 @@ st.markdown("""
     padding-top:1.25rem;padding-bottom:3rem;max-width:1320px
 }
 section[data-testid="stSidebar"]{
-    min-width:260px;
+    min-width:232px;max-width:260px;
     border-right:1px solid #2A2A30 !important
 }
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
@@ -216,31 +216,33 @@ div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !i
 .b-wn{background:rgba(245,158,11,.13);color:#F2B544}
 .b-ng{background:rgba(239,68,68,.14);color:#F47A7A}
 
-/* ── 페이지 내비게이션 (상위: 세그먼트 / 하위: 밑줄 탭) ── */
-.st-key-nav_top div[data-testid="stSegmentedControl"]{margin-top:-4px}
-/* 컨테이너가 자식을 내용 폭으로 줄이지 않고 화면 폭 전체로 늘리게 */
-.st-key-nav_top, .st-key-nav_sub{align-items:stretch !important}
-.st-key-nav_top div[data-testid="stElementContainer"],
-.st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
-.st-key-nav_top div[data-testid="stButtonGroup"]{
-    width:100%;background:#1C1C20;border:none;border-radius:14px;padding:4px
+/* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
+section[data-testid="stSidebar"]{background:#16161A !important}
+section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding-top:.5rem}
+.sb-title{font-size:1.15rem;font-weight:700;letter-spacing:-.02em;color:#ECECEF;line-height:1.25;margin:0 0 14px 4px}
+.sb-title span{font-size:.82rem;font-weight:500;color:#9A9AA6}
+.st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
+.st-key-nav_top label[data-baseweb="radio"]{
+    width:100%;margin:0 !important;padding:9px 12px !important;border-radius:10px;
+    cursor:pointer;transition:background .15s
 }
-/* 버튼 줄을 화면 폭 전체로 늘리고 5개 메뉴를 같은 폭으로 */
-.st-key-nav_top div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
-    display:flex;gap:4px;flex-wrap:nowrap}
-.st-key-nav_top div[data-testid="stButtonGroup"] button{
-    flex:1 1 0 !important;min-height:44px;justify-content:center;
-    border-radius:10px !important;border:none !important;background:transparent !important;
-    color:#9A9AA6 !important;font-size:.98rem !important;font-weight:600 !important;
-    padding:10px 16px !important;transition:background .15s,color .15s;box-shadow:none !important
-}
-.st-key-nav_top div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
-.st-key-nav_top div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
-.st-key-nav_top div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
-    background:#2E2E35 !important;color:#FFFFFF !important
-}
-.st-key-nav_top div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
+.st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
+.st-key-nav_top label[data-baseweb="radio"] p{font-size:.95rem !important;font-weight:500;color:#9A9AA6}
+.st-key-nav_top label[data-baseweb="radio"]:hover{background:#1F1F24}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#26262C}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#FFFFFF;font-weight:600}
+.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{margin-right:6px}
+section[data-testid="stSidebar"] hr{margin:.8rem 0}
+section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.74rem;line-height:1.55}
 
+/* KPI row: cards with and without sparklines share one height */
+.st-key-kpi_row div[data-testid="stColumn"]{display:flex}
+.st-key-kpi_row div[data-testid="stColumn"] > div{flex:1}
+.st-key-kpi_row div[data-testid="stElementContainer"],
+.st-key-kpi_row div[data-testid="stMetric"]{height:100%}
+
+.st-key-nav_sub{align-items:stretch !important}
+.st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
 .st-key-nav_sub div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
 .st-key-nav_sub div[data-testid="stButtonGroup"]{
     background:transparent;border:none;border-bottom:1px solid #2A2A30;border-radius:0;
@@ -285,8 +287,7 @@ except Exception:
     READ_ONLY = False
 
 if READ_ONLY:
-    st.markdown('<div class="ro-pill">읽기 전용 · 저장·삭제·동기화 버튼이 꺼져 있음</div>',
-                unsafe_allow_html=True)
+    pass   # 읽기 전용 배지는 사이드바 제목 아래에 표시
     _ro_orig_button       = st.button
     _ro_orig_form_submit  = st.form_submit_button
 
@@ -1919,37 +1920,36 @@ NI, CO = _latest_index(cfg)
 _xr_rates = sorted(cfg.get("usd_krw_rates", []), key=lambda x: x["month"])
 XR = float(_xr_rates[-1]["rate"]) if _xr_rates else 1380.0
 
-st.title("BP / BM 재고·손익 관리")
-
-# ── 상태 바 (예전 사이드바 대체) — 저장 시각·INDEX 기준 + 새로고침·시트 동기화 버튼 ──
+# ── 좌측 사이드바: 앱 이름 · 페이지 메뉴(아래 내비게이션에서 채움) · 상태 · 새로고침/시트 동기화 ──
 # 동기화 함수는 파일 뒤쪽에 정의되어 있으므로, 버튼은 요청 플래그만 세우고 실제 동기화는
-# 스크립트 끝에서 실행한 뒤 다시 그린다. 결과(전후 점검)는 여기 상태 바 아래에 표시.
+# 스크립트 끝에서 실행한 뒤 다시 그린다. 결과(전후 점검)는 본문 맨 위에 표시.
 _sb_meta = cfg.get("_meta") or {}
 _sb_parts = []
 if _sb_meta.get("saved_at"):
-    _sb_parts.append(f"마지막 저장 {_sb_meta['saved_at'][:16].replace('T', ' ')} (rev {_sb_meta.get('rev', 0)})")
+    _sb_parts.append(f"저장 {_sb_meta['saved_at'][5:16].replace('T', ' ')} · rev {_sb_meta.get('rev', 0)}")
 if _latest_idx:
-    _sb_parts.append(f"INDEX {_latest_idx[0]['month']}  Ni \\${NI:,.0f} / Co \\${CO:,.0f}")
+    _sb_parts.append(f"INDEX {_latest_idx[0]['month']} · Ni \\${NI:,.0f} · Co \\${CO:,.0f}")
 _sb_parts.append(f"USD/KRW {XR:,.0f}")
 if st.session_state.get("last_sync_time"):
-    _sb_parts.append(f"마지막 동기화 {st.session_state['last_sync_time'][5:16]}")
-try:
-    _hb1, _hb2, _hb3 = st.columns([7, 1.3, 1.3], vertical_alignment="center")
-except TypeError:   # 구버전 Streamlit
-    _hb1, _hb2, _hb3 = st.columns([7, 1.3, 1.3])
-with _hb1:
-    st.caption("  ·  ".join(_sb_parts))
-with _hb2:
+    _sb_parts.append(f"동기화 {st.session_state['last_sync_time'][5:16]}")
+with st.sidebar:
+    st.markdown('<div class="sb-title">BP / BM<br><span>재고·손익 관리</span></div>'
+                + ('<div class="ro-pill">읽기 전용 · 저장·동기화 꺼짐</div>' if READ_ONLY else ""),
+                unsafe_allow_html=True)
+    _sb_nav = st.container()          # 페이지 메뉴 자리
+    _sb_foot = st.container()
+with _sb_foot:
+    st.divider()
+    if not READ_ONLY:
+        st.button("시트 동기화", type="primary", width="stretch", key="hdr_sync",
+                  on_click=lambda: st.session_state.__setitem__("_do_sync", True),
+                  help="Google 시트 내용을 바로 반영합니다. 결과와 전후 점검이 본문 맨 위에 표시됩니다.")
     if st.button("새로고침", width="stretch", key="hdr_refresh",
                  help="Google Drive에서 최신 데이터를 다시 불러옵니다 (다른 기기에서 저장한 변경 반영)"):
         _load_cfg_drive.clear()
         _fifo_lot_trace.clear()
         st.rerun()
-with _hb3:
-    if not READ_ONLY:
-        st.button("시트 동기화", type="primary", width="stretch", key="hdr_sync",
-                  on_click=lambda: st.session_state.__setitem__("_do_sync", True),
-                  help="Google 시트 내용을 바로 반영합니다. 결과와 전후 점검이 이 아래에 표시됩니다.")
+    st.caption("  \n".join(_sb_parts))
 _sync_rep = st.session_state.get("_sync_report")
 if _sync_rep:
     with st.expander(f"동기화 결과 — {_sync_rep['time']}", expanded=True):
@@ -1987,19 +1987,16 @@ if "main_nav" not in st.session_state:
     _qp_page = _SLUG_PAGES.get(str(st.query_params.get("page", "")), None)
     if _qp_page:
         st.session_state["main_nav"] = _qp_page
-_nav_kw = {} if "main_nav" in st.session_state else {"default": _PAGES[0]}
 def _nav_box(key):
     """CSS 타깃용 키 컨테이너 (구버전 Streamlit은 key 미지원 → 일반 컨테이너)."""
     try:
         return st.container(key=key)
     except TypeError:
         return st.container()
-with _nav_box("nav_top"):
-    try:
-        _page = st.segmented_control("페이지", _PAGES, key="main_nav", selection_mode="single",
-                                     label_visibility="collapsed", **_nav_kw)
-    except AttributeError:   # 구버전 Streamlit
-        _page = st.radio("페이지", _PAGES, horizontal=True, key="main_nav", label_visibility="collapsed")
+_PAGE_ICONS = dict(zip(_PAGES, ["home", "directions_boat", "bar_chart", "inventory_2", "settings"]))
+with _sb_nav, _nav_box("nav_top"):
+    _page = st.radio("페이지", _PAGES, key="main_nav", label_visibility="collapsed",
+                     format_func=lambda p: f":material/{_PAGE_ICONS[p]}: {p}")
 if not _page:
     _page = _PAGES[0]
 if st.query_params.get("page") != _PAGE_SLUGS[_page]:
@@ -6681,14 +6678,14 @@ if _page == PG_HOME and _sub == SUB_DASH:
         _slot_xl = st.container()      # 엑셀 보고서 다운로드 (아래에서 채움)
 
     # ── 화면 배치: 계산 순서와 무관하게 표시 위치를 고정 ──
-    #    기본: KPI 5 → (할 일 | 미수 현금 전망)
-    #    '분석 펼치기'를 켜면 그 아래에 (매입사별 | 월별 추이) → (스크랩 유형별 | 정산 상태 | 임가공사별)
+    #    기본: KPI 4 → (월별 추이 | 할 일) → (미수 현금 전망 | 매입사별 매출)
+    #    '분석 더 보기'를 켜면 그 아래에 (스크랩 유형별 | 정산 상태 | 임가공사별)
     #    → 운영 현황 → 간이 현금 전망 — 꺼져 있으면 계산도 하지 않는다
     _slot_kpi   = st.container()
-    _hl, _hr    = st.columns(2, gap="medium")
-    _more = st.toggle("분석 펼치기 — 차트 · 운영 현황 · 간이 현금 전망", key="home_more", value=False)
+    _hl, _hr    = st.columns([2, 1], gap="medium")
+    _r3a, _r3b  = st.columns([1.4, 1], gap="medium")
+    _more = st.toggle("분석 더 보기 — 원료·정산·임가공사별 · 운영 현황 · 간이 현금 전망", key="home_more", value=False)
     if _more:
-        _g1        = st.columns([1, 2], gap="small")
         _g2        = st.columns(3, gap="small")
         _slot_ops  = st.container()
         _slot_cash = st.container()
@@ -6720,7 +6717,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
         return f"[{label}](?page={_pg}&sub={_urlq(_sb)})" if _pg else f"`{label}`"
 
     _todo = _todo_items(cfg)
-    with _hl, st.container(border=True, key="card_todo"):
+    with _hr, st.container(border=True, key="card_todo"):
         st.markdown(f"#### 할 일  ·  {len(_todo)}개" if _todo else "#### 할 일")
         if _todo:
             for _dot, _title, _detail, _tab in _todo:
@@ -6734,7 +6731,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
     # 미수 현금 전망 — 미입금 선적건의 확정산 잔액 (청구 가능 vs INDEX 대기)
     # ══════════════════════════════════════════════════════════════════════════
     _cf_rows = _receivable_rows(cfg, (NI, CO))
-    with _hr, st.container(border=True, key="card_ar"):
+    with _r3a, st.container(border=True, key="card_ar"):
         st.markdown("#### 미수 현금 전망")
         if not _cf_rows:
             st.caption("미입금 선적건이 없습니다.")
@@ -6996,25 +6993,29 @@ if _page == PG_HOME and _sub == SUB_DASH:
         return [round(v, 2) for v in _v] if len(_v) >= 2 else None
     _dd_q = f"vs {_qtr_prev(_f_q)}" + (f" 1~{_q_days}일" if _cmp_same else "")
 
-    # ── KPI 5개 (선택 분기, 직전 분기 대비) ──
+    # ── KPI 4개: 분기 실적 2개(선택 분기, 직전 분기 대비) + 현재 잔액 2개(미수금·완제품 재고, 필터 무관) ──
     with _slot_kpi:
-        _k = st.columns(5)
+        with st.container(key="kpi_row"):
+            _k = st.columns(4)
         _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), delta_description=_dd_q,
                      chart_data=_spark_q("rev", 1000), chart_type="area", border=True,
-                     help="확정액(없으면 가정산 Invoice) + 기타 조정 — 손익 탭과 같은 기준")
-        _k[1].metric("선적 건수", f"{_qs['cnt']}건", delta=_pct_d("cnt"), delta_description=_dd_q,
-                     chart_data=_spark_q("cnt"), chart_type="bar", border=True)
-        _k[2].metric("평균 매각 단가", f"${_qs['price']:.2f}/kg" if _qs["price"] else "—",
-                     delta=_pct_d("price"), delta_description=_dd_q,
-                     chart_data=_spark_q("price"), chart_type="line", border=True, help="매출 ÷ 배치 생산(판매) 중량")
-        _k[3].metric("판매 중량", f"{_qs['out']/1000:,.1f} MT", delta=_pct_d("out"), delta_description=_dd_q,
-                     chart_data=_spark_q("out", 1000), chart_type="area", border=True, help="HBL에 연결된 배치 생산량 합계")
-        _mg_d = (f"{_qs['margin'] - _qp['margin']:+.1f}%p"
-                 if not _hide_delta and _qs["margin"] is not None and _qp["margin"] is not None else None)
-        _k[4].metric("실질 마진율", f"{_qs['margin']:.1f}%" if _qs["margin"] is not None else "—",
-                     delta=_mg_d, delta_description=_dd_q,
-                     chart_data=_spark_q("margin"), chart_type="line", border=True,
-                     help=f"실질 손익 {_usd_s(_qs['real'])} ÷ 매출 — 원료비(FIFO)·임가공비·수출비·보관비 차감, 판관비 제외")
+                     help=(f"확정액(없으면 가정산 Invoice) + 기타 조정 — 손익 탭과 같은 기준. "
+                           f"선적 {_qs['cnt']}건 · 판매 {_qs['out']/1000:,.1f} MT"
+                           + (f" · 평균 \\${_qs['price']:.2f}/kg" if _qs["price"] else "")))
+        _k[1].metric("실질 손익" + (f" · 마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else ""),
+                     _usd_s(_qs["real"]), delta=_pct_d("real"), delta_description=_dd_q,
+                     chart_data=_spark_q("real", 1000), chart_type="area", border=True,
+                     help="매출 − 원료비(FIFO)·임가공비·수출비·보관비, 판관비 제외")
+        _ar_sum = sum(r["확정산 잔액"] for r in _cf_rows)
+        _k[2].metric("미수금", _usd_s(_ar_sum), delta=f"{len(_cf_rows)}건 미입금", delta_color="off", delta_arrow="off",
+                     border=True, help="미입금 선적건의 확정산 잔액 합계(전체 매입사) — 아래 '미수 현금 전망'과 같은 기준")
+        _fg = {}
+        for _sc in cfg.get("scrap_types", []):
+            _fg[_sc_product(_sc)] = _fg.get(_sc_product(_sc), 0.0) + _finished_goods_kg(cfg, _sc["id"])
+        _k[3].metric("완제품 재고", f"{sum(_fg.values())/1000:,.1f} MT",
+                     delta=" · ".join(f"{p} {v/1000:,.1f}" for p, v in sorted(_fg.items()) if v) or "없음",
+                     delta_color="off", delta_arrow="off", border=True,
+                     help="임가공사 생산 보고 누계 − HBL에 연결된 배치 생산 (현재 기준, 필터 무관)")
         if _q_live:
             _q0 = _q_start(_f_q)
             _q_len = (date(_q0.year + (_q0.month == 10), 1 if _q0.month == 10 else _q0.month + 3, 1) - _q0).days
@@ -7083,7 +7084,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
                                  hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>"))
         _in_q = [i for i, m in enumerate(_ms) if _qtr(m) == _f_q]
         if _in_q:                                          # 선택 분기 음영
-            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(35,131,226,0.12)", line_width=0)
+            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(59,130,246,0.12)", line_width=0)
         fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
         _fig_style(fig, height=230, top=8)
         fig.update_xaxes(type="category")
@@ -7101,9 +7102,9 @@ if _page == PG_HOME and _sub == SUB_DASH:
         _a = _pnl_agg(_qs["rows"], lambda x: x["proc_nm"])
         return _hbar([(k, v["out"]) for k, v in _a.items()], _MT) if _a else None
 
+    _panel(_hl, "월별 매출 추이", "매출과 실질 손익 (선택 분기 음영, 매입사·제품 필터 적용)", _b_trend)
+    _panel(_r3b, "매입사별 매출", f"{_f_q} · 매출이 어디서 나왔나", _b_buyer)
     if _more:
-        _panel(_g1[0], "매입사별 매출", f"{_f_q} · 매출이 어디서 나왔나", _b_buyer)
-        _panel(_g1[1], "월별 매출 추이", "매출과 실질 손익 (선택 분기 음영, 매입사·제품 필터 적용)", _b_trend)
         _panel(_g2[0], "스크랩 유형별 매출", f"{_f_q} · 어떤 원료가 매출을 만들었나", _b_scrap)
         _panel(_g2[1], "정산 상태", f"{_f_q} 선적 · 건수 기준", _b_status)
         _panel(_g2[2], "임가공사별 생산", f"{_f_q} · 판매 배치 생산량", _b_proc)
