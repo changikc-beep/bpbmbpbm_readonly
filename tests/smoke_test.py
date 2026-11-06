@@ -321,6 +321,28 @@ def main():
           and len(sc3["rfqs"]) == 2 and sc3["rfqs"][0]["selected"] and not sc3["rfqs"][1]["selected"]
           and sc3["stock_counts"] == [{"month": "2026-10", "product": "BM", "kg": 51000.0, "note": "창고"}])
 
+    # 출고 tab '재고조정' rows: + decreases / − increases warehouse stock, and FIFO consumes / adds lots
+    sc5 = _sync_cfg()
+    sc5["raw_material_inventory"] = {"S": {"opening": {"date": "2026-01-01", "quantity_kg": 1000, "unit_cost": 5.0},
+                                           "purchases": []}}
+    out_tab = [["출고유형"], ["임가공출고", "2026-02-01", "양극", "Sungeel", "300", "1", ""],
+               ["재고조정", "2026-03-31", "양극", "", "50", "", "실사 감량"],
+               ["재고조정", "2026-04-30", "양극", "", "-20", "", "재분류"]]
+    run_sync(sc5, {"출고": out_tab})
+    _, _ev5, _rem5 = f["_fifo_lot_trace"](sc5, "S")
+    check("sync: 출고 tab 재고조정 rows",
+          len(sc5["stock_adjustments"]) == 2 and f["_inv_balance"](sc5, "S") == 670.0
+          and abs(sum(l["remain"] for l in _rem5) - 670.0) < 0.01
+          and any(e["type"] == "재고조정" and e["qty"] == 50.0 for e in _ev5))
+
+    # INDEX tab: a row with Co Low only keeps the existing Co, or falls back to Co Low when the month is new
+    sc6 = _sync_cfg(); sc6["index_history"] = [{"month": "2026-08", "ni_index": 1.0, "co_index": 2.0}]
+    run_sync(sc6, {"INDEX": [["월"], ["2026-08", "1", "", "", "", "", "1.5"], ["2026-10", "3", "", "", "", "", "4"]]})
+    _ih6 = {h["month"]: h for h in sc6["index_history"]}
+    check("sync: INDEX Co Low-only rows",
+          _ih6["2026-08"]["co_index"] == 2.0 and _ih6["2026-08"]["co_low"] == 1.5
+          and _ih6["2026-10"]["co_index"] == 4.0 and _ih6["2026-10"]["co_low"] == 4.0)
+
     ok = all(RESULTS)
     print(f"\n{'ALL PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
     return 0 if ok else 1

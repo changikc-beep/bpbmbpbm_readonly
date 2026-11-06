@@ -529,7 +529,10 @@ def _inv_balance(cfg, scrap_id, ph_list=None, as_of_date=None):
     direct_sold = sum(float(ds.get("quantity_kg") or 0)
                       for ds in cfg.get("direct_sales", [])
                       if ds.get("scrap_type_id") == scrap_id)
-    return round(total_in - dispatched - direct_sold, 3)
+    adjusted    = sum(float(a.get("quantity_kg") or 0)          # 재고조정: + 감소 / − 증가
+                      for a in cfg.get("stock_adjustments", [])
+                      if a.get("scrap_type_id") == scrap_id)
+    return round(total_in - dispatched - direct_sold - adjusted, 3)
 
 def _get_eur_usd(cfg, month=None):
     """월별 EUR/USD 환율 조회.
@@ -647,11 +650,25 @@ def _fifo_lot_trace(cfg, scrap_id, pool_out=None):
                 "kg_per_bag": p_kpb,
             })
 
+    _adjs = [a for a in cfg.get("stock_adjustments", []) if a.get("scrap_type_id") == scrap_id
+             and (a.get("date") or "")[:10] > op_date]
+    for a in _adjs:                      # 재고조정 증가(음수 kg) → 단가 0 Lot
+        aq = -float(a.get("quantity_kg") or 0)
+        if aq > 0:
+            lots.append({"label": f"재고조정 (+{aq:,.0f}kg, {a['date'][:10]})", "date": a["date"][:10],
+                         "unit_cost": 0.0, "remain": aq, "kg_per_bag": 510.0})
+    lots[1:] = sorted(lots[1:], key=lambda l: l["date"])
+
     proc_map = {p["id"]: p for p in cfg.get("processors", [])}
     ship_map = {s["id"]: s for s in cfg.get("shipments", [])}
 
-    # ── 출고 이벤트 구성 (임가공 출고 + 직접 판매) ───────────────────────────
+    # ── 출고 이벤트 구성 (임가공 출고 + 직접 판매 + 재고조정 감소) ─────────────
     outflow_events = []
+    for a in _adjs:
+        aq = float(a.get("quantity_kg") or 0)
+        if aq > 0:
+            outflow_events.append({"id": a.get("id", ""), "type": "재고조정", "date": a["date"][:10], "qty": aq,
+                                   "processor_id": "", "processor": "—", "notes": a.get("notes", "")})
     for dr in cfg.get("dispatch_records", []):
         if dr.get("scrap_type_id") != scrap_id:
             continue
@@ -1818,12 +1835,6 @@ def _todo_items(cfg):
         _todo.append(("🟡", f"선적 중량·배치 생산량 불일치 {len(_td_wt_bad)}건",
                       _td_hbls(_td_wt_bad) + " — 2% 초과 차이", "재고·임가공 > 임가공사·배치 > 세부 내역"))
 
-    # 9) 입금완료 상태인데 확정산 입금 기록이 없는 건
-    _td_paid_norec = [s for s in _td_ships if s.get("status") == "paid" and not s.get("final_paid_date")]
-    if _td_paid_norec:
-        _todo.append(("🟡", f"입금완료 상태인데 입금 기록 없음 {len(_td_paid_norec)}건",
-                      _td_hbls(_td_paid_norec) + " — 입금일·금액 입력", "선적·계약 > 선적 정산"))
-
     return _todo
 
 def _receivable_rows(cfg, latest_index):
@@ -2521,18 +2532,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     new_other_desc=st.text_input("조정 사유",
                         s.get("other_adj_desc",""),
                         key=f"sh_adjd_{real_i}")
-
-                # ── 입금 기록 (실제 입금일·금액 — 채권 Aging·현금 전망에 반영) ──
-                st.markdown("**입금 기록**")
-                pr1, pr2, pr3, pr4 = st.columns(4)
-                new_ppd = pr1.text_input("가정산 입금일 (YYYY-MM-DD)", s.get("prov_paid_date","") or "", key=f"sh_ppd_{real_i}")
-                new_ppu = pr2.number_input("가정산 입금액 (USD)", value=float(s.get("prov_paid_usd") or 0),
-                                           step=1.0, format="%.2f", key=f"sh_ppu_{real_i}",
-                                           help="비어 있으면 미입금으로 봅니다. 예상액은 Invoice × 가정산 비율")
-                new_fpd = pr3.text_input("확정산 입금일 (YYYY-MM-DD)", s.get("final_paid_date","") or "", key=f"sh_fpd_{real_i}")
-                new_fpu = pr4.number_input("확정산 입금액 (USD)", value=float(s.get("final_paid_usd") or 0),
-                                           step=1.0, format="%.2f", key=f"sh_fpu_{real_i}",
-                                           help="확정산 청구액(④)으로 실제 입금된 금액. 반환한 경우 음수")
 
                 # ── 컨테이너별 가중평균 계산기 ──────────────────────────────
 
@@ -4603,6 +4602,69 @@ def _sync_from_gsheets(cfg_ref):
     proc_map  = {p["name"].lower(): p["id"] for p in cfg_ref.get("processors", [])}
     log = []
 
+    # ── ⓪ 계약 탭(선적보다 먼저 — 새 매입사가 같은 동기화에서 선적에 연결되도록): 시트가 원본 — 시트에 있는 계약만 남긴다(계약ID로 기존 배분·연결 유지) ──
+    try:
+        rows = sh.worksheet("계약").get_all_values()
+    except Exception:
+        rows = None
+    if rows is not None and len(rows) >= 1:
+        try:
+            _ct_new, _ct_skip, _ct_newbuyer = [], [], []
+            _CT_ST = {"진행": "active", "진행 중": "active", "완료": "closed", "취소": "cancelled",
+                      "active": "active", "closed": "closed", "cancelled": "cancelled"}
+            _proc_by_nm = {p["name"].lower(): p["id"] for p in cfg_ref.get("processors", [])}
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 23
+                (cid, rfq, byr, prod, sc_nm, proc_nm, qty, tol, sd, ed, stt, npay, cpay, ncont, ccont,
+                 cobasis, provp, pib, fib, ppd, fpd, note) = row[:22]
+                if not byr or not qty:
+                    continue
+                prod = (prod or "BP").upper()
+                bid = _match_buyer_id(f"{byr} ({prod})", buyers) or _match_buyer_id(byr, buyers)
+                if not bid:                                   # 처음 보는 업체 → 최소 정보로 매입사 추가
+                    bid = str(uuid.uuid4())[:8]
+                    buyers.append({"id": bid, "name": byr, "product": prod, "active": True,
+                                   "ni_payable": (_to_float(npay) / 100 if npay else 1.0),
+                                   "co_payable": (_to_float(cpay) / 100 if cpay else 1.0),
+                                   "ni_content": _to_float(ncont) if ncont else 0.0,
+                                   "co_content": _to_float(ccont) if ccont else 0.0})
+                    _ct_newbuyer.append(f"{byr} ({prod})")
+                scid = scrap_map.get(sc_nm) or ("" if sc_nm else
+                                                next((s["id"] for s in cfg_ref.get("scrap_types", [])
+                                                      if _sc_product(s) == prod and s.get("active", True)), ""))
+                if sc_nm and not scid:
+                    _ct_skip.append(f"{byr}/{sc_nm}"); continue
+                _basis = lambda v, dflt: {"가정산월": "prov", "선적월": "loading", "확정월": "final",
+                                          "": dflt}.get(v, v)
+                _ct_new.append({
+                    "id": cid or str(uuid.uuid4())[:8], "rfq_id": rfq, "buyer_id": bid, "product": prod,
+                    "scrap_type_id": scid, "processor_id": _proc_by_nm.get(proc_nm.lower(), "") if proc_nm else "",
+                    "contract_qty_mt": _to_float(qty), "tolerance_pct": _to_float(tol) if tol else 0.0,
+                    "start_date": sd, "end_date": ed, "contract_status": _CT_ST.get(stt, "active"),
+                    "ni_payable_pct": _to_float(npay) if npay else None,
+                    "co_payable_pct": _to_float(cpay) if cpay else None,
+                    "ni_content": _to_float(ncont) if ncont else None,
+                    "co_content": _to_float(ccont) if ccont else None,
+                    "co_basis": cobasis,
+                    "prov_pct": _to_float(provp) if provp else None,
+                    "prov_index_basis": _basis(pib, "prov"), "final_index_basis": _basis(fib, "final"),
+                    "prov_pay_days": int(_to_float(ppd)) if ppd else None,
+                    "final_pay_days": int(_to_float(fpd)) if fpd else None,
+                    "notes": note,
+                })
+            cfg_ref["contracts"] = _ct_new
+            _keep_ids = {c["id"] for c in _ct_new}
+            cfg_ref["contract_allocations"] = [a for a in cfg_ref.get("contract_allocations", [])
+                                               if a.get("contract_id") in _keep_ids]
+            _ct_msg = f"계약: {len(_ct_new)}건"
+            if _ct_newbuyer:
+                _ct_msg += f" · 새 매입사 추가: {', '.join(_ct_newbuyer)}"
+            if _ct_skip:
+                _ct_msg += f" · 주의: 원료명 미매핑 스킵: {', '.join(_ct_skip[:5])}"
+            log.append(_ct_msg)
+        except Exception as e:
+            log.append(f"계약 탭 오류: {e}")
+
     # ── ① 선적 탭 ────────────────────────────────────────────────────────────
     try:
         rows = sh.worksheet("선적").get_all_values()
@@ -4862,7 +4924,7 @@ def _sync_from_gsheets(cfg_ref):
     try:
         rows = sh.worksheet("출고").get_all_values()
         if len(rows) > 1:
-            new_dr, new_ds = [], []
+            new_dr, new_ds, new_adj = [], [], []
             seen_dr_sc, seen_ds_sc = set(), set()
             _out_skip_sc, _out_skip_proc = set(), set()
             # 직접판매 단가 열(선택): 헤더에 '단가'·'판가'가 들어간 열, 없으면 8번째 열.
@@ -4897,6 +4959,9 @@ def _sync_from_gsheets(cfg_ref):
                         "scrap_type_id": scid,
                         "quantity_kg": qty_f, "ton_bags": tb_i, "notes": notes,
                     })
+                elif otype == "재고조정":       # 원장 재고조정: 출고량 + = 감소, − = 증가(D열 비움)
+                    new_adj.append({"id": str(uuid.uuid4())[:8], "date": dt, "scrap_type_id": scid,
+                                    "quantity_kg": qty_f, "notes": notes})
                 elif otype == "직접판매":
                     seen_ds_sc.add(scid)
                     _ds_price = (_to_float(_o_price) if _o_price else
@@ -4917,7 +4982,8 @@ def _sync_from_gsheets(cfg_ref):
                 r for r in cfg_ref.get("direct_sales", [])
                 if r.get("scrap_type_id") not in seen_ds_sc
             ] + new_ds
-            _out_msg = f"출고: 임가공 {len(new_dr)}건 / 직접판매 {len(new_ds)}건 동기화"
+            cfg_ref["stock_adjustments"] = sorted(new_adj, key=lambda a: a["date"])   # 시트가 원본
+            _out_msg = f"출고: 임가공 {len(new_dr)}건 / 직접판매 {len(new_ds)}건 / 재고조정 {len(new_adj)}건 동기화"
             if _out_skip_sc:
                 _out_msg += f" · 주의: 스크랩명 미매핑: {', '.join(sorted(_out_skip_sc))}"
             if _out_skip_proc:
@@ -5108,8 +5174,12 @@ def _sync_from_gsheets(cfg_ref):
             for row in rows[1:]:
                 row = [c.strip() for c in row] + [""] * 7
                 mo, ni, co, byr, npay, cpay, colow = row[:7]
-                if not mo or not ni or not co:
+                if not mo or not ni or not (co or colow):
                     continue
+                if not co:                                  # Co Mid 빈칸 + Co Low만 있는 행 → 기존 Co 유지, 없으면 Low로 대체
+                    _prev = next((h for h in (cfg_ref.get("index_history_alt", {}).get(_match_buyer_id(byr, buyers) or "", [])
+                                              if byr else cfg_ref.get("index_history", [])) if h["month"] == mo), None)
+                    co = str(_prev["co_index"]) if _prev and _prev.get("co_index") else colow
                 try:
                     datetime.strptime(mo, "%Y-%m")
                 except ValueError:
@@ -5223,69 +5293,6 @@ def _sync_from_gsheets(cfg_ref):
             log.append(_op_msg)
         except Exception as e:
             log.append(f"기초재고 탭 오류: {e}")
-
-    # ── ⑨ 계약 탭: 시트가 원본 — 시트에 있는 계약만 남긴다(계약ID로 기존 배분·연결 유지) ──
-    try:
-        rows = sh.worksheet("계약").get_all_values()
-    except Exception:
-        rows = None
-    if rows is not None and len(rows) >= 1:
-        try:
-            _ct_new, _ct_skip, _ct_newbuyer = [], [], []
-            _CT_ST = {"진행": "active", "진행 중": "active", "완료": "closed", "취소": "cancelled",
-                      "active": "active", "closed": "closed", "cancelled": "cancelled"}
-            _proc_by_nm = {p["name"].lower(): p["id"] for p in cfg_ref.get("processors", [])}
-            for row in rows[1:]:
-                row = [c.strip() for c in row] + [""] * 23
-                (cid, rfq, byr, prod, sc_nm, proc_nm, qty, tol, sd, ed, stt, npay, cpay, ncont, ccont,
-                 cobasis, provp, pib, fib, ppd, fpd, note) = row[:22]
-                if not byr or not qty:
-                    continue
-                prod = (prod or "BP").upper()
-                bid = _match_buyer_id(f"{byr} ({prod})", buyers) or _match_buyer_id(byr, buyers)
-                if not bid:                                   # 처음 보는 업체 → 최소 정보로 매입사 추가
-                    bid = str(uuid.uuid4())[:8]
-                    buyers.append({"id": bid, "name": byr, "product": prod, "active": True,
-                                   "ni_payable": (_to_float(npay) / 100 if npay else 1.0),
-                                   "co_payable": (_to_float(cpay) / 100 if cpay else 1.0),
-                                   "ni_content": _to_float(ncont) if ncont else 0.0,
-                                   "co_content": _to_float(ccont) if ccont else 0.0})
-                    _ct_newbuyer.append(f"{byr} ({prod})")
-                scid = scrap_map.get(sc_nm) or ("" if sc_nm else
-                                                next((s["id"] for s in cfg_ref.get("scrap_types", [])
-                                                      if _sc_product(s) == prod and s.get("active", True)), ""))
-                if sc_nm and not scid:
-                    _ct_skip.append(f"{byr}/{sc_nm}"); continue
-                _basis = lambda v, dflt: {"가정산월": "prov", "선적월": "loading", "확정월": "final",
-                                          "": dflt}.get(v, v)
-                _ct_new.append({
-                    "id": cid or str(uuid.uuid4())[:8], "rfq_id": rfq, "buyer_id": bid, "product": prod,
-                    "scrap_type_id": scid, "processor_id": _proc_by_nm.get(proc_nm.lower(), "") if proc_nm else "",
-                    "contract_qty_mt": _to_float(qty), "tolerance_pct": _to_float(tol) if tol else 0.0,
-                    "start_date": sd, "end_date": ed, "contract_status": _CT_ST.get(stt, "active"),
-                    "ni_payable_pct": _to_float(npay) if npay else None,
-                    "co_payable_pct": _to_float(cpay) if cpay else None,
-                    "ni_content": _to_float(ncont) if ncont else None,
-                    "co_content": _to_float(ccont) if ccont else None,
-                    "co_basis": cobasis,
-                    "prov_pct": _to_float(provp) if provp else None,
-                    "prov_index_basis": _basis(pib, "prov"), "final_index_basis": _basis(fib, "final"),
-                    "prov_pay_days": int(_to_float(ppd)) if ppd else None,
-                    "final_pay_days": int(_to_float(fpd)) if fpd else None,
-                    "notes": note,
-                })
-            cfg_ref["contracts"] = _ct_new
-            _keep_ids = {c["id"] for c in _ct_new}
-            cfg_ref["contract_allocations"] = [a for a in cfg_ref.get("contract_allocations", [])
-                                               if a.get("contract_id") in _keep_ids]
-            _ct_msg = f"계약: {len(_ct_new)}건"
-            if _ct_newbuyer:
-                _ct_msg += f" · 새 매입사 추가: {', '.join(_ct_newbuyer)}"
-            if _ct_skip:
-                _ct_msg += f" · 주의: 원료명 미매핑 스킵: {', '.join(_ct_skip[:5])}"
-            log.append(_ct_msg)
-        except Exception as e:
-            log.append(f"계약 탭 오류: {e}")
 
     # ── ⑩ 견적 탭: RFQ별 업체 응찰 조건 (시트가 원본, 통째로 교체) ─────────────────
     try:
@@ -6343,27 +6350,6 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
     _checks.append(("선적·정산", "배치 없는 선적", not _nobatch, ", ".join(_hbl(s) for s in _nobatch) or "없음"))
     _noeu = [s for s in _mc_ships if s.get("export_cost_usd") is None]
     _checks.append(("선적·정산", "당월 선적 수출비 입력", not _noeu, ", ".join(_hbl(s) for s in _noeu) or "모두 입력"))
-
-    # ── 3) 입금 (마감월 말일까지 만기가 지난 건) ──
-    _late_p, _late_f = [], []
-    for s in _mc_S:
-        b = _with_contract(_mc_B.get(s.get("buyer_id"), {}), _get_contract_for_shipment(cfg, s.get("id", "")))
-        try:
-            _ld = date.fromisoformat(s.get("loading_date", ""))
-        except Exception:
-            continue
-        _pd = _ld + timedelta(days=int(b.get("prov_pay_days") or 0) or 30)
-        if s.get("status") != "paid" and not s.get("prov_paid_date") and _pd <= _mc_end:
-            _late_p.append(f"{_hbl(s)} (만기 {_pd})")
-        try:
-            _eta = date.fromisoformat(s["eta"]) if _valid_date_str(s.get("eta", "")) else _ld + timedelta(days=60)
-        except Exception:
-            _eta = _ld + timedelta(days=60)
-        _fd = _eta + timedelta(days=int(b.get("final_pay_days") or 0) or 30)
-        if s.get("status") == "final" and not s.get("final_paid_date") and _fd <= _mc_end:
-            _late_f.append(f"{_hbl(s)} (만기 {_fd})")
-    _checks.append(("입금", "가정산 입금 기록", not _late_p, ", ".join(_late_p) or "만기 지난 미기록 없음"))
-    _checks.append(("입금", "확정산 입금 기록", not _late_f, ", ".join(_late_f) or "만기 지난 미기록 없음"))
 
     # ── 4) 생산·재고 ──
     _P = {p["id"]: p["name"] for p in cfg.get("processors", [])}
