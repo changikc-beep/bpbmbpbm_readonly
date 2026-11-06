@@ -1917,7 +1917,8 @@ def _usd_k(v):
     s = f"${a/1_000_000:.1f}M" if a >= 1_000_000 else f"${a/1000:,.0f}k"
     return ("-" if v < 0 else "") + s
 
-def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, title="", caption_of=None):
+def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, title="", caption_of=None,
+                month_label="선적월"):
     """월별로 묶은 클릭 목록(최근이 위, 월마다 옅은 띠) — 아무 셀이나 누르면 그 행이 선택된다.
     items: [(id, obj)], date_of(obj) → 'YYYY-MM-DD', cols_of(obj) → 날짜 뒤에 붙일 열 dict(문자열),
     widths: {열 이름: px}. 선택된 id 를 session_state[sel_key] 에 두고 돌려준다."""
@@ -1942,7 +1943,7 @@ def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, 
     for _, obj in order:
         d = date_of(obj) or ""
         m = d[:7] or "미정"
-        rows.append({"선적월": ((f"{m[2:4]}.{m[5:7]}" if m != "미정" else m) if m != prev else ""),
+        rows.append({month_label: ((f"{m[2:4]}.{m[5:7]}" if m != "미정" else m) if m != prev else ""),
                      "일": d[8:10] or "—", **cols_of(obj)})
         g += m != prev
         grp.append(g)
@@ -1952,7 +1953,7 @@ def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, 
         return sel_id
     df = pd.DataFrame(rows)
     sty = df.style.apply(lambda r: ["background-color:#24242A" if grp[r.name] % 2 else ""] * len(r), axis=1)
-    cc = {"선적월": st.column_config.TextColumn(width=52), "일": st.column_config.TextColumn(width=30)}
+    cc = {month_label: st.column_config.TextColumn(width=52), "일": st.column_config.TextColumn(width=30)}
     cc.update({k: st.column_config.TextColumn(width=w) for k, w in widths.items()})
     st.dataframe(sty, key=key, on_select="rerun", selection_mode="single-cell", hide_index=True,
                  width="stretch", height=min(36 * len(df) + 40, 640), column_config=cc)
@@ -3028,93 +3029,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     "moisture_pct":None,"buyer_ni_content":None,"buyer_co_content":None,
                     "other_adj_usd":None,"other_adj_desc":""})
                 save_cfg(cfg); st.toast("추가 완료!"); st.rerun()
-
-    # ── HBL 수명주기 조회 ────────────────────────────────────────────────────
-    if shipments:
-        st.divider()
-        st.markdown("#### HBL 수명주기 조회")
-        _lc_proc_m  = {p["id"]: p for p in cfg.get("processors", [])}
-        _lc_scrap_m = {s["id"]: s for s in cfg.get("scrap_types", [])}
-        _lc_hbl_opts = {}
-        for _ls in sorted(shipments, key=lambda x: x.get("loading_date",""), reverse=True):
-            if not _ls.get("id"):
-                continue
-            _lk = (f"{_ls.get('hbl','—')}  ·  "
-                   f"{buyer_map.get(_ls.get('buyer_id',''),{}).get('name','?')}  ·  "
-                   f"{_ls.get('loading_date','미정')}")
-            if _lk in _lc_hbl_opts:
-                _lk = f"{_lk}  [{_ls['id'][:4]}]"
-            _lc_hbl_opts[_lk] = _ls["id"]
-        _lc_sel = st.selectbox("HBL 선택", list(_lc_hbl_opts), key="lc_hbl_sel")
-        _lc_sid  = _lc_hbl_opts[_lc_sel]
-        _lc_ship = next((s for s in shipments if s.get("id") == _lc_sid), {})
-        _lc_buyer = buyer_map.get(_lc_ship.get("buyer_id",""), {})
-        _lc_batches = [r for r in cfg.get("processing_history", []) if r.get("shipment_id") == _lc_sid]
-
-        # 이벤트 목록 구성
-        _lc_events = []
-
-        # 처리 배치
-        for _lb in _lc_batches:
-            _bd   = _rec_ref_date(_lb, cfg) or "—"
-            _pname = _lc_proc_m.get(_lb.get("processor_id",""), {}).get("name", "?")
-            _sname = _lc_scrap_m.get(_lb.get("scrap_type_id",""), {}).get("name", "?")
-            _inp   = _ph_input_kg(_lb)
-            _out   = float(_lb.get("output_kg", 0) or 0)
-            _lc_events.append({
-                "sort": _bd, "icon": "🏭", "title": f"임가공 처리  —  {_pname}",
-                "detail": f"{_sname}  |  투입 {_inp/1000:.3f} MT  →  BP {_out/1000:.3f} MT  (전환율 {_out/_inp*100:.1f}%)" if _inp > 0 else f"{_sname}",
-            })
-
-        # 선적
-        _ld = _lc_ship.get("loading_date", "")
-        if _ld:
-            _lc_events.append({
-                "sort": _ld, "icon": "🚢", "title": "선적 출항",
-                "detail": f"HBL: {_lc_ship.get('hbl','—')}  |  {float(_lc_ship.get('weight_kg',0))/1000:.3f} MT  |  매입사: {_lc_buyer.get('name','?')} ({_lc_buyer.get('product','')})",
-            })
-
-        # ETA
-        _eta = _lc_ship.get("eta", "")
-        if _eta:
-            _arrived = _eta <= _today().isoformat()
-            _lc_events.append({
-                "sort": _eta, "icon": "⚓" if _arrived else "🕐",
-                "title": f"{'입항 (도착)' if _arrived else 'ETA (예정)'}",
-                "detail": f"{_eta}",
-            })
-
-        # Provisional 정산
-        _pm = _lc_ship.get("prov_month", "")
-        if _pm and _pm != "—":
-            _lc_events.append({
-                "sort": _pm + "-15", "icon": "🟡", "title": "Provisional 정산",
-                "detail": f"기준월: {_pm}  |  Invoice: ${float(_lc_ship.get('invoice_usd',0)):,.2f}",
-            })
-
-        # 최종/입금
-        _fm = _lc_ship.get("final_month", "")
-        _st = _lc_ship.get("status", "provisional")
-        if _st in ("final", "paid") and _fm and _fm != "—":
-            _lc_events.append({
-                "sort": _fm + "-28", "icon": "🟢" if _st == "final" else "🔵",
-                "title": "최종 정산" if _st == "final" else "입금 완료",
-                "detail": f"기준월: {_fm}",
-            })
-
-        _lc_events.sort(key=lambda e: e["sort"] if e["sort"] and e["sort"] != "—" else "9999-12-31")
-
-        if _lc_events:
-            for _ei, _ev in enumerate(_lc_events):
-                _ca, _cb = st.columns([1, 15])
-                _ca.markdown(f"## {_ev['icon']}")
-                _cb.markdown(f"**{_ev['title']}**")
-                _cb.caption(_ev["detail"])
-                if _ei < len(_lc_events) - 1:
-                    st.markdown("<div style='margin-left:28px;color:#555;font-size:18px;line-height:0.8'>│<br>│</div>",
-                                unsafe_allow_html=True)
-        else:
-            st.info("연결된 처리 배치가 없습니다. 임가공사·배치 서브페이지에서 HBL을 연결하세요.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -7590,15 +7504,34 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
         st.divider()
 
         # ── 계약별 이행 현황 ──────────────────────────────────────────────────
-        st.markdown("#### 계약별 이행 현황")
         _ship_map_disp = {s["id"]: s for s in cfg.get("shipments", [])}
+        _ct_short = {"complete": "완료", "ok": "충분", "short": "부족"}
+        _ct_m_cache = {c.get("id", ""): _contract_metrics(cfg, c) for c in _ct_list_show}
+        _clc, _crc = st.columns([1.3, 2.6], gap="medium")
+        with _clc, st.container(key="panel_ctlist"):
+            _sel_ct = _month_list(
+                "ct_list", "ct_sel_id", [(c.get("id", ""), c) for c in _ct_list_show],
+                date_of=lambda c: c.get("start_date") or "",
+                cols_of=lambda c: {"매입사": _ct_buyers.get(c.get("buyer_id", ""), {}).get("name", "—"),
+                                   "원료": _ct_scraps.get(c.get("scrap_type_id", ""), {}).get("name", "—"),
+                                   "이행": f"{_ct_m_cache[c.get('id', '')]['fulfill_pct']:.0f}%",
+                                   "재고": _ct_short.get(_ct_m_cache[c.get("id", "")]["status"], "—")},
+                widths={"매입사": 58, "원료": 44, "이행": 40, "재고": 36},
+                title=f"**계약 목록**  ·  {len(_ct_list_show)}건",
+                caption_of=lambda c: "선택: " + _ct_buyers.get(c.get("buyer_id", ""), {}).get("name", "—")
+                                     + f" {c.get('product', '')} · {c.get('start_date') or '기간 미정'}",
+                month_label="시작월")
+        if not _ct_list_show:
+            st.info("필터 조건에 맞는 계약이 없습니다.")
         for _ct in _ct_list_show:
             _ct_id   = _ct.get("id","")
+            if _ct_id != _sel_ct:
+                continue
             _ct_buyer_obj = _ct_buyers.get(_ct.get("buyer_id",""), {})
             _bname   = f"{_ct_buyer_obj.get('name','—')} ({_ct_buyer_obj.get('product','')})" if _ct_buyer_obj else "—"
             _scname  = _ct_scraps.get(_ct.get("scrap_type_id",""), {}).get("name", "—")
             _prname  = _ct_procs.get(_ct.get("processor_id",""), {}).get("name", "") if _ct.get("processor_id") else ""
-            _m       = _contract_metrics(cfg, _ct)
+            _m       = _ct_m_cache[_ct_id]
 
             _ct_cstatus = _ct.get("contract_status", "active")
             _ct_cst_lbl = {"active": "진행 중", "closed": "완료", "cancelled": "취소"}.get(_ct_cstatus, _ct_cstatus)
@@ -7612,7 +7545,8 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
             _bar_color = {"complete": "#4ade80", "ok": "#3B82F6", "short": "#ef4444"}.get(_m["status"], "#9A9AA6")
             _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#2A2A30")
             _sub_lbl   = f" / {_prname}" if _prname else ""
-            st.markdown(f"""
+            _ct_box = _crc.container(key="panel_ctdetail")
+            _ct_box.markdown(f"""
 <div style="background:#1C1C20;border:none;border-radius:14px;
             padding:11px 16px 10px;margin-bottom:10px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -7636,14 +7570,10 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
   </div>
 </div>""", unsafe_allow_html=True)
 
-            with st.expander(
-                f"{_ct_cst_ico} **{_bname}**  {_ct.get('product','BP')} / {_scname}"
-                + (f" / {_prname}" if _prname else "")
-                + f"  |  계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%"
-                + f"  |  선적 {_m['shipped_mt']:,.2f} MT ({_m['fulfill_pct']:.1f}%)"
-                + f"  |  {_stat_label}  [{_ct_cst_lbl}]",
-                expanded=_m["status"] == "short",
-            ):
+            with _ct_box:
+                st.caption(f"{_ct_cst_ico} {_ct_cst_lbl}  ·  {_ct.get('product','BP')} / {_scname}"
+                           + (f" / {_prname}" if _prname else "")
+                           + f"  ·  계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%")
                 # 상한 초과 / 하한 미달 경고 (협의 하에 발생 가능 — 저장은 항상 허용, 안내만 표시)
                 if _m["max_mt"] > 0 and _m["shipped_mt"] > _m["max_mt"]:
                     st.warning(f"선적량({_m['shipped_mt']:.2f} MT)이 계약 상한({_m['max_mt']:.2f} MT)을 "
