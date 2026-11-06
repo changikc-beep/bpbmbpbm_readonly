@@ -221,24 +221,24 @@ div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !i
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
 section[data-testid="stSidebar"]{background:#16161A !important}
 section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding-top:.5rem}
-.sb-title{font-size:1.5rem;font-weight:700;letter-spacing:-.02em;color:#ECECEF;line-height:1.25;margin:0 0 16px 4px}
-.sb-title span{font-size:.95rem;font-weight:500;color:#9A9AA6}
+.sb-title{font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:#ECECEF;line-height:1.25;margin:0 0 16px 4px}
+.sb-title span{font-size:1.08rem;font-weight:500;color:#9A9AA6}
 section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
 .st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
 .st-key-nav_top label[data-baseweb="radio"]{
-    width:100%;margin:0 !important;padding:11px 14px !important;border-radius:10px;
+    width:100%;margin:0 !important;padding:13px 16px !important;border-radius:10px;
     cursor:pointer;transition:background .15s
 }
 .st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
-.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.08rem !important;font-weight:500;color:#9A9AA6}
-.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.25rem !important}
+.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.28rem !important;font-weight:500;color:#9A9AA6}
+.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.5rem !important}
 .st-key-nav_top label[data-baseweb="radio"]:hover{background:#1F1F24}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#26262C}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#FFFFFF;font-weight:600}
 .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{margin-right:6px}
 section[data-testid="stSidebar"] hr{margin:.8rem 0}
-section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.86rem;line-height:1.6}
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button p{font-size:.98rem}
+section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.95rem;line-height:1.6}
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button p{font-size:1.08rem}
 
 /* Equal heights: cards placed side by side in columns (metrics, stat tiles, bordered cards)
    stretch to the tallest one in their row, whatever their line count */
@@ -5584,9 +5584,11 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
         st.subheader("월별 INDEX 이력")
         history=cfg.get("index_history",[])
         if history:
-            df_h=pd.DataFrame(sorted(history,key=lambda x:x["month"],reverse=True))
-            df_h.columns=["기준월","Ni INDEX($/ton)","Co INDEX($/ton)"]
-            st.dataframe(df_h.style.format({"Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}"}),
+            df_h=pd.DataFrame([{"기준월": h["month"], "Ni INDEX($/ton)": h.get("ni_index"),
+                                "Co INDEX($/ton)": h.get("co_index"), "Co Low($/ton)": h.get("co_low")}
+                               for h in sorted(history,key=lambda x:x["month"],reverse=True)])
+            st.dataframe(df_h.style.format({"Ni INDEX($/ton)":"${:,.2f}","Co INDEX($/ton)":"${:,.2f}",
+                                            "Co Low($/ton)":"${:,.2f}"}, na_rep="—"),
                          width="stretch",hide_index=True)
         else: st.info("저장된 INDEX 이력이 없습니다.")
         st.divider()
@@ -5627,8 +5629,9 @@ if _page == PG_MASTER and _sub == SUB_INDEX:
 
         eur_rates = cfg.get("eur_usd_rates", [])
         if eur_rates:
-            _df_eur = pd.DataFrame(sorted(eur_rates, key=lambda x: x["month"], reverse=True))
-            _df_eur.columns = ["기준월", "EUR/USD"]
+            _df_eur = pd.DataFrame([{"기준월": r["month"], "EUR/USD": float(r["rate"]),
+                                     "출처": "ECB 자동" if r.get("src") == "auto" else "시트"}
+                                    for r in sorted(eur_rates, key=lambda x: x["month"], reverse=True)])
             st.dataframe(
                 _df_eur.style.format({"EUR/USD": "{:.4f}"}),
                 width="stretch", hide_index=True
