@@ -3261,8 +3261,8 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
 
         # ── BP 1kg당 단가 분해 ────────────────────────────────────────────────
         st.markdown("---")
-        st.markdown("**BP 1kg당 단가 분해**")
-        st.caption("전체 처리 이력 합산 기준. 원료 취득원가는 FIFO·이동평균 두 가지 기준 비교.")
+        st.markdown("**BP 1kg당 단가 분해**",
+                    help="전체 처리 이력 합산 기준. 원료 취득원가는 FIFO·이동평균 두 가지 기준 비교.")
         if _tot_out > 0:
 
             _bp_pk   = _tot_bp  / _tot_out
@@ -3296,19 +3296,19 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                 mv   = row["이동평균 기준 ($/kg BP)"]
                 diff = row["차이"]
                 if "실질 손익" in lbl:
-                    bg = "#1E8449" if fv >= 0 else "#922b21"
+                    bg = "rgba(34,197,94,.16)" if fv >= 0 else "rgba(239,68,68,.16)"
                     s  = f"background-color:{bg};color:white;font-weight:700"
                     return ["font-weight:700", s, s, "font-weight:700"]
                 if lbl.startswith("="):
                     return ["font-weight:700", "font-weight:700", "font-weight:700", "font-weight:700"]
                 if "BP 매각가" in lbl:
                     return ["font-weight:700",
-                            "color:#1565c0;font-weight:600",
-                            "color:#1565c0;font-weight:600", ""]
+                            "color:#7AA7F8;font-weight:600",
+                            "color:#7AA7F8;font-weight:600", ""]
                 if "원료" in lbl and abs(diff) > 0.0001:
                     # 낮은 값(= 유리한 쪽)을 녹색으로 표시
-                    fc = "color:#1E8449;font-weight:600" if fv <= mv else "color:#E74C3C;font-weight:600"
-                    mc = "color:#1E8449;font-weight:600" if mv <= fv else "color:#E74C3C;font-weight:600"
+                    fc = "color:#5FD68A;font-weight:600" if fv <= mv else "color:#F47A7A;font-weight:600"
+                    mc = "color:#5FD68A;font-weight:600" if mv <= fv else "color:#F47A7A;font-weight:600"
                     return ["color:#555", fc, mc, "font-weight:600"]
                 return ["color:#555", "", "", ""]
 
@@ -3614,7 +3614,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             lbl = row["항목"]
                             v   = row["금액 (USD)"]
                             if "실질 손익" in lbl:
-                                bg = "#1E8449" if v >= 0 else "#922b21"
+                                bg = "rgba(34,197,94,.16)" if v >= 0 else "rgba(239,68,68,.16)"
                                 return ["font-weight:700",
                                         f"background-color:{bg};color:white;font-weight:700"]
                             if lbl.startswith("="):
@@ -3641,11 +3641,11 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             src = row.get("원가기준", "")
                             if "실질손익" in _bc:
                                 styles[_bc.index("실질손익")] = (
-                                    "color:#1E8449;font-weight:600" if v >= 0
-                                    else "color:#922b21;font-weight:600")
+                                    "color:#5FD68A;font-weight:600" if v >= 0
+                                    else "color:#F47A7A;font-weight:600")
                             if "원가기준" in _bc:
                                 styles[_bc.index("원가기준")] = (
-                                    "color:#1565c0;font-weight:600" if src == "FIFO"
+                                    "color:#7AA7F8;font-weight:600" if src == "FIFO"
                                     else "color:#6c757d")
                             return styles
 
@@ -3711,8 +3711,8 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             # HBL 집계(_hbl_agg)를 매입사 단위로 재집계 — 원료단가 기준(FIFO/이동평균)
             # 토글이 이미 반영된 값이므로 위 HBL 요약과 항상 일치한다.
             st.markdown("---")
-            st.markdown("#### 매입사별 수익성 비교")
-            st.caption("HBL 연결 배치 기준. kg당 수치는 BP 생산량 기준이며, 판관비는 제외됩니다.")
+            st.markdown("#### 매입사별 수익성 비교",
+                        help="HBL 연결 배치 기준. kg당 수치는 BP 생산량 기준이며, 판관비는 제외됩니다.")
 
             _by_agg = defaultdict(lambda: {"hbl": 0, "out": 0.0, "bp": 0.0, "pf": 0.0,
                                            "eu": 0.0, "raw": 0.0, "stor": 0.0})
@@ -3773,8 +3773,8 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
         if _pv == "임가공사별":
             # ── 임가공사별 수익성 비교 ─────────────────────────────────────────
             st.markdown("---")
-            st.markdown("#### 임가공사별 수익성 비교")
-            st.caption("HBL 연결 배치 기준 · 위 원료단가 기준 토글 반영 · 판관비 제외")
+            st.markdown("#### 임가공사별 수익성 비교",
+                        help="HBL 연결 배치 기준 · 위 원료단가 기준 토글 반영 · 판관비 제외")
             _pr_src = [x for x in _batch_pnl_rows(cfg, _pctx, _rmc_mode, _default_rmc) if x["sid"]]
             _pr_rows = []
             for _pn, _pv in _pnl_agg(_pr_src, lambda x: x["proc_nm"]).items():
@@ -3905,8 +3905,8 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                        "원료 취득원가 상세는 위 HBL별 손익 요약의 원료단가 기준(FIFO/이동평균)을 따릅니다.")
 
 if _page == PG_PNL and _sub == SUB_PNL_DS:
-    st.markdown("#### 직접 판매 손익")
-    st.caption("직접 판매 스크랩의 매각 수익 및 FIFO 원가 대비 손익을 분석합니다.")
+    st.markdown("#### 직접 판매 손익",
+                help="직접 판매 스크랩의 매각 수익 및 FIFO 원가 대비 손익을 분석합니다.")
 
     _ds_all = cfg.get("direct_sales", [])
     if not _ds_all:
@@ -3965,8 +3965,8 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
             _df_ds_pnl = pd.DataFrame(_ds_rows_pnl)
             def _hl_ds(row):
                 v = row.get("거래 마진 (USD)", 0) or 0
-                c = ("background-color:#1E8449;color:white;font-weight:600" if v >= 0
-                     else "background-color:#922b21;color:white;font-weight:600")
+                c = ("background-color:rgba(34,197,94,.16);color:#5FD68A;font-weight:600" if v >= 0
+                     else "background-color:rgba(239,68,68,.16);color:#F47A7A;font-weight:600")
                 return [""] * (len(row) - 2) + [c, ""]
             st.dataframe(
                 _df_ds_pnl.style.apply(_hl_ds, axis=1).format(na_rep="—", formatter={
@@ -4107,10 +4107,10 @@ if _page == PG_STOCK and _sub == SUB_PROC:
         # ── 생산·재고 대사 (시트 '생산' 탭 = 임가공사 월별 생산 보고) ─────────────
         _recon = _production_recon(cfg)
         if _recon:
-            st.markdown("#### 생산·재고 대사")
-            st.caption("임가공사 생산 보고(시트 '생산' 탭) 기준. 완제품 재고 = 누적 생산 − HBL에 연결된 배치 생산, "
-                       "미투입 원료 = 임가공사 입고 − 투입. 계량차는 당사 출고 중량과 임가공사 입고 중량의 차이입니다. "
-                       "완제품 재고가 음수면 선적 중량이 생산보다 많은 것(계량차)으로, 재고 합계에서는 0으로 봅니다.")
+            st.markdown("#### 생산·재고 대사",
+                        help="임가공사 생산 보고(시트 '생산' 탭) 기준. 완제품 재고 = 누적 생산 − HBL에 연결된 배치 생산, "
+                                               "미투입 원료 = 임가공사 입고 − 투입. 계량차는 당사 출고 중량과 임가공사 입고 중량의 차이입니다. "
+                                               "완제품 재고가 음수면 선적 중량이 생산보다 많은 것(계량차)으로, 재고 합계에서는 0으로 봅니다.")
             _rc_df = pd.DataFrame(_recon)
             _kgc = [c for c in _rc_df.columns if c not in ("임가공사", "스크랩", "제품", "자료 기준월", "회수율(%)")]
             _rc_cfg = _cc_money(kg=tuple(_kgc))
@@ -4633,10 +4633,10 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
     # ══════════════════════════════════════════════════════════════════════════
     # 원료 재고 관리 (이동평균법)
     # ══════════════════════════════════════════════════════════════════════════
-    st.markdown("### 원료 재고 관리 (이동평균법)")
-    st.caption("스크랩 유형별 기초재고와 입고 이력을 등록합니다.  \n"
-               "이동평균단가 → 손익·시나리오 실질 손익에 자동 반영.  \n"
-               "입고일 **YYYY-MM-DD** + 톤백 수 입력 시 FIFO 창고비 자동 계산 정확도↑")
+    st.markdown("### 원료 재고 관리 (이동평균법)",
+                help="스크랩 유형별 기초재고와 입고 이력을 등록합니다.  \n"
+                               "이동평균단가 → 손익·시나리오 실질 손익에 자동 반영.  \n"
+                               "입고일 **YYYY-MM-DD** + 톤백 수 입력 시 FIFO 창고비 자동 계산 정확도↑")
 
     if "raw_material_inventory" not in cfg:
         cfg["raw_material_inventory"] = {}
@@ -4744,9 +4744,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
 
 
         # ── 임가공 출고 이력 ──────────────────────────────────────────────────────
-    st.markdown("### 임가공 출고 이력")
-    st.caption("스크랩을 임가공사(톨링)로 출고한 날짜와 수량을 기록합니다. "
-               "각 B/L 배치가 어느 입고 Lot에서 비롯되었는지 추적하는 기준이 됩니다.")
+    st.markdown("### 임가공 출고 이력",
+                help="스크랩을 임가공사(톨링)로 출고한 날짜와 수량을 기록합니다. "
+                               "각 B/L 배치가 어느 입고 Lot에서 비롯되었는지 추적하는 기준이 됩니다.")
 
     if "dispatch_records" not in cfg:
         cfg["dispatch_records"] = []
@@ -4815,9 +4815,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
 
     # ── 직접 판매 출고 이력 ───────────────────────────────────────────────────
     st.divider()
-    st.markdown("### 직접 판매 출고 이력")
-    st.caption("임가공(톨링) 없이 스크랩을 직접 판매한 경우 여기에 기록합니다. "
-               "FIFO Lot 추적 계산 시 소진 이벤트로 반영됩니다.")
+    st.markdown("### 직접 판매 출고 이력",
+                help="임가공(톨링) 없이 스크랩을 직접 판매한 경우 여기에 기록합니다. "
+                               "FIFO Lot 추적 계산 시 소진 이벤트로 반영됩니다.")
 
     if "direct_sales" not in cfg:
         cfg["direct_sales"] = []
@@ -4912,9 +4912,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
     # 원료 Lot 추적 (FIFO)
     # ══════════════════════════════════════════════════════════════════════════
     st.divider()
-    st.markdown("### 원료 Lot 추적 (FIFO)")
-    st.caption("임가공 출고 기록을 기준으로 2단계 FIFO를 적용해 각 B/L이 어느 입고 Lot의 스크랩으로 "
-               "생산되었는지 추적합니다.")
+    st.markdown("### 원료 Lot 추적 (FIFO)",
+                help="임가공 출고 기록을 기준으로 2단계 FIFO를 적용해 각 B/L이 어느 입고 Lot의 스크랩으로 "
+                               "생산되었는지 추적합니다.")
 
     _lt_inv_types = [s for s in cfg.get("scrap_types", [])
                      if cfg.get("raw_material_inventory", {}).get(s["id"], {}).get("opening")]
@@ -5108,7 +5108,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
             def _hl_disp(row):
                 v = row.get("임가공사 보유 추정 (kg)", 0) or 0
                 if v < -1:  return ["", "", "", "color:#b71c1c;font-weight:600"]
-                if v > 0.5: return ["", "", "", "color:#1565c0;font-weight:600"]
+                if v > 0.5: return ["", "", "", "color:#7AA7F8;font-weight:600"]
                 return [""] * 4
             st.dataframe(
                 pd.DataFrame(_disp_rows).style
@@ -6753,9 +6753,9 @@ if _page == PG_HOME and _sub == SUB_DASH:
             _cf_mon_rows = [{"예상 입금월": _k, "건수": _v["건수"], "예상 입금액": round(_v["금액"], 0),
                              "비고": "지연" if (_k != "미정" and _k < _cf_this_m) else ""}
                             for _k, _v in sorted(_cf_by_mon.items())]
-            st.markdown("**월별 예상 입금 (확정산 잔액)**")
-            st.caption("예상 입금일 = (ETA, 없으면 선적일+60일) + 매입사별 확정산 입금 조건(매입사 관리에서 설정, 미설정 시 30일). "
-                       "'지연'은 예상월이 이미 지난 건입니다.")
+            st.markdown("**월별 예상 입금 (확정산 잔액)**",
+                        help="예상 입금일 = (ETA, 없으면 선적일+60일) + 매입사별 확정산 입금 조건(매입사 관리에서 설정, 미설정 시 30일). "
+                                               "'지연'은 예상월이 이미 지난 건입니다.")
             st.dataframe(pd.DataFrame(_cf_mon_rows).style.format({"예상 입금액": "${:,.0f}"}),
                          width="stretch", hide_index=True)
             with st.expander("선적건별 상세", expanded=False):
@@ -7227,10 +7227,10 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
 
     # ── 재고 실사 입력 · 마감 표시 ──
     with st.container(border=True, key="card_count"):
-        st.markdown("**재고 실사 입력**")
-        st.caption("월말 창고 실물 수량을 넣으면 앱 추정 재고와의 차이가 위 '생산·재고'에 표시됩니다. "
-                   "센 제품만 넣으세요 — 빈칸은 저장하지 않습니다(재고가 실제로 0이면 0 입력). "
-                   "차이 사유를 비고에 남기면 다음 달부터 추세를 볼 수 있습니다.")
+        st.markdown("**재고 실사 입력**",
+                    help="월말 창고 실물 수량을 넣으면 앱 추정 재고와의 차이가 위 '생산·재고'에 표시됩니다. "
+                                       "센 제품만 넣으세요 — 빈칸은 저장하지 않습니다(재고가 실제로 0이면 0 입력). "
+                                       "차이 사유를 비고에 남기면 다음 달부터 추세를 볼 수 있습니다.")
         _cnt_kg = lambda p: (_counts.get((_mc_m, p)) or {}).get("kg")
         with st.form("stock_count_form"):
             _sc1, _sc2, _sc3 = st.columns([1, 1, 3])
