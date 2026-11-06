@@ -2131,7 +2131,6 @@ buyer_opts    = {f"{b['name']} ({b['product']})": b["id"] for b in cfg["buyers"]
 # TAB 4 — 선적 정산 추적  (Provisional/Final 비교 통합)
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_SHIP and _sub == SUB_SHIP:
-    st.subheader("선적 정산")
     with st.expander("정산 프로세스 안내", expanded=False):
         st.markdown("""
 **Provisional 정산 (Provisional, M-1)**
@@ -3035,7 +3034,6 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
 # TAB 7 — 손익 분석
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_PNL:
-    st.subheader("손익 분석")
 
     # ③ EUR/USD 공백 경고: 출고·처리 이력 월 중 최신 등록 환율보다 이후 월 검출
     _eur_rates_sorted = sorted(cfg.get("eur_usd_rates", []), key=lambda x: x["month"])
@@ -3083,17 +3081,35 @@ if _page == PG_PNL:
     # ══════════════════════════════════════════════════════════════════════════
 if _page == PG_PNL and _sub == SUB_PNL_SUM:
     st.markdown("#### 관리회계 손익 요약")
-    if not _ph_all:
-        st.info("처리 이력(재고·임가공 > 임가공사·배치 > 세부 내역)을 입력하면 실적 기반 손익이 표시됩니다.")
+    # 기간: 전체 / 분기 / 기간 지정 — 배치를 HBL 선적월로 묶는다(홈 KPI와 같은 기준).
+    # 전체 기간만 HBL 미연결 배치까지 포함한다.
+    _pl_m_of   = lambda r: (_sm_pnl.get(r.get("shipment_id", ""), {}).get("loading_date") or "")[:7]
+    _pl_months = sorted({m for m in map(_pl_m_of, _ph_all) if m})
+    _pl_qs     = sorted({_qtr(m) for m in _pl_months}, reverse=True)
+    _pc1, _pc2, _pc3 = st.columns([1.3, 1, 1], vertical_alignment="bottom")
+    _pl_per = _pc1.selectbox("기간", ["전체 기간"] + _pl_qs + ["기간 지정"], key="pl_period",
+                             help="선적월 기준. 전체 기간에만 HBL 미연결 배치가 포함됩니다.")
+    _pl_in = None
+    if _pl_per == "기간 지정" and _pl_months:
+        _pl_from = _pc2.selectbox("시작월", _pl_months, index=0, key="pl_from")
+        _pl_to   = _pc3.selectbox("종료월", _pl_months, index=len(_pl_months) - 1, key="pl_to")
+        _pl_lo, _pl_hi = min(_pl_from, _pl_to), max(_pl_from, _pl_to)
+        _pl_in = lambda m: _pl_lo <= m <= _pl_hi
+    elif _pl_per in _pl_qs:
+        _pl_in = lambda m: _qtr(m) == _pl_per
+    _ph_pl = _ph_all if _pl_in is None else [r for r in _ph_all if _pl_m_of(r) and _pl_in(_pl_m_of(r))]
+    if not _ph_pl:
+        st.info("선택한 기간에 HBL과 연결된 배치가 없습니다." if _ph_all else
+                "처리 이력(재고·임가공 > 임가공사·배치 > 세부 내역)을 입력하면 실적 기반 손익이 표시됩니다.")
     else:
-        _tot_out  = sum(r.get("output_kg",0) or 0 for r in _ph_all)
-        _tot_inp  = sum(_ph_input_kg(r) for r in _ph_all)
+        _tot_out  = sum(r.get("output_kg",0) or 0 for r in _ph_pl)
+        _tot_inp  = sum(_ph_input_kg(r) for r in _ph_pl)
         # 전체 흐름 집계 (스크랩 매각수익 · BP 재매입원가 — 상계 전 총액)
-        _tot_sc_rev  = sum((r.get("scrap_sale_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 스크랩 매각수익
-        _tot_pf      = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_all)  # 임가공비
+        _tot_sc_rev  = sum((r.get("scrap_sale_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_pl)  # 스크랩 매각수익
+        _tot_pf      = sum((r.get("processing_fee_per_kg",0) or 0) * _ph_input_kg(r) for r in _ph_pl)  # 임가공비
         _tot_repr    = _tot_sc_rev + _tot_pf   # BP 재매입 원가 합계 (= 스크랩 + 임가공비)
-        _tot_eu      = sum(_ph_export_usd(r, cfg) for r in _ph_all)
-        _tot_bp      = sum(_rev_of(r, _rev_map) for r in _ph_all)
+        _tot_eu      = sum(_ph_export_usd(r, cfg) for r in _ph_pl)
+        _tot_bp      = sum(_rev_of(r, _rev_map) for r in _ph_pl)
         # 거래 마진 = BP매각 + 스크랩매각 - BP재매입 - 수출비  (스크랩 상계 → 임가공비+수출비만 남음)
         _tot_net  = _tot_bp + _tot_sc_rev - _tot_repr - _tot_eu
         _avg_mg   = _tot_net / _tot_bp * 100 if _tot_bp > 0 else 0
@@ -3104,18 +3120,20 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         # 원료비·보관비 (waterfall·단가 분해와 공용 — FIFO 기준)
         _default_rmc_s1 = float(st.session_state.get("pnl_rmc_default", 0.0))
         if _tot_out > 0:
-            _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
-            _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_all)
+            _raw_fifo_s1 = sum(_get_rmc_fifo(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_pl)
+            _raw_mavg_s1 = sum(_get_rmc_mavg(r, _default_rmc_s1)[0] * _ph_input_kg(r) for r in _ph_pl)
             _stor_s1     = sum(
                 _ph_storage_cost(r, cfg) if r.get("storage_days") else _auto_storage_for_batch(r)
-                for r in _ph_all
+                for r in _ph_pl
             )
         else:
             _raw_fifo_s1 = _raw_mavg_s1 = _stor_s1 = 0.0
         _tot_real_fifo = _tot_net - _raw_fifo_s1 - _stor_s1
 
         # 간접 판관비·기타 — 마스터·동기화 > INDEX·환율·판관비에 저장된 월별 값의 합계
-        _sga_s1, _other_s1 = _sga_totals(cfg)
+        _sga_rows = [r for r in cfg.get("sga_monthly", []) if _pl_in is None or _pl_in(r["month"])]
+        _sga_s1   = sum(float(r.get("sga") or 0) for r in _sga_rows)
+        _other_s1 = sum(float(r.get("other") or 0) for r in _sga_rows)
         _tot_gp_s1 = _tot_bp - _raw_fifo_s1 - _tot_pf                # 매출총이익
         _tot_op_s1 = _tot_real_fifo - _sga_s1 - _other_s1            # 영업이익(실질 손익)
         _op_pct_s1 = _tot_op_s1 / _tot_bp * 100 if _tot_bp > 0 else 0
@@ -3159,13 +3177,21 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                     connector=dict(line=dict(color="#484848", width=1, dash="dot")),
                     hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
                 ))
-                _fig_style(_wf, height=360, legend=False)
+                _fig_style(_wf, height=362, legend=False, top=24)   # ≈ the stepped P&L card beside it
+                _wf.update_layout(margin=dict(l=8, r=8, b=8))
                 st.plotly_chart(_wf, width="stretch")
             except ImportError:
                 pass
 
         with _plc, st.container(key="card_pl"):
-            st.markdown("**단계식 손익계산서**")
+            _rb_cnt = defaultdict(int)
+            for _rb in _rev_map.values():
+                _rb_cnt[_rb[1]] += 1
+            st.markdown("**단계식 손익계산서**" + ("" if _pl_in is None else f"  ·  {_pl_per if _pl_per != '기간 지정' else f'{_pl_lo} ~ {_pl_hi}'}"),
+                        help=("매출은 선적 확정액(확정 전이면 가정산 Invoice)에 기타 조정을 더해 배치 생산량 비율로 나눈 금액입니다 "
+                       f"(배치 기준: 확정 {_rb_cnt['확정']} · 가정산 {_rb_cnt['가정산']} · 단가 {_rb_cnt['단가']}). "
+                       "스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
+                       "원료 매입비는 FIFO 기준, 간접 판관비·기타는 마스터·동기화 > INDEX·환율·판관비의 월별 등록값 합계입니다."))
             # ── 단계식 손익계산서 (상계 기준) ─────────────────────────────────────
             def _pl_pct(v):
                 return f"{v/_tot_bp*100:+.1f}%" if _tot_bp > 0 else "—"
@@ -3183,10 +3209,6 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             _rb_cnt = defaultdict(int)
             for _rb in _rev_map.values():
                 _rb_cnt[_rb[1]] += 1
-            st.caption("매출은 선적 확정액(확정 전이면 가정산 Invoice)에 기타 조정을 더해 배치 생산량 비율로 나눈 금액입니다 "
-                       f"(배치 기준: 확정 {_rb_cnt['확정']} · 가정산 {_rb_cnt['가정산']} · 단가 {_rb_cnt['단가']}). "
-                       "스크랩 매각수익과 BP 재매입원가는 상계되어 임가공비(순)로만 반영됩니다. "
-                       "원료 매입비는 FIFO 기준, 간접 판관비·기타는 마스터·동기화 > INDEX·환율·판관비의 월별 등록값 합계입니다.")
 
         # ── 세금계산서 기준 총액 흐름 (상계 전 — 백데이터 검증용) ─────────────
         with st.expander("세금계산서 기준 총액 흐름 (스크랩 매각·BP 재매입 상계 전)", expanded=False):
@@ -3216,7 +3238,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             _stype_map = {s["id"]: s["name"] for s in cfg.get("scrap_types", [])}
             _ship_map2 = {s["id"]: s.get("hbl","—") for s in cfg.get("shipments", [])}
             _veri_rows = []
-            for _vr in _ph_all:
+            for _vr in _ph_pl:
                 _vi   = _ph_input_kg(_vr)
                 _vo   = _vr.get("output_kg", 0) or 0
                 _vfee = float(_vr.get("processing_fee_per_kg") or 0)
@@ -3346,7 +3368,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
 
         # ── 월별 손익 집계 (관리회계 기준 — 스크랩 매각·재매입 상계) ──────────
         _mon_agg2 = defaultdict(lambda: {"bp":0,"pf":0,"eu":0,"raw":0,"stor":0,"cnt":0,"out":0})
-        for _mr in _ph_all:
+        for _mr in _ph_pl:
             _msid  = _mr.get("shipment_id","")
             _ms    = _sm_pnl.get(_msid, {})
             _mld   = (_ms.get("loading_date") or "")[:7] or "미상"
@@ -4015,7 +4037,6 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
 # TAB 8 — 매입사 관리
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_MASTER and _sub == SUB_BUYER:
-    st.subheader("BP/BM 매입사 목록")
     # 한눈에 비교하는 요약 표 → 아래에서 한 곳을 골라 편집
     _ncol_b = st.column_config.NumberColumn
     st.dataframe(pd.DataFrame([{
@@ -4115,7 +4136,6 @@ if _page == PG_MASTER and _sub == SUB_BUYER:
 # TAB 9 — 임가공사 관리
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_STOCK and _sub == SUB_PROC:
-    st.subheader("임가공사 관리")
     scrap_list   = cfg.get("scrap_types", [])
     ph_list      = cfg.get("processing_history", [])
     proc_map_ph  = {p["id"]: p for p in cfg.get("processors", [])}
@@ -4603,7 +4623,6 @@ if _page == PG_STOCK and _sub == SUB_PROC:
 # TAB 10 — 스크랩 유형 관리  (지불율 없음)
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_MASTER and _sub == SUB_SCRAP:
-    st.subheader("스크랩 유형 마스터")
     st.caption("샘플 분석 결과 업데이트 시 함유량을 수정하세요.")
     for si,sc in enumerate(cfg.get("scrap_types",[])):
         with st.expander(f"{sc['name']}" + ("" if sc.get('active',True) else "  (비활성)"),expanded=True):
@@ -4670,7 +4689,6 @@ if _page == PG_MASTER and _sub == SUB_SCRAP:
 # TAB 10 — 입출고 기록  (입고 이력 + 임가공 출고 + 직접 판매)
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_STOCK and _sub == SUB_INOUT:
-    st.subheader("입출고 기록")
     st.caption("원료 입고 이력과 임가공/직접판매 출고 이력을 관리합니다. "
                "FIFO Lot 추적 및 자동 창고비 계산의 기준 데이터입니다.")
 
@@ -7229,7 +7247,6 @@ if _page == PG_HOME and _sub == SUB_DASH:
 # 홈 > 월 마감 — 매달 확인하는 항목을 한 화면에 (기준 데이터 · 선적·정산 · 입금 · 생산·재고 실사)
 # ══════════════════════════════════════════════════════════════════════════════
 if _page == PG_HOME and _sub == SUB_CLOSE:
-    st.subheader("월 마감")
     _mc_prev = (_today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
     _mc_opts = sorted({_mc_prev, _today().strftime("%Y-%m")}
                       | {(s.get("loading_date") or "")[:7] for s in cfg.get("shipments", []) if s.get("loading_date")}
@@ -7391,7 +7408,6 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
 # ══════════════════════════════════════════════════════════════════════════════
 
 if _page == PG_SHIP and _sub == SUB_CONTRACT:
-    st.markdown("### 계약 이행 현황")
 
     _ct_list    = cfg.setdefault("contracts", [])
     _ct_buyers  = {b["id"]: b for b in cfg.get("buyers", [])}
