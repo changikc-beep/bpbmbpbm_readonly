@@ -491,7 +491,8 @@ def _inv_moving_avg(cfg, scrap_id, as_of_date=None):
         return None, 0.0
 
     qty = float(op["quantity_kg"])
-    avg = float(op["unit_cost"])
+    avg = float(op.get("unit_cost") or 0)
+    _priced = qty if avg > 0 else 0.0       # 단가가 있는 수량만 평균에 가중
     cutoff = str(as_of_date)[:7] if as_of_date and str(as_of_date).strip() else None  # YYYY-MM 비교
 
     op_date = (op.get("date") or "")[:10]   # 기초재고 기준일 (YYYY-MM-DD)
@@ -512,8 +513,10 @@ def _inv_moving_avg(cfg, scrap_id, as_of_date=None):
         pq = float(p.get("quantity_kg") or 0)
         pc = float(p.get("unit_cost")   or 0)
         if pq > 0 and pc > 0:
-            avg = (qty * avg + pq * pc) / (qty + pq)
-            qty += pq
+            avg = (_priced * avg + pq * pc) / (_priced + pq)
+            _priced += pq
+        if pq > 0:
+            qty += pq     # 단가 없는 입고(셀·모듈)도 수량에는 포함
 
     return round(avg, 5), round(qty, 3)
 
@@ -1058,6 +1061,11 @@ def _hm_for(cfg, buyer, contract=None):
         return {h["month"]: h for h in alt}
     return {h["month"]: h for h in cfg.get("index_history", [])}
 
+
+def _has_final_assay(s):
+    """확정 분석값(매입사 Ni·Co 함유량)이 선적에 들어 있는지. 없으면 앱 재계산은 계약 기본 함유량으로만
+    계산되므로, 시트에 넣은 확정액(정산 엑셀 기준)과 비교하는 의미가 없다."""
+    return bool(s.get("buyer_ni_content") or s.get("buyer_co_content"))
 
 def _recompute_final_settlement(cfg, s, fallback_index=None):
     """저장된 선적건 데이터 기준으로 '지금 저장하면 나올' 최종정산액을 재계산.
@@ -1765,7 +1773,7 @@ def _todo_items(cfg):
     # 1) 확정 스냅샷이 최신 계산식과 어긋난 건
     _td_recalc = []
     for _ts in _td_ships:
-        if _ts.get("status") in ("final", "paid") and _ts.get("final_amount_usd"):
+        if _ts.get("status") in ("final", "paid") and _ts.get("final_amount_usd") and _has_final_assay(_ts):
             _tl = _recompute_final_settlement(cfg, _ts)
             if _tl is not None and abs(_tl - float(_ts["final_amount_usd"])) >= 0.01:
                 _td_recalc.append(_ts)
@@ -2285,7 +2293,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         # ── 확정 스냅샷 재계산 필요 목록 ──────────────────────────────────────
         _recalc_candidates = []
         for _rs in shipments:
-            if _rs.get("status") in ("final", "paid") and _rs.get("final_amount_usd"):
+            if _rs.get("status") in ("final", "paid") and _rs.get("final_amount_usd") and _has_final_assay(_rs):
                 _live = _recompute_final_settlement(cfg, _rs)
                 if _live is not None and abs(_live - float(_rs["final_amount_usd"])) >= 0.01:
                     _recalc_candidates.append((_rs, _live))
@@ -4160,7 +4168,9 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
     _of_pr_rev  = {v: k for k, v in _of_pr_opts.items()}
 
     # ── 스크랩 유형 탭 → 그 유형의 숫자 카드 → 구분 탭(입고 / 출고 / 직접 판매 / Lot) ──
-    _io_scraps = [s for s in cfg.get("scrap_types", []) if s.get("active", True)] or cfg.get("scrap_types", [])
+    # 비활성 유형(셀·모듈)도 기초재고가 있으면 재고 파악용으로 표시
+    _io_scraps = [s for s in cfg.get("scrap_types", []) if s.get("active", True)
+                  or (cfg.get("raw_material_inventory", {}).get(s["id"]) or {}).get("opening")] or cfg.get("scrap_types", [])
     _io_names  = [s["name"] for s in _io_scraps]
     _io_name   = st.segmented_control("스크랩 유형", _io_names, key="io_sc", default=_io_names[0] if _io_names else None,
                                       label_visibility="collapsed") or (_io_names[0] if _io_names else None)
@@ -4175,7 +4185,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
         _iok = st.columns(5)
         _iok[0].metric("창고 잔량 (추정)", f"{_io_bal/1000:,.1f} MT", border=True,
                        help="기초재고 + 입고 − 임가공 투입 − 직접 판매")
-        _iok[1].metric("이동평균 단가", f"${_io_avg:.4f}/kg" if _io_avg is not None else "—", border=True)
+        _iok[1].metric("이동평균 단가", f"${_io_avg:.4f}/kg" if _io_avg else "—", border=True)
         _iok[2].metric("누적 입고", f"{_io_in/1000:,.1f} MT", border=True)
         _iok[3].metric("임가공 출고 누적", f"{_io_disp/1000:,.1f} MT", border=True)
         _iok[4].metric("임가공사 보유 (출고−투입)", f"{(_io_disp - _io_used)/1000:,.1f} MT", border=True,
@@ -4560,6 +4570,49 @@ def _gsheet_connect():
     import gspread
     creds = _get_gcp_creds(_GSHEET_SCOPES)
     return gspread.Client(auth=creds)
+
+_FX_URL = "https://api.frankfurter.dev/v1/{d}?base={b}&symbols={q}"   # ECB 기준, API 키 불필요
+
+def _fx_autofill(cfg_ref, months_back=24, fetch=None):
+    """시트 환율 탭에 없는 월의 EUR/USD·USD/KRW를 Frankfurter(ECB)에서 월말(이번 달은 오늘) 기준으로 채운다.
+    시트 값은 덮어쓰지 않는다. 자동 값(src='auto')은 동기화 때마다 다시 조회해 이번 달 값을 갱신한다.
+    fetch(date_iso, base, symbol) -> rate: 테스트용 대체 함수."""
+    import calendar
+    if fetch is None:
+        import requests
+        def fetch(d, b, q):
+            r = requests.get(_FX_URL.format(d=d, b=b, q=q), timeout=8)
+            r.raise_for_status()
+            return float(r.json()["rates"][q])
+    td = _today()
+    def _months(first):                       # 각 환율의 첫 등록 월 이후만 채운다(과거 빈 달은 건드리지 않음)
+        out, y, m = [], td.year, td.month
+        for _ in range(months_back):
+            mo = f"{y}-{m:02d}"
+            if mo < first:
+                break
+            out.append((mo, min(date(y, m, calendar.monthrange(y, m)[1]), td)))
+            m -= 1
+            if m == 0:
+                y, m = y - 1, 12
+        return out
+    done, fail = [], []
+    for key, base, sym, nd in (("eur_usd_rates", "EUR", "USD", 4), ("usd_krw_rates", "USD", "KRW", 2)):
+        lst = cfg_ref.setdefault(key, [])
+        have = {r["month"]: r for r in lst}
+        first = min(have) if have else f"{td.year}-{td.month:02d}"
+        for mo, d in _months(first):
+            if mo in have and have[mo].get("src") != "auto":
+                continue                                  # 시트(또는 기존) 값 유지
+            try:
+                rate = round(float(fetch(d.isoformat(), base, sym)), nd)
+            except Exception:
+                fail.append(f"{base}/{sym} {mo}"); continue
+            lst[:] = sorted([x for x in lst if x["month"] != mo] + [{"month": mo, "rate": rate, "src": "auto"}],
+                            key=lambda x: x["month"])
+            done.append(f"{base}/{sym} {mo} {rate:,.{nd}f}")
+    msg = "환율 자동 조회(ECB): " + (", ".join(done) if done else "추가 없음")
+    return msg + (f" · 조회 실패: {', '.join(fail)}" if fail else "")
 
 def _match_buyer_id(cell_val, buyers):
     """'ECOPRO (BP)' 형식 문자열 → buyer_id. 대소문자 무관."""
@@ -4992,6 +5045,56 @@ def _sync_from_gsheets(cfg_ref):
     except Exception as e:
         log.append(f"출고 탭 오류: {e}")
 
+    # ── ③-1 셀·모듈 탭 (선택): 입출고 원장 사본 → 셀/모듈 창고 재고(재고 파악용) ─────────────
+    #   품목 / 일자 / 구분(기초·입고·출고·재고조정) / 내역 / 입고kg / 출고kg / 잔량 / 단가 / 금액 / 서류번호 / 비고
+    #   출고는 직접판매(판매처 = 내역의 대문자 거래처명)로, 재고조정은 stock_adjustments로 넣는다. 탭 전체로 교체.
+    try:
+        rows = sh.worksheet("셀·모듈").get_all_values()
+    except Exception:
+        rows = []
+    if len(rows) > 1:
+        try:
+            _cm_ids = {_nm: scrap_map[_nm] for _nm in ("셀", "모듈") if scrap_map.get(_nm)}
+            _cm_new = {sid: {"opening": None, "purchases": []} for sid in _cm_ids.values()}
+            _cm_ds, _cm_adj, _cm_n = [], [], 0
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 11
+                nm, dt, kind, desc, kin, kout, _bal, price, _amt, doc, _note = row[:11]
+                sid = _cm_ids.get(nm)
+                if not sid or not _valid_date_str(dt):
+                    continue
+                qi = _to_float(kin) if kin else 0.0
+                qo = _to_float(kout) if kout else 0.0
+                pr = _to_float(price) if price else None
+                txt = " · ".join(v for v in (desc, doc) if v)
+                if kind == "기초":
+                    _cm_new[sid]["opening"] = {"date": dt, "quantity_kg": qi, "unit_cost": 0.0, "ton_bags": 0}
+                elif kind == "재고조정":
+                    _cm_adj.append({"id": str(uuid.uuid4())[:8], "date": dt, "scrap_type_id": sid,
+                                    "quantity_kg": qo - qi, "notes": txt})
+                elif qi:
+                    _cm_new[sid]["purchases"].append({"date": dt, "quantity_kg": qi, "ton_bags": 0,
+                                                      "unit_cost": pr or 0.0, "notes": txt})
+                elif qo:
+                    _cust = next((p for p in desc.split(" · ") if p.isupper()), "") or "—"
+                    _cm_ds.append({"id": str(uuid.uuid4())[:8], "date": dt, "scrap_type_id": sid,
+                                   "quantity_kg": qo, "ton_bags": 0, "customer": _cust,
+                                   "sale_price_per_kg": pr, "notes": txt})
+                else:
+                    continue
+                _cm_n += 1
+            _sids = set(_cm_ids.values())
+            cfg_ref.setdefault("raw_material_inventory", {}).update(_cm_new)
+            cfg_ref["direct_sales"] = [r for r in cfg_ref.get("direct_sales", [])
+                                       if r.get("scrap_type_id") not in _sids] + _cm_ds
+            cfg_ref["stock_adjustments"] = sorted([a for a in cfg_ref.get("stock_adjustments", [])
+                                                   if a.get("scrap_type_id") not in _sids] + _cm_adj,
+                                                  key=lambda a: a["date"])
+            log.append(f"셀·모듈: {_cm_n}행 (" + ", ".join(
+                f"{n} 잔량 {_inv_balance(cfg_ref, i):,.0f}kg" for n, i in _cm_ids.items()) + ")")
+        except Exception as e:
+            log.append(f"셀·모듈 탭 오류: {e}")
+
     # ── ③-2 생산 탭 (선택): 월 / 임가공사 / 스크랩유형 / 입고 / 투입 / 생산 / 부산물 / 불량 / 비고 ──
     # 임가공사 월별 생산 보고의 월 합계. 탭 전체로 교체한다(월 중 갱신 시 같은 월 행 값을 고쳐 쓰면 됨).
     # 이 자료가 있는 임가공사·스크랩은 완제품 재고 = 누적 생산 − 선적 배치, 보유 원료 = 출고 − 실제 투입.
@@ -5241,6 +5344,7 @@ def _sync_from_gsheets(cfg_ref):
             log.append(f"환율: EUR/USD {_fx_e}건 / USD/KRW {_fx_k}건")
         except Exception as e:
             log.append(f"환율 탭 오류: {e}")
+    log.append(_fx_autofill(cfg_ref))
 
     # ── ⑦ 판관비 탭 (선택): 기준월 / 간접 판관비 / 기타 원가 ───────────────────
     try:

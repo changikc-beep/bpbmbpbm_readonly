@@ -64,7 +64,7 @@ def main():
         check(f"가정산 계산 {hbl} = {exp:,.2f}", got is not None and abs(got - exp) < 0.01, f"계산 {got}")
 
     # 2) 불변 조건
-    recalc = [s["hbl"] for s in cfg["shipments"] if s.get("final_amount_usd")
+    recalc = [s["hbl"] for s in cfg["shipments"] if s.get("final_amount_usd") and F["_has_final_assay"](s)
               and (lambda v: v is not None and abs(v - float(s["final_amount_usd"])) >= 0.01)(F["_recompute_final_settlement"](cfg, s))]
     check("확정액 재계산 필요 0건", not recalc, recalc)
     mism = [s["hbl"] for s in cfg["shipments"] if F["_inv_mismatch"](cfg, s)]

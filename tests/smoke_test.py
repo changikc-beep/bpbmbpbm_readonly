@@ -38,6 +38,8 @@ exec(compile("\n".join(LINES[h0:h1]), "helpers", "exec"), NS)
 exec(compile("\n".join(LINES[x0:x1]), "excel", "exec"), NS)
 s0 = _find("_GSHEET_NAME  ="); s1 = _find("def _run_sync_and_report(", s0)
 exec(compile("\n".join(LINES[s0:s1]), "sync", "exec"), NS)
+_FX_AUTOFILL = NS["_fx_autofill"]
+NS["_fx_autofill"] = lambda cfg_ref: "환율 자동 조회: 테스트에서 생략"   # no network in sync tests
 
 
 class _FakeSheet:
@@ -342,6 +344,29 @@ def main():
     check("sync: INDEX Co Low-only rows",
           _ih6["2026-08"]["co_index"] == 2.0 and _ih6["2026-08"]["co_low"] == 1.5
           and _ih6["2026-10"]["co_index"] == 4.0 and _ih6["2026-10"]["co_low"] == 4.0)
+
+    # FX autofill: fills months missing from the sheet, never overwrites sheet values, refreshes auto values
+    fx = {"eur_usd_rates": [{"month": "2026-09", "rate": 1.15}], "usd_krw_rates": [{"month": "2026-09", "rate": 1380.0}]}
+    _today_real = NS["_today"]; NS["_today"] = lambda: date(2026, 11, 6)
+    try:
+        _FX_AUTOFILL(fx, fetch=lambda d, b, q: 1.1 if q == "USD" else 1400.0)
+    finally:
+        NS["_today"] = _today_real
+    check("FX autofill: missing months only",
+          [(r["month"], r["rate"], r.get("src")) for r in fx["eur_usd_rates"]]
+          == [("2026-09", 1.15, None), ("2026-10", 1.1, "auto"), ("2026-11", 1.1, "auto")]
+          and len(fx["usd_krw_rates"]) == 3)
+
+    # 셀·모듈 tab: opening / in / out (direct sale) / adjustment → warehouse balance for 셀
+    sc7 = _sync_cfg(); sc7["scrap_types"].append({"id": "C", "name": "셀", "product": "BM"})
+    cm_tab = [["품목"], ["셀", "2026-01-14", "기초", "원장 기초", "1000", "", "", "", "", "", ""],
+              ["셀", "2026-02-01", "입고", "SKBM", "500", "", "", "", "", "SZ1", ""],
+              ["셀", "2026-03-01", "출고", "모니퍼 1항차 · MONIFER", "", "900", "", "1.5", "1350", "DOB-1", ""],
+              ["셀", "2026-03-31", "재고조정", "재고조정", "", "30", "", "", "", "", ""]]
+    run_sync(sc7, {"셀·모듈": cm_tab})
+    check("sync: 셀·모듈 tab",
+          f["_inv_balance"](sc7, "C") == 570.0
+          and sc7["direct_sales"][0]["customer"] == "MONIFER" and sc7["direct_sales"][0]["sale_price_per_kg"] == 1.5)
 
     ok = all(RESULTS)
     print(f"\n{'ALL PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
