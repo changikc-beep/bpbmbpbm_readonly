@@ -156,6 +156,14 @@ def main():
     check("_pnl_agg totals match", abs(sum(a["bp"] for a in agg.values()) - sum(r["bp"] for r in rows)) < 1e-6)
     check("이동평균 mode runs", len(f["_batch_pnl_rows"](cfg, ctx, "이동평균 우선")) == len(rows))
 
+    f_rows, f_ships = f["_filtered_pnl"](cfg, rows=rows)
+    q = f["_qtr"](f_ships[0]["loading_date"])
+    full, cut0 = f["_quarter_stats"](f_rows, f_ships, q), f["_quarter_stats"](f_rows, f_ships, q, days=0)
+    cut_all = f["_quarter_stats"](f_rows, f_ships, q, days=92)
+    check("_quarter_stats same-period cutoff",
+          cut0["cnt"] == 0 and cut0["rev"] == 0 and cut_all["cnt"] == full["cnt"]
+          and abs(cut_all["rev"] - full["rev"]) < 1e-6)
+
     cfg["processing_history"].append({"id": "u1", "shipment_id": "", "processor_id": cfg["processors"][0]["id"],
                                       "scrap_type_id": scraps[0]["id"], "output_kg": 5000.0, "input_kg": 6250.0,
                                       "conversion_rate_pct": 80.0, "bp_sale_per_kg": 14.0, "scrap_sale_per_kg": 5.5,

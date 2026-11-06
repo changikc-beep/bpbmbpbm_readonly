@@ -1858,10 +1858,21 @@ def _filtered_pnl(cfg, buyer_id=None, product=None, rows=None):
                if _valid_date_str(s.get("loading_date", "")) and _ok_b(s.get("buyer_id"))]
     return f_rows, f_ships
 
-def _quarter_stats(f_rows, f_ships, q):
-    """분기 q 요약 — 매출·손익은 HBL 연결 배치 기준(손익 탭과 동일), 건수는 선적 기준."""
-    _rs = [x for x in f_rows if _qtr(x["month"]) == q]
+def _q_start(q):
+    """'YYYY Q#' → 분기 첫날(date)."""
+    return date(int(q[:4]), (int(q[-1]) - 1) * 3 + 1, 1)
+
+def _quarter_stats(f_rows, f_ships, q, days=None):
+    """분기 q 요약 — 매출·손익은 HBL 연결 배치 기준(손익 탭과 동일), 건수는 선적 기준.
+    days 를 주면 분기 첫날부터 days 일째까지 선적된 건만 센다(진행 중 분기와 같은 기간 비교용)."""
     _ss = [s for s in f_ships if _qtr(s["loading_date"]) == q]
+    if days is not None:
+        _q0 = _q_start(q)
+        _ss = [s for s in _ss if (date.fromisoformat(s["loading_date"][:10]) - _q0).days < days]
+        _sids = {s["id"] for s in _ss}
+        _rs = [x for x in f_rows if _qtr(x["month"]) == q and x["sid"] in _sids]
+    else:
+        _rs = [x for x in f_rows if _qtr(x["month"]) == q]
     _rev = sum(x["bp"] for x in _rs)
     _out = sum(x["out"] for x in _rs)
     _real = sum(x["bp"] - x["raw"] - x["pf"] - x["eu"] - x["stor"] for x in _rs)
@@ -6960,8 +6971,14 @@ if _page == PG_HOME and _sub == SUB_DASH:
     _hp_rows    = _batch_pnl_rows(cfg, _pnl_context(cfg))
     _f_bid      = _f_buyers.get(_f_b)
     _f_rows, _f_ships = _filtered_pnl(cfg, _f_bid, None if _f_p == "전체" else _f_p, rows=_hp_rows)
-    _q_stats = lambda q: _quarter_stats(_f_rows, _f_ships, q)
-    _qs, _qp = _q_stats(_f_q), _q_stats(_qtr_prev(_f_q))
+    _q_stats = lambda q, days=None: _quarter_stats(_f_rows, _f_ships, q, days)
+    # 진행 중인 분기: 기본은 직전 분기의 같은 경과 일수와 비교, 토글을 끄면 증감을 숨긴다
+    _q_live  = _f_q == _q_now
+    _q_days  = (_today() - _q_start(_f_q)).days + 1 if _q_live else None
+    _cmp_same = (st.session_state.get("home_cmp_same", True) if _q_live else False)
+    _qs = _q_stats(_f_q)
+    _qp = _q_stats(_qtr_prev(_f_q), _q_days if _cmp_same else None)
+    _hide_delta = _q_live and not _cmp_same
     _q_hist  = [q for q in sorted({_qtr(x["month"]) for x in _f_rows} | {_f_q}) if q <= _f_q]
     _q_ser   = {q: _q_stats(q) for q in _q_hist}
 
@@ -6970,14 +6987,14 @@ if _page == PG_HOME and _sub == SUB_DASH:
     def _pct_d(key):
         """직전 분기 대비 증감률 문구 — 직전 분기 값이 없으면 None."""
         _a, _b = _qs[key], _qp[key]
-        if not _b or _a is None:
+        if _hide_delta or not _b or _a is None:
             return None
         _d = (_a - _b) / abs(_b) * 100
         return f"{_d:+.1f}%"
     def _spark_q(key, scale=1.0):
         _v = [(_q_ser[q][key] or 0) / scale for q in _q_hist]
         return [round(v, 2) for v in _v] if len(_v) >= 2 else None
-    _dd_q = f"vs {_qtr_prev(_f_q)}"
+    _dd_q = f"vs {_qtr_prev(_f_q)}" + (f" 1~{_q_days}일" if _cmp_same else "")
 
     # ── KPI 5개 (선택 분기, 직전 분기 대비) ──
     with _slot_kpi:
@@ -6993,16 +7010,30 @@ if _page == PG_HOME and _sub == SUB_DASH:
         _k[3].metric("판매 중량", f"{_qs['out']/1000:,.1f} MT", delta=_pct_d("out"), delta_description=_dd_q,
                      chart_data=_spark_q("out", 1000), chart_type="area", border=True, help="HBL에 연결된 배치 생산량 합계")
         _mg_d = (f"{_qs['margin'] - _qp['margin']:+.1f}%p"
-                 if _qs["margin"] is not None and _qp["margin"] is not None else None)
+                 if not _hide_delta and _qs["margin"] is not None and _qp["margin"] is not None else None)
         _k[4].metric("실질 마진율", f"{_qs['margin']:.1f}%" if _qs["margin"] is not None else "—",
                      delta=_mg_d, delta_description=_dd_q,
                      chart_data=_spark_q("margin"), chart_type="line", border=True,
                      help=f"실질 손익 {_usd_s(_qs['real'])} ÷ 매출 — 원료비(FIFO)·임가공비·수출비·보관비 차감, 판관비 제외")
-        _cap = f"{_f_q} 기준 · 직전 분기({_qtr_prev(_f_q)}) 대비. 카드 아래 막대·선은 분기별 추이입니다."
+        if _q_live:
+            _q0 = _q_start(_f_q)
+            _q_len = (date(_q0.year + (_q0.month == 10), 1 if _q0.month == 10 else _q0.month + 3, 1) - _q0).days
+            _cap = (f"{_f_q} 진행 중 ({_q_days}/{_q_len}일) · "
+                    + (f"직전 분기({_qtr_prev(_f_q)})의 같은 기간(1~{_q_days}일)과 비교" if _cmp_same
+                       else "분기가 끝나기 전이라 증감을 숨김"))
+        else:
+            _cap = f"{_f_q} 기준 · 직전 분기({_qtr_prev(_f_q)}) 전체와 비교"
+        _cap += ". 카드 아래 막대·선은 분기별 추이입니다."
         if _qs["nobatch"]:
             _cap += (f" 배치가 없는 선적 {len(_qs['nobatch'])}건"
                      f"({', '.join((s.get('hbl') or '—') for s in _qs['nobatch'][:4])})은 매출·중량에 빠져 있습니다.")
-        st.caption(_cap)
+        if _q_live:
+            _cc1, _cc2 = st.columns([5, 1.2], vertical_alignment="center")
+            _cc1.caption(_cap)
+            _cc2.toggle("같은 기간 비교", value=True, key="home_cmp_same",
+                        help="켜면 직전 분기의 같은 경과 일수와 비교합니다. 끄면 분기가 끝날 때까지 증감을 숨깁니다.")
+        else:
+            st.caption(_cap)
 
     # ── 차트 공통: 가로 막대 (값 라벨, 큰 값이 위) ──
     def _hbar(items, fmt, height=230):
