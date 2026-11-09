@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
-APP_BUILD = "2026-11-09 B"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
+APP_BUILD = "2026-11-09 B2"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -345,6 +345,33 @@ section[data-testid="stSidebar"] div[data-testid="stButton"]>button:hover{backgr
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) p{
     color:#FFFFFF !important;font-weight:650
 }
+
+/* KPI cards: labels and delta descriptions wrap instead of being cut with "…" */
+div[data-testid="stMetricLabel"] p, div[data-testid="stMetricLabel"] div{white-space:normal !important;overflow:visible !important;text-overflow:clip !important}
+div[data-testid="stMetricDelta"]{flex-wrap:wrap;row-gap:2px}
+div[data-testid="stMetricDelta"] > div{white-space:normal !important;overflow:visible !important;text-overflow:clip !important}
+/* 할 일: HBL chips + one "go" link per item */
+.td-item{margin:0 0 14px}
+.td-title{font-weight:600;color:#ECECEF;font-size:.95rem;margin-bottom:6px}
+.td-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 16px}
+a.hbl-chip{display:inline-block;padding:3px 10px;border-radius:999px;background:#26262C;border:1px solid #34343B;
+    color:#D6D6DC !important;text-decoration:none !important;font-size:.8rem;font-variant-numeric:tabular-nums}
+a.hbl-chip:hover{background:#2E2E35;border-color:#3B82F6}
+.td-note{color:#9A9AA6;font-size:.82rem;margin:0 0 4px 16px}
+a.td-go{margin-left:16px;font-size:.82rem;color:#60A5FA !important;text-decoration:none !important;font-weight:600}
+a.td-go:hover{text-decoration:underline !important}
+/* home filter bar stays visible while scrolling */
+.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:rgba(19,19,22,.92);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 10px;
+    border-bottom:1px solid #2A2A30;margin-bottom:6px}
+/* sidebar data status card */
+.sb-status{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:12px;
+    padding:10px 12px;margin-top:6px;font-size:.88rem;color:#B4B4C0;line-height:1.55}
+.sb-status .row{display:flex;justify-content:space-between;gap:8px}
+.sb-status .k{color:#8A8A95}
+.sb-status .v{color:#E4E4EA;font-variant-numeric:tabular-nums;text-align:right}
+.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#ECECEF;margin-bottom:4px}
+.sb-status .ft{color:#6E6E78;font-size:.76rem;margin-top:4px}
 
 @media (min-width:1500px){
     .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{font-size:1.55rem !important}
@@ -2136,6 +2163,28 @@ _sb_parts.append(f"USD/KRW {XR:,.0f}")
 _sb_parts.append(f"앱 버전 {APP_BUILD}")
 if st.session_state.get("last_sync_time"):
     _sb_parts.append(f"동기화 {st.session_state['last_sync_time'][5:16]}")
+def _sb_status_html():
+    """사이드바 '데이터 상태' 카드 — 저장 시각이 3일 넘으면 노란 점."""
+    _rows = []
+    _dot = "#4ade80"
+    if _sb_meta.get("saved_at"):
+        try:
+            _age = (_now().replace(tzinfo=None) - datetime.fromisoformat(_sb_meta["saved_at"][:19])).days
+        except Exception:
+            _age = 0
+        if _age >= 3:
+            _dot = "#F59E0B"
+        _rows.append(("저장", f"{_sb_meta['saved_at'][5:16].replace('T', ' ')} · rev {_sb_meta.get('rev', 0)}"))
+    if st.session_state.get("last_sync_time"):
+        _rows.append(("동기화", st.session_state["last_sync_time"][5:16]))
+    if _latest_idx:
+        _rows.append((f"INDEX {_latest_idx[0]['month'][2:]}", f"Ni &#36;{NI:,.0f}"))
+        _rows.append(("", f"Co &#36;{CO:,.0f}"))
+    _rows.append(("USD/KRW", f"{XR:,.0f}"))
+    _body = "".join(f'<div class="row"><span class="k">{k}</span><span class="v">{v}</span></div>' for k, v in _rows)
+    return (f'<div class="sb-status"><div class="hd"><span class="dot" style="background:{_dot};margin:0"></span>데이터 상태</div>'
+            f'{_body}<div class="ft">앱 버전 {APP_BUILD}</div></div>')
+
 with st.sidebar:
     st.markdown('<div class="sb-title">BP / BM<br><span>재고·손익 관리</span></div>'
                 + ('<div class="ro-pill">읽기 전용 · 저장·동기화 꺼짐</div>' if READ_ONLY else ""),
@@ -2153,7 +2202,7 @@ with _sb_foot:
         _load_cfg_drive.clear()
         _fifo_lot_trace.clear()
         st.rerun()
-    st.caption("  \n".join(_sb_parts))
+    st.markdown(_sb_status_html(), unsafe_allow_html=True)
 _sync_rep = st.session_state.get("_sync_report")
 if _sync_rep:
     with st.expander(f"동기화 결과 — {_sync_rep['time']}", expanded=True):
@@ -6158,7 +6207,8 @@ if _page == PG_HOME and _sub == SUB_DASH:
     _q_dflt  = max([q for q in _ship_qs if q <= _q_now], default=_q_now)   # 실적이 있는 최근 분기
     _f_buyers = {f"{b['name']} ({b.get('product', '?')})": b["id"] for b in cfg["buyers"]
                  if any(s.get("buyer_id") == b["id"] for s in cfg.get("shipments", []))}
-    _fc = st.columns([1, 1.4, 0.8, 1, 1], vertical_alignment="bottom")
+    with st.container(key="home_filters"):
+        _fc = st.columns([1, 1.4, 0.8, 1, 1], vertical_alignment="bottom")
     with _fc[0]:
         _f_q = st.selectbox("분기", _q_opts, index=_q_opts.index(_q_dflt), key="home_q",
                             help="요약 카드와 막대 차트의 기간입니다. 증감은 직전 분기와 비교합니다.")
@@ -6215,10 +6265,29 @@ if _page == PG_HOME and _sub == SUB_DASH:
     with _hr, st.container(border=True, key="card_todo"):
         st.markdown(f"#### 할 일  ·  {len(_todo)}개" if _todo else "#### 할 일")
         if _todo:
+            import html as _html
+            _items = []
             for _dot, _title, _detail, _tab in _todo:
                 _dcls = "dot-r" if _dot == "🔴" else "dot-y"
-                st.markdown(f'<span class="dot {_dcls}"></span>**{_title}** — {_td_linkify(_detail)}  ·  {_td_loc(_tab)}',
-                            unsafe_allow_html=True)
+                _hbls = [h for h in _td_all_hbl if re.search(rf"(?<![\w\-]){re.escape(h)}(?![\w\-])", _detail)]
+                _rest = _detail
+                for _h in _hbls:
+                    _rest = re.sub(rf"(?<![\w\-]){re.escape(_h)}(?![\w\-])", "", _rest)
+                _rest = re.sub(r"^[\s,·—-]*(외 \d+건)?[\s,·—-]*", "", _rest).strip(" ,·—-")
+                _more = re.search(r"외 (\d+)건", _detail)
+                _hbls_sorted = sorted(_hbls, key=lambda h: _detail.find(h))
+                _chips = "".join(f'<a class="hbl-chip" target="_self" href="?page=ship&sub={_urlq(SUB_SHIP)}&hbl={_urlq(h)}">{_html.escape(h)}</a>'
+                                 for h in _hbls_sorted)
+                if _more:
+                    _chips += f'<span class="hbl-chip" style="cursor:default">+{_more.group(1)}</span>'
+                _pg, _sb = _TD_LOC.get(_tab, (None, None))
+                _go = (f'<a class="td-go" target="_self" href="?page={_pg}&sub={_urlq(_sb)}">{_html.escape(_tab.split(" > ")[-1])} →</a>'
+                       if _pg else f'<span class="td-note">{_html.escape(_tab)}</span>')
+                _items.append(f'<div class="td-item"><div class="td-title"><span class="dot {_dcls}"></span>{_html.escape(_title)}</div>'
+                              + (f'<div class="td-chips">{_chips}</div>' if _chips else "")
+                              + (f'<div class="td-note">{_html.escape(_rest)}</div>' if _rest else "")
+                              + _go + '</div>')
+            st.markdown("".join(_items), unsafe_allow_html=True)
         else:
             st.caption("처리할 항목이 없습니다.")
 
@@ -6275,7 +6344,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
         if active_buyers:
             _xl_bytes = _excel_report_cached(cfg, NI, CO, XR, rpt_month, active_buyers[0]["id"],
                                              _todo, _cf_rows)
-            st.download_button("Excel 보고서 다운로드", width="stretch",
+            st.download_button("Excel 보고서", icon=":material/download:", width="stretch",
                                help="요약·할 일·현금 전망·손익·선적·완제품 재고 (기준월 기준)",
                                data=_xl_bytes, file_name=f"BP_BM_요약보고서_{rpt_month}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -6309,19 +6378,21 @@ if _page == PG_HOME and _sub == SUB_DASH:
     def _spark_q(key, scale=1.0):
         _v = [(_q_ser[q][key] or 0) / scale for q in _q_hist]
         return [round(v, 2) for v in _v] if len(_v) >= 2 else None
-    _dd_q = f"vs {_qtr_prev(_f_q)}" + (f" 1~{_q_days}일" if _cmp_same else "")
+    _dd_q = (f"{_qtr_prev(_f_q)[-2:]} 같은 기간 대비" if _cmp_same else f"{_qtr_prev(_f_q)[-2:]} 대비")
 
     # ── KPI 4개: 분기 실적 2개(선택 분기, 직전 분기 대비) + 현재 잔액 2개(미수금·완제품 재고, 필터 무관) ──
     with _slot_kpi:
         with st.container(key="kpi_row"):
             _k = st.columns(4)
-        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), delta_description=_dd_q,
+        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), delta_description=_dd_q if _pct_d("rev") else None,
                      chart_data=_spark_q("rev", 1000), chart_type="area", border=True,
                      help=(f"확정액(없으면 가정산 Invoice) + 기타 조정 — 손익 탭과 같은 기준. "
                            f"선적 {_qs['cnt']}건 · 판매 {_qs['out']/1000:,.1f} MT"
                            + (f" · 평균 \\${_qs['price']:.2f}/kg" if _qs["price"] else "")))
-        _k[1].metric("실질 손익" + (f" · 마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else ""),
-                     _usd_s(_qs["real"]), delta=_pct_d("real"), delta_description=_dd_q,
+        _k[1].metric("실질 손익", _usd_s(_qs["real"]), delta=_pct_d("real"),
+                     delta_description=(" · ".join(x for x in (
+                         f"마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else "",
+                         _dd_q if _pct_d("real") else "") if x) or None),
                      chart_data=_spark_q("real", 1000), chart_type="area", border=True,
                      help="매출 − 원료비(FIFO)·임가공비·수출비·보관비, 판관비 제외")
         _ar_sum = sum(r["확정산 잔액"] for r in _cf_rows)
@@ -6349,7 +6420,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
         if _q_live:
             _cc1, _cc2 = st.columns([5, 1.2], vertical_alignment="center")
             _cc1.caption(_cap)
-            _cc2.toggle("같은 기간 비교", value=True, key="home_cmp_same",
+            _cc2.toggle("같은 기간 비교", value=True, key="home_cmp_same", label_visibility="visible",
                         help="켜면 직전 분기의 같은 경과 일수와 비교합니다. 끄면 분기가 끝날 때까지 증감을 숨깁니다.")
         else:
             st.caption(_cap)
@@ -6405,7 +6476,9 @@ if _page == PG_HOME and _sub == SUB_DASH:
             fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(59,130,246,0.12)", line_width=0)
         fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
         _fig_style(fig, height=230, top=8)
-        fig.update_xaxes(type="category")
+        _tt = [(f"{int(m[5:7])}월<br>{m[:4]}" if (i == 0 or m[5:7] == "01") else f"{int(m[5:7])}월")
+               for i, m in enumerate(_ms)]
+        fig.update_xaxes(type="category", tickmode="array", tickvals=_ms, ticktext=_tt, tickangle=0)
         return fig
     def _b_scrap():
         _a = _pnl_agg(_qs["rows"], lambda x: x["sc_nm"])
