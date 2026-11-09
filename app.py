@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
-APP_BUILD = "2026-11-09 glass3"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
+APP_BUILD = "2026-11-09 B"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -300,85 +300,50 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .nav-crumb a{color:#9A9AA6 !important}
 
 /* ══════════════════════════════════════════════
-   Glass layer — soft colour glow behind translucent, blurred surfaces
-   glass:rgba(255,255,255,.045)  glass-2:.075  line:rgba(255,255,255,.09)
+   Frosted sidebar only — data surfaces stay solid for legibility.
+   Colour glow sits on the left edge (behind the sidebar) and fades out before the content.
    ══════════════════════════════════════════════ */
 .stApp{
     background:
-        radial-gradient(900px 620px at 4% -6%, rgba(59,130,246,.30), transparent 62%),
-        radial-gradient(800px 600px at 100% 4%, rgba(168,85,247,.22), transparent 62%),
-        radial-gradient(760px 560px at 72% 62%, rgba(236,72,153,.07), transparent 64%),
-        radial-gradient(1000px 720px at 30% 112%, rgba(20,184,166,.17), transparent 62%),
-        #0C0C12 !important;
+        radial-gradient(520px 460px at -4% 8%, rgba(59,130,246,.55), transparent 70%),
+        radial-gradient(480px 520px at 2% 96%, rgba(168,85,247,.45), transparent 70%),
+        radial-gradient(360px 360px at 14% 52%, rgba(20,184,166,.22), transparent 70%),
+        #131316 !important;
     background-attachment:fixed !important
 }
-div[class*="st-key-card_"], div[data-testid="stMetric"], div[data-testid="stForm"],
-div[class*="st-key-panel_"], .mbox, .kpi-tile,
-div[data-testid="stExpander"] details, div[data-testid="stMarkdown"] table{
-    background:linear-gradient(145deg, rgba(255,255,255,.085) 0%, rgba(255,255,255,.04) 55%, rgba(255,255,255,.03) 100%) !important;
-    border:1px solid rgba(255,255,255,.12) !important;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 10px 30px rgba(0,0,0,.30) !important;
-    backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%)
-}
-/* nested tiles inside a card: one step lighter, no second shadow */
-div[class*="st-key-card_"] :is(div[data-testid="stMetric"], .kpi-tile),
-div[class*="st-key-panel_"] :is(div[data-testid="stMetric"], .kpi-tile){
-    background:rgba(255,255,255,.08) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,.10) !important;
-    backdrop-filter:none;-webkit-backdrop-filter:none
-}
-div[data-testid="stMarkdown"] table thead tr th{background:rgba(255,255,255,.03) !important}
-div[data-testid="stExpander"] details summary:hover{background:rgba(255,255,255,.04) !important}
-div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid rgba(255,255,255,.08) !important}
-div[data-testid="stDataFrame"]{border:1px solid rgba(255,255,255,.14) !important;
-    box-shadow:0 8px 26px rgba(0,0,0,.30)}
-/* sidebar: frosted panel */
 section[data-testid="stSidebar"]{
-    background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)) !important;
-    border-right:1px solid rgba(255,255,255,.10) !important;
-    box-shadow:inset -1px 0 0 rgba(255,255,255,.04), 8px 0 32px rgba(0,0,0,.30);
-    backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%)
+    background:linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.03)) !important;
+    border-right:1px solid rgba(255,255,255,.12) !important;
+    box-shadow:inset -1px 0 0 rgba(255,255,255,.05), 10px 0 34px rgba(0,0,0,.35);
+    backdrop-filter:blur(28px) saturate(170%);-webkit-backdrop-filter:blur(28px) saturate(170%)
 }
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:rgba(255,255,255,.06) !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"]>button{
+    background:rgba(255,255,255,.07) !important;border:1px solid rgba(255,255,255,.14) !important
+}
+section[data-testid="stSidebar"] div[data-testid="stButton"]>button:hover{background:rgba(255,255,255,.12) !important}
+/* sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) */
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]){
     width:100%;margin:0 !important;padding:13px 16px !important;border-radius:12px;cursor:pointer;
     position:relative;border:1px solid transparent;transition:background .15s,border-color .15s
 }
 .st-key-nav_top label[data-testid="stRadioOption"] div:has(> div[data-testid="stMarkdownContainer"]) > div:not([data-testid]){display:none !important}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{
-    font-size:1.4rem !important;font-weight:500;color:#A8A8B4;letter-spacing:-.01em
+    font-size:1.4rem !important;font-weight:500;color:#B4B4C0;letter-spacing:-.01em
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){
     font-size:1.6rem !important;margin-right:8px;opacity:.85
 }
-.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:rgba(255,255,255,.06)}
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:rgba(255,255,255,.07)}
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]){
-    background:linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.05));
-    border-color:rgba(255,255,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 6px 18px rgba(0,0,0,.28)
+    background:linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+    border-color:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 18px rgba(0,0,0,.28)
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"])::before{
     content:"";position:absolute;left:-1px;top:22%;bottom:22%;width:3px;border-radius:3px;background:#3B82F6
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) p{
     color:#FFFFFF !important;font-weight:650
-}
-section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:rgba(255,255,255,.05) !important}
-/* inputs, secondary buttons and tab strips: translucent */
-div[data-testid="stTabs"] div[data-baseweb="tab-list"]{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12)}
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{background:rgba(255,255,255,.10) !important}
-div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
-div[data-testid="stMultiSelect"] [data-baseweb="select"]>div,
-div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stDateInput"] input{
-    background:rgba(255,255,255,.08) !important
-}
-div[data-testid="stPopover"]>button, div[data-testid="stButton"]>button[kind="secondary"],
-div[data-testid="stDownloadButton"]>button{
-    background:rgba(255,255,255,.08) !important;border:1px solid rgba(255,255,255,.16) !important;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.12) !important
-}
-div[data-testid="stPopover"]>button:hover, div[data-testid="stButton"]>button[kind="secondary"]:hover,
-div[data-testid="stDownloadButton"]>button:hover{background:rgba(255,255,255,.10) !important}
-/* sub-tab underline uses the glass line colour */
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"]{
-    border-bottom:1px solid rgba(255,255,255,.09)
 }
 
 @media (min-width:1500px){
@@ -1361,7 +1326,7 @@ def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None
         # empty text, not None: plotly.js draws the literal "undefined" for a None title
         title=dict(text=title or "", font=dict(size=13, color="#ECECEF"), x=0, xanchor="left"),
         margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",   # glass cards show through
+        plot_bgcolor="#1C1C20", paper_bgcolor="#1C1C20",
         font=dict(color="#C4C4CC", size=11),
         showlegend=legend,
         legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
