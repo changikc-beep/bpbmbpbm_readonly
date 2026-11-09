@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
+APP_BUILD = "2026-11-09 glass2"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -20,7 +21,7 @@ st.markdown("""
 /* the fixed top header would otherwise sit over the first row (sub tabs) */
 header[data-testid="stHeader"]{background:transparent !important}
 section[data-testid="stSidebar"]{
-    min-width:252px;max-width:280px;
+    min-width:268px;max-width:300px;
     border-right:1px solid #2A2A30 !important
 }
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
@@ -230,8 +231,8 @@ section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
     cursor:pointer;transition:background .15s
 }
 .st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
-.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.28rem !important;font-weight:500;color:#9A9AA6}
-.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.5rem !important}
+.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.4rem !important;font-weight:500;color:#A8A8B4}
+.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.65rem !important}
 .st-key-nav_top label[data-baseweb="radio"]:hover{background:#1F1F24}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#26262C}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#FFFFFF;font-weight:600}
@@ -304,58 +305,71 @@ div[data-testid="stNumberInput"] button{display:none !important}
    ══════════════════════════════════════════════ */
 .stApp{
     background:
-        radial-gradient(1100px 700px at 6% -12%, rgba(59,130,246,.20), transparent 60%),
-        radial-gradient(900px 650px at 102% 8%, rgba(139,92,246,.14), transparent 62%),
-        radial-gradient(1000px 750px at 55% 112%, rgba(20,184,166,.10), transparent 60%),
-        #0E0E13 !important;
+        radial-gradient(900px 620px at 4% -6%, rgba(59,130,246,.42), transparent 62%),
+        radial-gradient(800px 600px at 100% 4%, rgba(168,85,247,.34), transparent 62%),
+        radial-gradient(760px 560px at 72% 62%, rgba(236,72,153,.14), transparent 64%),
+        radial-gradient(1000px 720px at 30% 112%, rgba(20,184,166,.28), transparent 62%),
+        #0B0B12 !important;
     background-attachment:fixed !important
 }
 div[class*="st-key-card_"], div[data-testid="stMetric"], div[data-testid="stForm"],
 div[class*="st-key-panel_"], .mbox, .kpi-tile,
 div[data-testid="stExpander"] details, div[data-testid="stMarkdown"] table{
-    background:rgba(255,255,255,.045) !important;
-    border:1px solid rgba(255,255,255,.09) !important;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.25) !important;
-    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%)
+    background:linear-gradient(145deg, rgba(255,255,255,.13) 0%, rgba(255,255,255,.05) 55%, rgba(255,255,255,.035) 100%) !important;
+    border:1px solid rgba(255,255,255,.17) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(255,255,255,.03),
+               0 12px 36px rgba(0,0,0,.38) !important;
+    backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%)
 }
 /* nested tiles inside a card: one step lighter, no second shadow */
 div[class*="st-key-card_"] :is(div[data-testid="stMetric"], .kpi-tile),
 div[class*="st-key-panel_"] :is(div[data-testid="stMetric"], .kpi-tile){
-    background:rgba(255,255,255,.06) !important;box-shadow:none !important;
+    background:rgba(255,255,255,.08) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,.10) !important;
     backdrop-filter:none;-webkit-backdrop-filter:none
 }
 div[data-testid="stMarkdown"] table thead tr th{background:rgba(255,255,255,.03) !important}
 div[data-testid="stExpander"] details summary:hover{background:rgba(255,255,255,.04) !important}
 div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid rgba(255,255,255,.08) !important}
-div[data-testid="stDataFrame"]{border:1px solid rgba(255,255,255,.08) !important}
+div[data-testid="stDataFrame"]{border:1px solid rgba(255,255,255,.14) !important;
+    box-shadow:0 8px 26px rgba(0,0,0,.30)}
 /* sidebar: frosted panel */
 section[data-testid="stSidebar"]{
-    background:rgba(16,16,22,.55) !important;
-    border-right:1px solid rgba(255,255,255,.07) !important;
-    backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%)
+    background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.025)) !important;
+    border-right:1px solid rgba(255,255,255,.14) !important;
+    box-shadow:inset -1px 0 0 rgba(255,255,255,.04), 8px 0 32px rgba(0,0,0,.30);
+    backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%)
 }
-.st-key-nav_top label[data-baseweb="radio"]:hover{background:rgba(255,255,255,.05)}
+.st-key-nav_top label[data-baseweb="radio"]:hover{background:rgba(255,255,255,.07)}
 .st-key-nav_top label[data-baseweb="radio"]:has(input:checked){
-    background:rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)
+    background:linear-gradient(145deg, rgba(255,255,255,.18), rgba(255,255,255,.07));
+    border:1px solid rgba(255,255,255,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 6px 18px rgba(0,0,0,.30)
 }
 section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:rgba(255,255,255,.05) !important}
 /* inputs, secondary buttons and tab strips: translucent */
-div[data-testid="stTabs"] div[data-baseweb="tab-list"]{background:rgba(255,255,255,.045)}
+div[data-testid="stTabs"] div[data-baseweb="tab-list"]{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12)}
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{background:rgba(255,255,255,.10) !important}
 div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
 div[data-testid="stMultiSelect"] [data-baseweb="select"]>div,
 div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stDateInput"] input{
-    background:rgba(255,255,255,.06) !important
+    background:rgba(255,255,255,.08) !important
 }
 div[data-testid="stPopover"]>button, div[data-testid="stButton"]>button[kind="secondary"],
 div[data-testid="stDownloadButton"]>button{
-    background:rgba(255,255,255,.06) !important;border:1px solid rgba(255,255,255,.10) !important
+    background:rgba(255,255,255,.08) !important;border:1px solid rgba(255,255,255,.16) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12) !important
 }
 div[data-testid="stPopover"]>button:hover, div[data-testid="stButton"]>button[kind="secondary"]:hover,
 div[data-testid="stDownloadButton"]>button:hover{background:rgba(255,255,255,.10) !important}
 /* sub-tab underline uses the glass line colour */
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"]{
     border-bottom:1px solid rgba(255,255,255,.09)
+}
+
+@media (min-width:1500px){
+    .st-key-nav_top label[data-baseweb="radio"] p{font-size:1.55rem !important}
+    .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.8rem !important}
+    .sb-title{font-size:1.95rem}
+    section[data-testid="stSidebar"]{min-width:290px;max-width:320px}
 }
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
@@ -2138,6 +2152,7 @@ if _sb_meta.get("saved_at"):
 if _latest_idx:
     _sb_parts.append(f"INDEX {_latest_idx[0]['month']} · Ni \\${NI:,.0f} · Co \\${CO:,.0f}")
 _sb_parts.append(f"USD/KRW {XR:,.0f}")
+_sb_parts.append(f"앱 버전 {APP_BUILD}")
 if st.session_state.get("last_sync_time"):
     _sb_parts.append(f"동기화 {st.session_state['last_sync_time'][5:16]}")
 with st.sidebar:
