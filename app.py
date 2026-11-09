@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
-APP_BUILD = "2026-11-09 B2"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
+APP_BUILD = "2026-11-09 C"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -299,51 +299,31 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
 .nav-crumb a{color:#9A9AA6 !important}
 
-/* ══════════════════════════════════════════════
-   Frosted sidebar only — data surfaces stay solid for legibility.
-   Colour glow sits on the left edge (behind the sidebar) and fades out before the content.
-   ══════════════════════════════════════════════ */
-.stApp{
-    background:
-        radial-gradient(520px 460px at -4% 8%, rgba(59,130,246,.55), transparent 70%),
-        radial-gradient(480px 520px at 2% 96%, rgba(168,85,247,.45), transparent 70%),
-        radial-gradient(360px 360px at 14% 52%, rgba(20,184,166,.22), transparent 70%),
-        #131316 !important;
-    background-attachment:fixed !important
-}
-section[data-testid="stSidebar"]{
-    background:linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.03)) !important;
-    border-right:1px solid rgba(255,255,255,.12) !important;
-    box-shadow:inset -1px 0 0 rgba(255,255,255,.05), 10px 0 34px rgba(0,0,0,.35);
-    backdrop-filter:blur(28px) saturate(170%);-webkit-backdrop-filter:blur(28px) saturate(170%)
-}
-section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:rgba(255,255,255,.06) !important}
-section[data-testid="stSidebar"] div[data-testid="stButton"]>button{
-    background:rgba(255,255,255,.07) !important;border:1px solid rgba(255,255,255,.14) !important
-}
-section[data-testid="stSidebar"] div[data-testid="stButton"]>button:hover{background:rgba(255,255,255,.12) !important}
-/* sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) */
+/* ── Sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) ──
+   solid surfaces, selected item = lighter chip with a blue accent bar; text vertically centred */
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]){
-    width:100%;margin:0 !important;padding:13px 16px !important;border-radius:12px;cursor:pointer;
-    position:relative;border:1px solid transparent;transition:background .15s,border-color .15s
+    width:100%;margin:0 !important;padding:11px 14px !important;border-radius:10px;cursor:pointer;
+    position:relative;border:1px solid transparent;display:flex !important;align-items:center;
+    transition:background .15s
 }
 .st-key-nav_top label[data-testid="stRadioOption"] div:has(> div[data-testid="stMarkdownContainer"]) > div:not([data-testid]){display:none !important}
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) div[data-testid="stMarkdownContainer"]{display:flex;align-items:center}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{
-    font-size:1.4rem !important;font-weight:500;color:#B4B4C0;letter-spacing:-.01em
+    font-size:1.2rem !important;font-weight:500;color:#9A9AA6;letter-spacing:-.01em;
+    margin:0 !important;padding:0 !important;line-height:1.3 !important;display:flex;align-items:center
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){
-    font-size:1.6rem !important;margin-right:8px;opacity:.85
+    font-size:1.35rem !important;margin-right:8px;line-height:1 !important;vertical-align:middle
 }
-.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:rgba(255,255,255,.07)}
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#1F1F24}
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]){
-    background:linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
-    border-color:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 18px rgba(0,0,0,.28)
+    background:#26262C;border-color:#2E2E35
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"])::before{
-    content:"";position:absolute;left:-1px;top:22%;bottom:22%;width:3px;border-radius:3px;background:#3B82F6
+    content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#3B82F6
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) p{
-    color:#FFFFFF !important;font-weight:650
+    color:#FFFFFF !important;font-weight:600
 }
 
 /* KPI cards: labels and delta descriptions wrap instead of being cut with "…" */
@@ -365,7 +345,7 @@ a.td-go:hover{text-decoration:underline !important}
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 10px;
     border-bottom:1px solid #2A2A30;margin-bottom:6px}
 /* sidebar data status card */
-.sb-status{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:12px;
+.sb-status{background:#1C1C20;border:1px solid #2A2A30;border-radius:12px;
     padding:10px 12px;margin-top:6px;font-size:.88rem;color:#B4B4C0;line-height:1.55}
 .sb-status .row{display:flex;justify-content:space-between;gap:8px}
 .sb-status .k{color:#8A8A95}
@@ -374,10 +354,10 @@ a.td-go:hover{text-decoration:underline !important}
 .sb-status .ft{color:#6E6E78;font-size:.76rem;margin-top:4px}
 
 @media (min-width:1500px){
-    .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{font-size:1.55rem !important}
-    .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){font-size:1.75rem !important}
-    .sb-title{font-size:1.95rem}
-    section[data-testid="stSidebar"]{min-width:290px;max-width:320px}
+    .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{font-size:1.3rem !important}
+    .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){font-size:1.45rem !important}
+    .sb-title{font-size:1.85rem}
+    section[data-testid="stSidebar"]{min-width:280px;max-width:310px}
 }
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
