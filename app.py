@@ -298,6 +298,66 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
 .nav-crumb a{color:#9A9AA6 !important}
 
+/* ══════════════════════════════════════════════
+   Glass layer — soft colour glow behind translucent, blurred surfaces
+   glass:rgba(255,255,255,.045)  glass-2:.075  line:rgba(255,255,255,.09)
+   ══════════════════════════════════════════════ */
+.stApp{
+    background:
+        radial-gradient(1100px 700px at 6% -12%, rgba(59,130,246,.20), transparent 60%),
+        radial-gradient(900px 650px at 102% 8%, rgba(139,92,246,.14), transparent 62%),
+        radial-gradient(1000px 750px at 55% 112%, rgba(20,184,166,.10), transparent 60%),
+        #0E0E13 !important;
+    background-attachment:fixed !important
+}
+div[class*="st-key-card_"], div[data-testid="stMetric"], div[data-testid="stForm"],
+div[class*="st-key-panel_"], .mbox, .kpi-tile,
+div[data-testid="stExpander"] details, div[data-testid="stMarkdown"] table{
+    background:rgba(255,255,255,.045) !important;
+    border:1px solid rgba(255,255,255,.09) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.25) !important;
+    backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%)
+}
+/* nested tiles inside a card: one step lighter, no second shadow */
+div[class*="st-key-card_"] :is(div[data-testid="stMetric"], .kpi-tile),
+div[class*="st-key-panel_"] :is(div[data-testid="stMetric"], .kpi-tile){
+    background:rgba(255,255,255,.06) !important;box-shadow:none !important;
+    backdrop-filter:none;-webkit-backdrop-filter:none
+}
+div[data-testid="stMarkdown"] table thead tr th{background:rgba(255,255,255,.03) !important}
+div[data-testid="stExpander"] details summary:hover{background:rgba(255,255,255,.04) !important}
+div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid rgba(255,255,255,.08) !important}
+div[data-testid="stDataFrame"]{border:1px solid rgba(255,255,255,.08) !important}
+/* sidebar: frosted panel */
+section[data-testid="stSidebar"]{
+    background:rgba(16,16,22,.55) !important;
+    border-right:1px solid rgba(255,255,255,.07) !important;
+    backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%)
+}
+.st-key-nav_top label[data-baseweb="radio"]:hover{background:rgba(255,255,255,.05)}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){
+    background:rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)
+}
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:rgba(255,255,255,.05) !important}
+/* inputs, secondary buttons and tab strips: translucent */
+div[data-testid="stTabs"] div[data-baseweb="tab-list"]{background:rgba(255,255,255,.045)}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{background:rgba(255,255,255,.10) !important}
+div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
+div[data-testid="stMultiSelect"] [data-baseweb="select"]>div,
+div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stDateInput"] input{
+    background:rgba(255,255,255,.06) !important
+}
+div[data-testid="stPopover"]>button, div[data-testid="stButton"]>button[kind="secondary"],
+div[data-testid="stDownloadButton"]>button{
+    background:rgba(255,255,255,.06) !important;border:1px solid rgba(255,255,255,.10) !important
+}
+div[data-testid="stPopover"]>button:hover, div[data-testid="stButton"]>button[kind="secondary"]:hover,
+div[data-testid="stDownloadButton"]>button:hover{background:rgba(255,255,255,.10) !important}
+/* sub-tab underline uses the glass line colour */
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"]{
+    border-bottom:1px solid rgba(255,255,255,.09)
+}
+
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 </style>""", unsafe_allow_html=True)
 
@@ -1271,13 +1331,13 @@ def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None
         # empty text, not None: plotly.js draws the literal "undefined" for a None title
         title=dict(text=title or "", font=dict(size=13, color="#ECECEF"), x=0, xanchor="left"),
         margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
-        plot_bgcolor="#1C1C20", paper_bgcolor="#1C1C20",
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",   # glass cards show through
         font=dict(color="#C4C4CC", size=11),
         showlegend=legend,
         legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
         xaxis_title="", yaxis_title="",
-        hoverlabel=dict(bgcolor="#1C1C20", bordercolor="#34343B", font=dict(color="#ECECEF", size=11)),
+        hoverlabel=dict(bgcolor="rgba(28,28,34,.92)", bordercolor="rgba(255,255,255,.14)", font=dict(color="#ECECEF", size=11)),
     )
     fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#C4C4CC"), zeroline=False)
     fig.update_yaxes(showgrid=True, gridcolor=_GRID, tickformat=y_fmt, automargin=True,
