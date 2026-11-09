@@ -5,13 +5,13 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
-APP_BUILD = "2026-11-09 C"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
+APP_BUILD = "2026-11-09 D"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
    Refined dark — borderless surfaces, one accent
-   bg:#131316  surface:#1C1C20  surface-2:#26262C  line:#2A2A30
-   text:#ECECEF  text-2:#9A9AA6  accent:#3B82F6
+   bg:#1C1C1B  surface:#2B2A28  surface-2:#363533  line:#3D3C39
+   text:#F4F0E8  text-2:#ADA699  accent:#2F6BFF
    ══════════════════════════════════════════════ */
 
 /* ── Layout ── */
@@ -22,7 +22,7 @@ st.markdown("""
 header[data-testid="stHeader"]{background:transparent !important}
 section[data-testid="stSidebar"]{
     min-width:268px;max-width:300px;
-    border-right:1px solid #2A2A30 !important
+    border-right:1px solid #3D3C39 !important
 }
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
 h4{font-size:1.15rem !important}
@@ -35,17 +35,17 @@ h2,h3,h4{font-weight:650 !important;letter-spacing:-.02em}
 
 /* ── Tab bar — quiet segmented strip ── */
 div[data-testid="stTabs"] div[data-baseweb="tab-list"]{
-    background:#1C1C20;border-radius:12px;padding:4px;border:none;gap:2px
+    background:#2B2A28;border-radius:12px;padding:4px;border:none;gap:2px
 }
 div[data-testid="stTabs"] button[role="tab"]{
     border-radius:9px !important;font-size:.85rem;font-weight:500;
-    padding:6px 14px !important;color:#9A9AA6;
+    padding:6px 14px !important;color:#ADA699;
     transition:background .15s,color .15s;border:none !important;
     white-space:nowrap
 }
-div[data-testid="stTabs"] button[role="tab"]:hover{color:#ECECEF}
+div[data-testid="stTabs"] button[role="tab"]:hover{color:#F4F0E8}
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
-    background:#2E2E35 !important;color:#ECECEF !important;font-weight:600
+    background:#42413E !important;color:#F4F0E8 !important;font-weight:600
 }
 div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
 div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
@@ -53,43 +53,43 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
 /* ── Cards: bordered containers (key="card_*"), metrics, expanders, forms ── */
 div[class*="st-key-card_"]{
-    background:#1C1C20 !important;border:none !important;
+    background:#2B2A28 !important;border:none !important;
     border-radius:16px !important;padding:20px 22px !important
 }
 div[data-testid="stMetric"]{
-    background:#1C1C20 !important;border:none !important;
+    background:#2B2A28 !important;border:none !important;
     border-radius:16px !important;padding:16px 18px !important
 }
 div[data-testid="stMetricValue"]{
-    font-size:1.6rem !important;font-weight:700;letter-spacing:-.03em;
+    color:#F4F0E8 !important;font-size:1.6rem !important;font-weight:700;letter-spacing:-.03em;
     font-variant-numeric:tabular-nums
 }
-div[data-testid="stMetricLabel"] p{font-size:.8rem !important;color:#9A9AA6 !important;font-weight:500}
+div[data-testid="stMetricLabel"] p{font-size:.8rem !important;color:#ADA699 !important;font-weight:500}
 div[data-testid="stMetricDelta"]{font-size:.78rem !important}
 div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
 div[data-testid="stMetric"] svg{background:transparent !important}
 /* nested stat tiles inside a card sit one step lighter */
-div[class*="st-key-card_"] .kpi-tile{background:#26262C !important}
+div[class*="st-key-card_"] .kpi-tile{background:#363533 !important}
 
 div[data-testid="stExpander"] details{
     border-radius:14px !important;border:none !important;
-    background:#1C1C20 !important;overflow:hidden
+    background:#2B2A28 !important;overflow:hidden
 }
 div[data-testid="stExpander"] details summary{
     padding:14px 18px !important;font-weight:600;background:transparent !important
 }
-div[data-testid="stExpander"] details summary:hover{background:#222227 !important}
-div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid #2A2A30 !important}
+div[data-testid="stExpander"] details summary:hover{background:#383735 !important}
+div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid #3D3C39 !important}
 div[data-testid="stExpander"] details>div,
 div[data-testid="stExpander"] details>div>div{padding:16px 20px !important}
 
 div[data-testid="stForm"]{
     border-radius:16px !important;border:none !important;
-    background:#1C1C20 !important;padding:20px !important
+    background:#2B2A28 !important;padding:20px !important
 }
 
 /* ── Sidebar metric cards ── */
-section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:#1C1C20 !important}
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:#2B2A28 !important}
 
 /* ── Buttons ── */
 div[data-testid="stButton"]>button,
@@ -98,23 +98,23 @@ div[data-testid="stDownloadButton"]>button,
 div[data-testid="stFormSubmitButton"]>button{
     border-radius:10px !important;font-weight:600;
     transition:background .15s,border-color .15s;
-    border:1px solid #2A2A30 !important;background:#26262C !important
+    border:1px solid #3D3C39 !important;background:#363533 !important
 }
 div[data-testid="stButton"]>button:hover,
 div[data-testid="stPopover"]>button:hover,
 div[data-testid="stDownloadButton"]>button:hover,
 div[data-testid="stFormSubmitButton"]>button:hover{
-    background:#2E2E35 !important;border-color:#3A3A42 !important
+    background:#42413E !important;border-color:#4E4D49 !important
 }
 div[data-testid="stButton"]>button[kind="primary"],
 div[data-testid="stFormSubmitButton"]>button[kind="primaryFormSubmit"]{
-    background:#3B82F6 !important;border-color:#3B82F6 !important;color:#fff !important
+    background:#2F6BFF !important;border-color:#2F6BFF !important;color:#fff !important
 }
 div[data-testid="stButton"]>button[kind="primary"]:hover,
 div[data-testid="stFormSubmitButton"]>button[kind="primaryFormSubmit"]:hover{
-    background:#2F74E8 !important
+    background:#2559D9 !important
 }
-button:focus-visible{outline:2px solid #3B82F6 !important;outline-offset:2px}
+button:focus-visible{outline:2px solid #2F6BFF !important;outline-offset:2px}
 
 /* ── Inputs ── */
 div[data-testid="stTextInput"] input,
@@ -122,14 +122,14 @@ div[data-testid="stNumberInput"] input,
 div[data-testid="stTextAreaInput"] textarea,
 div[data-testid="stDateInput"] input{
     border-radius:10px !important;
-    background:#26262C !important;
+    background:#363533 !important;
     border:1px solid transparent !important;
-    color:#ECECEF !important
+    color:#F4F0E8 !important
 }
 div[data-testid="stTextInput"] input:focus,
 div[data-testid="stNumberInput"] input:focus,
 div[data-testid="stTextAreaInput"] textarea:focus{
-    border-color:#3B82F6 !important;
+    border-color:#2F6BFF !important;
     box-shadow:0 0 0 3px rgba(59,130,246,.22) !important;
     outline:none !important
 }
@@ -140,24 +140,24 @@ div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
 div[data-testid="stMultiSelect"] [data-baseweb="select"],
 div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
     border-radius:10px !important;
-    background:#26262C !important;
+    background:#363533 !important;
     border:1px solid transparent !important
 }
 div[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
 div[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within{
-    border-color:#3B82F6 !important;
+    border-color:#2F6BFF !important;
     box-shadow:0 0 0 3px rgba(59,130,246,.22) !important
 }
-div[data-testid="stWidgetLabel"] p{color:#9A9AA6 !important;font-size:.8rem !important;font-weight:500}
+div[data-testid="stWidgetLabel"] p{color:#ADA699 !important;font-size:.8rem !important;font-weight:500}
 
 /* ── Progress bars — slim accent ── */
 div[data-testid="stProgress"]{margin-bottom:14px !important;margin-top:2px !important}
 div[data-testid="stProgress"]>div{
     border-radius:20px !important;height:6px !important;
-    overflow:hidden;background:#2A2A30 !important
+    overflow:hidden;background:#3D3C39 !important
 }
-div[data-testid="stProgress"]>div>div{border-radius:20px !important;background:#3B82F6 !important}
-div[data-testid="stProgress"] p{font-size:.8rem;color:#9A9AA6;margin-bottom:5px}
+div[data-testid="stProgress"]>div>div{border-radius:20px !important;background:#2F6BFF !important}
+div[data-testid="stProgress"] p{font-size:.8rem;color:#ADA699;margin-bottom:5px}
 
 /* ── Alerts — muted tint instead of saturated blocks ── */
 div[data-testid="stAlertContainer"]{
@@ -167,12 +167,12 @@ div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){b
 div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){background:rgba(59,130,246,.08) !important}
 div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){background:rgba(34,197,94,.08) !important}
 div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){background:rgba(239,68,68,.09) !important}
-div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#D6D6DC !important}
+div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#DDD7CC !important}
 
 /* ── Spacing & dividers ── */
 div[data-testid="stHorizontalBlock"]{margin-bottom:12px !important}
-hr{border-color:#2A2A30 !important;margin:1.4rem 0}
-div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] p{color:#8A8A95 !important}
+hr{border-color:#3D3C39 !important;margin:1.4rem 0}
+div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] p{color:#A39C8F !important}
 
 /* ── Dataframes ── */
 div[data-testid="stDataFrame"]{
@@ -185,34 +185,34 @@ div[data-testid="stMarkdown"] table{
     border-collapse:separate !important;border-spacing:0 !important;
     border:none !important;border-radius:12px !important;
     overflow:hidden !important;width:100%;margin-bottom:12px !important;
-    background:#1C1C20;font-variant-numeric:tabular-nums
+    background:#2B2A28;font-variant-numeric:tabular-nums
 }
 div[data-testid="stMarkdown"] table thead tr th{
-    background:#1C1C20 !important;color:#9A9AA6 !important;
+    background:#2B2A28 !important;color:#ADA699 !important;
     font-weight:600 !important;padding:10px 14px !important;
-    border-bottom:1px solid #2A2A30 !important;font-size:.8rem !important;
+    border-bottom:1px solid #3D3C39 !important;font-size:.8rem !important;
     white-space:nowrap
 }
 div[data-testid="stMarkdown"] table tbody tr td{
-    padding:9px 14px !important;border-bottom:1px solid #222227 !important;
-    color:#D6D6DC !important;font-size:.84rem !important
+    padding:9px 14px !important;border-bottom:1px solid #383735 !important;
+    color:#DDD7CC !important;font-size:.84rem !important
 }
 div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !important}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
-    background:#1C1C20 !important;border:none !important;
+    background:#2B2A28 !important;border:none !important;
     border-radius:16px !important;padding:16px 18px;margin:6px 0
 }
 .ph{
     font-size:1.4rem !important;font-weight:700 !important;
-    color:#ECECEF !important;letter-spacing:-.03em;font-variant-numeric:tabular-nums
+    color:#F4F0E8 !important;letter-spacing:-.03em;font-variant-numeric:tabular-nums
 }
-.sp{font-size:.8rem;color:#9A9AA6;margin-bottom:3px}
+.sp{font-size:.8rem;color:#ADA699;margin-bottom:3px}
 
 /* ── Status badges — tint only, no outline ── */
 .b-bp,.b-bm,.b-sc,.b-ok,.b-wn,.b-ng{padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:600}
-.b-bp{background:rgba(59,130,246,.15);color:#7AA7F8}
+.b-bp{background:rgba(59,130,246,.15);color:#8AACFF}
 .b-bm{background:rgba(34,197,94,.13);color:#5FD68A}
 .b-sc{background:rgba(245,158,11,.13);color:#F2B544}
 .b-ok{background:rgba(34,197,94,.13);color:#5FD68A}
@@ -220,10 +220,10 @@ div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !i
 .b-ng{background:rgba(239,68,68,.14);color:#F47A7A}
 
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
-section[data-testid="stSidebar"]{background:#16161A !important}
+section[data-testid="stSidebar"]{background:#171716 !important}
 section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding-top:.5rem}
-.sb-title{font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:#ECECEF;line-height:1.25;margin:0 0 16px 4px}
-.sb-title span{font-size:1.08rem;font-weight:500;color:#9A9AA6}
+.sb-title{font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:#F4F0E8;line-height:1.25;margin:0 0 16px 4px}
+.sb-title span{font-size:1.08rem;font-weight:500;color:#ADA699}
 section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
 .st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
 .st-key-nav_top label[data-baseweb="radio"]{
@@ -231,11 +231,11 @@ section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
     cursor:pointer;transition:background .15s
 }
 .st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
-.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.4rem !important;font-weight:500;color:#A8A8B4}
+.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.4rem !important;font-weight:500;color:#B0A99C}
 .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.65rem !important}
-.st-key-nav_top label[data-baseweb="radio"]:hover{background:#1F1F24}
-.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#26262C}
-.st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#FFFFFF;font-weight:600}
+.st-key-nav_top label[data-baseweb="radio"]:hover{background:#252523}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#363533}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#F4F0E8;font-weight:600}
 .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{margin-right:6px}
 section[data-testid="stSidebar"] hr{margin:.8rem 0}
 section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.95rem;line-height:1.6}
@@ -259,7 +259,7 @@ div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st
 
 /* Shipment list / detail panels (not stretched: the list stays put while the detail scrolls) */
 div[class*="st-key-panel_"]{
-    background:#1C1C20;border-radius:16px;padding:18px 18px !important
+    background:#2B2A28;border-radius:16px;padding:18px 18px !important
 }
 div[class*="st-key-panel_"][class*="list"]{position:sticky;top:4rem}
 /* number inputs: drop the +/- steppers (amounts are typed), so values are not cut off */
@@ -270,21 +270,21 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"]{
-    background:transparent;border:none;border-bottom:1px solid #2A2A30;border-radius:0;
+    background:transparent;border:none;border-bottom:1px solid #3D3C39;border-radius:0;
     padding:0;width:100%
 }
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
     display:flex;gap:6px;flex-wrap:wrap}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button{
     border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
-    background:transparent !important;color:#8A8A95 !important;min-height:42px;
+    background:transparent !important;color:#A39C8F !important;min-height:42px;
     font-size:.92rem !important;font-weight:500 !important;padding:8px 18px 9px !important;
     margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
 }
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button:hover{color:#ECECEF !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button:hover{color:#F4F0E8 !important}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
-    color:#ECECEF !important;font-weight:600 !important;border-bottom:2px solid #ECECEF !important
+    color:#F4F0E8 !important;font-weight:600 !important;border-bottom:2px solid #F4F0E8 !important
 }
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
 /* in-page pickers (scrap type, processor): larger pills, the chosen one filled with the accent */
@@ -292,12 +292,12 @@ div[data-testid="stNumberInput"] button{display:none !important}
     min-height:38px;padding:6px 20px !important;border-radius:999px !important;font-size:.98rem !important;font-weight:600 !important
 }
 :is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
-    background:#3B82F6 !important;border-color:#3B82F6 !important;color:#FFFFFF !important
+    background:#2F6BFF !important;border-color:#2F6BFF !important;color:#F4F0E8 !important
 }
 :is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick){margin-bottom:6px}
 /* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
-.nav-crumb{font-size:.78rem;color:#8A8A95;text-align:right;margin:2px 2px 0}
-.nav-crumb a{color:#9A9AA6 !important}
+.nav-crumb{font-size:.78rem;color:#A39C8F;text-align:right;margin:2px 2px 0}
+.nav-crumb a{color:#ADA699 !important}
 
 /* ── Sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) ──
    solid surfaces, selected item = lighter chip with a blue accent bar; text vertically centred */
@@ -309,21 +309,21 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .st-key-nav_top label[data-testid="stRadioOption"] div:has(> div[data-testid="stMarkdownContainer"]) > div:not([data-testid]){display:none !important}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) div[data-testid="stMarkdownContainer"]{display:flex;align-items:center}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{
-    font-size:1.2rem !important;font-weight:500;color:#9A9AA6;letter-spacing:-.01em;
+    font-size:1.2rem !important;font-weight:500;color:#ADA699;letter-spacing:-.01em;
     margin:0 !important;padding:0 !important;line-height:1.3 !important;display:flex;align-items:center
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){
     font-size:1.35rem !important;margin-right:8px;line-height:1 !important;vertical-align:middle
 }
-.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#1F1F24}
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#252523}
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]){
-    background:#26262C;border-color:#2E2E35
+    background:#363533;border-color:#42413E
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"])::before{
-    content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#3B82F6
+    content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#2F6BFF
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) p{
-    color:#FFFFFF !important;font-weight:600
+    color:#F4F0E8 !important;font-weight:600
 }
 
 /* KPI cards: labels and delta descriptions wrap instead of being cut with "…" */
@@ -332,26 +332,26 @@ div[data-testid="stMetricDelta"]{flex-wrap:wrap;row-gap:2px}
 div[data-testid="stMetricDelta"] > div{white-space:normal !important;overflow:visible !important;text-overflow:clip !important}
 /* 할 일: HBL chips + one "go" link per item */
 .td-item{margin:0 0 14px}
-.td-title{font-weight:600;color:#ECECEF;font-size:.95rem;margin-bottom:6px}
+.td-title{font-weight:600;color:#F4F0E8;font-size:.95rem;margin-bottom:6px}
 .td-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 16px}
-a.hbl-chip{display:inline-block;padding:3px 10px;border-radius:999px;background:#26262C;border:1px solid #34343B;
-    color:#D6D6DC !important;text-decoration:none !important;font-size:.8rem;font-variant-numeric:tabular-nums}
-a.hbl-chip:hover{background:#2E2E35;border-color:#3B82F6}
-.td-note{color:#9A9AA6;font-size:.82rem;margin:0 0 4px 16px}
-a.td-go{margin-left:16px;font-size:.82rem;color:#60A5FA !important;text-decoration:none !important;font-weight:600}
+a.hbl-chip{display:inline-block;padding:3px 10px;border-radius:999px;background:#363533;border:1px solid #484744;
+    color:#DDD7CC !important;text-decoration:none !important;font-size:.8rem;font-variant-numeric:tabular-nums}
+a.hbl-chip:hover{background:#42413E;border-color:#2F6BFF}
+.td-note{color:#ADA699;font-size:.82rem;margin:0 0 4px 16px}
+a.td-go{margin-left:16px;font-size:.82rem;color:#6B95FF !important;text-decoration:none !important;font-weight:600}
 a.td-go:hover{text-decoration:underline !important}
 /* home filter bar stays visible while scrolling */
-.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:rgba(19,19,22,.92);
+.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:rgba(28,28,27,.92);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 10px;
-    border-bottom:1px solid #2A2A30;margin-bottom:6px}
+    border-bottom:1px solid #3D3C39;margin-bottom:6px}
 /* sidebar data status card */
-.sb-status{background:#1C1C20;border:1px solid #2A2A30;border-radius:12px;
-    padding:10px 12px;margin-top:6px;font-size:.88rem;color:#B4B4C0;line-height:1.55}
+.sb-status{background:#2B2A28;border:1px solid #3D3C39;border-radius:12px;
+    padding:10px 12px;margin-top:6px;font-size:.88rem;color:#BAB3A6;line-height:1.55}
 .sb-status .row{display:flex;justify-content:space-between;gap:8px}
-.sb-status .k{color:#8A8A95}
-.sb-status .v{color:#E4E4EA;font-variant-numeric:tabular-nums;text-align:right}
-.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#ECECEF;margin-bottom:4px}
-.sb-status .ft{color:#6E6E78;font-size:.76rem;margin-top:4px}
+.sb-status .k{color:#A39C8F}
+.sb-status .v{color:#E8E3DA;font-variant-numeric:tabular-nums;text-align:right}
+.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#F4F0E8;margin-bottom:4px}
+.sb-status .ft{color:#7B756B;font-size:.76rem;margin-top:4px}
 
 @media (min-width:1500px){
     .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{font-size:1.3rem !important}
@@ -361,6 +361,15 @@ a.td-go:hover{text-decoration:underline !important}
 }
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
+
+/* Palette 2b: beige for headings and card titles, neutral KPI sparklines (sign lives in the delta badge),
+   1px top highlight on cards for depth */
+:is(h1,h2,h3,h4), .sb-title,
+div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{color:#D8CBB3 !important}
+div[data-testid="stMetric"], div[class*="st-key-card_"]{box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
+div[data-testid="stMetricChart"] .mark-area path{fill:rgba(216,203,179,.10) !important}
+div[data-testid="stMetricChart"] .mark-line path{stroke:#BAB3A6 !important}
+div[data-testid="stMetricChart"] .mark-symbol path{stroke:#BAB3A6 !important}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
@@ -1322,7 +1331,7 @@ def _sync_checks(before, after):
 
 
 # ── 차트 공통 스타일 (plotly) — 색 규칙: BP 파랑 / BM 초록 / 흑자 초록 / 적자 빨강 / 총계 보라 ──
-_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#3B82F6", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#f59e0b"
+_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#2F6BFF", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#f59e0b"
 _C_COST = {"원료 매입비": "#6b7280", "임가공비(순)": "#a16207", "수출비": "#0e7490", "보관비": "#7c3aed"}
 _GRID = "rgba(255,255,255,0.07)"
 
@@ -1331,19 +1340,19 @@ def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None
     fig.update_layout(
         height=height,
         # empty text, not None: plotly.js draws the literal "undefined" for a None title
-        title=dict(text=title or "", font=dict(size=13, color="#ECECEF"), x=0, xanchor="left"),
+        title=dict(text=title or "", font=dict(size=13, color="#F4F0E8"), x=0, xanchor="left"),
         margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
-        plot_bgcolor="#1C1C20", paper_bgcolor="#1C1C20",
-        font=dict(color="#C4C4CC", size=11),
+        plot_bgcolor="#2B2A28", paper_bgcolor="#2B2A28",
+        font=dict(color="#C9C2B6", size=11),
         showlegend=legend,
         legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
         xaxis_title="", yaxis_title="",
-        hoverlabel=dict(bgcolor="rgba(28,28,34,.92)", bordercolor="rgba(255,255,255,.14)", font=dict(color="#ECECEF", size=11)),
+        hoverlabel=dict(bgcolor="rgba(43,42,40,.96)", bordercolor="rgba(255,255,255,.14)", font=dict(color="#F4F0E8", size=11)),
     )
-    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#C4C4CC"), zeroline=False)
+    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#C9C2B6"), zeroline=False)
     fig.update_yaxes(showgrid=True, gridcolor=_GRID, tickformat=y_fmt, automargin=True,
-                     tickfont=dict(size=10, color="#C4C4CC"), zeroline=False)
+                     tickfont=dict(size=10, color="#C9C2B6"), zeroline=False)
     return fig
 
 def _fig_monthly_pnl(rows, height=320, title=None):
@@ -1362,7 +1371,7 @@ def _fig_monthly_pnl(rows, height=320, title=None):
         x=_x, y=_real, name="실질 손익", mode="lines+markers+text",
         line=dict(color=_C_LINE, width=2),
         marker=dict(size=8, color=[_C_POS if v >= 0 else _C_NEG for v in _real],
-                    line=dict(color="#1C1C20", width=1)),
+                    line=dict(color="#2B2A28", width=1)),
         text=[f"{_usd(v, 0)}" for v in _real], textposition="top center",
         textfont=dict(size=9, color=_C_LINE),
         hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>",
@@ -1408,31 +1417,31 @@ def _usd(v, dec=0, sign=True, md=False):
         return body
     return ("-" if v < 0 else ("+" if sign else "")) + body
 
-def _kpi_card(label, value, sub="", val_color="#ECECEF", left_border=""):
+def _kpi_card(label, value, sub="", val_color="#F4F0E8", left_border=""):
     _bl    = f"border-left:3px solid {left_border};" if left_border else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#9A9AA6;margin-top:6px;line-height:1.4">'
+    _sub_h = (f'<div style="font-size:.75rem;color:#ADA699;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
-    return (f'<div class="kpi-tile" style="background:#1C1C20;border:none;border-radius:16px;'
+    return (f'<div class="kpi-tile" style="background:#2B2A28;border:none;border-radius:16px;'
             f'padding:16px 18px;{_bl}'
             f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#9A9AA6;margin-bottom:8px;font-weight:500">{label}</div>'
+            f'<div style="font-size:.75rem;color:#ADA699;margin-bottom:8px;font-weight:500">{label}</div>'
             f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
             f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
             f'{_sub_h}</div>')
 
 def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
-                    val_color="#ECECEF", left_border=""):
+                    val_color="#F4F0E8", left_border=""):
     _bl  = f"border-left:3px solid {left_border};" if left_border else ""
     _bdg = (f'<span style="background:{badge_color}26;color:{badge_color};padding:1px 8px;'
             f'border-radius:20px;font-size:.68rem;font-weight:600;'
             f'border:1px solid {badge_color}44;margin-left:7px;'
             f'vertical-align:middle">{badge_txt}</span>') if badge_txt else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#9A9AA6;margin-top:6px;line-height:1.4">'
+    _sub_h = (f'<div style="font-size:.75rem;color:#ADA699;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
-    return (f'<div class="kpi-tile" style="background:#1C1C20;border:none;border-radius:16px;'
+    return (f'<div class="kpi-tile" style="background:#2B2A28;border:none;border-radius:16px;'
             f'padding:16px 18px;{_bl}'
             f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#9A9AA6;margin-bottom:8px;font-weight:500">'
+            f'<div style="font-size:.75rem;color:#ADA699;margin-bottom:8px;font-weight:500">'
             f'{label}{_bdg}</div>'
             f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
             f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
@@ -2081,7 +2090,7 @@ def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, 
         st.caption("항목 없음")
         return sel_id
     df = pd.DataFrame(rows)
-    sty = df.style.apply(lambda r: ["background-color:#24242A" if grp[r.name] % 2 else ""] * len(r), axis=1)
+    sty = df.style.apply(lambda r: ["background-color:#323130" if grp[r.name] % 2 else ""] * len(r), axis=1)
     cc = {month_label: st.column_config.TextColumn(width=52), "일": st.column_config.TextColumn(width=30)}
     cc.update({k: st.column_config.TextColumn(width=w) for k, w in widths.items()})
     st.dataframe(sty, key=key, on_select="rerun", selection_mode="single-cell", hide_index=True,
@@ -2314,7 +2323,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         m1,m2,m3,m4,m5=st.columns(5)
         m1.markdown(_kpi_card("총 선적건", f"{len(shipments)}건"), unsafe_allow_html=True)
         m2.markdown(_kpi_card("총 중량", f"{total_wkg/1000:,.1f} MT"), unsafe_allow_html=True)
-        _p_col = "#fb923c" if prov_cnt else "#ECECEF"
+        _p_col = "#fb923c" if prov_cnt else "#F4F0E8"
         m3.markdown(_kpi_card("Provisional 정산", f"{prov_cnt}건", val_color=_p_col), unsafe_allow_html=True)
         m4.markdown(_kpi_card("최종정산", f"{final_cnt}건"), unsafe_allow_html=True)
         m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#4ade80"), unsafe_allow_html=True)
@@ -2887,7 +2896,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     )
                     _fig_style(_fig, height=max(220, len(_gantt)*38+90), y_fmt=None)
                     _fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor=_GRID,
-                                      tickfont=dict(size=11, color="#D0D0E8"))
+                                      tickfont=dict(size=11, color="#DDD7CC"))
                     _fig.update_xaxes(showgrid=True, gridcolor=_GRID, tickformat="%m/%d")
                     st.plotly_chart(_fig, width="stretch")
             except ImportError:
@@ -3314,8 +3323,8 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                     return ["font-weight:700", "font-weight:700", "font-weight:700", "font-weight:700"]
                 if "BP 매각가" in lbl:
                     return ["font-weight:700",
-                            "color:#7AA7F8;font-weight:600",
-                            "color:#7AA7F8;font-weight:600", ""]
+                            "color:#8AACFF;font-weight:600",
+                            "color:#8AACFF;font-weight:600", ""]
                 if "원료" in lbl and abs(diff) > 0.0001:
                     # 낮은 값(= 유리한 쪽)을 녹색으로 표시
                     fc = "color:#5FD68A;font-weight:600" if fv <= mv else "color:#F47A7A;font-weight:600"
@@ -3666,7 +3675,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                                     else "color:#F47A7A;font-weight:600")
                             if "원가기준" in _bc:
                                 styles[_bc.index("원가기준")] = (
-                                    "color:#7AA7F8;font-weight:600" if src == "FIFO"
+                                    "color:#8AACFF;font-weight:600" if src == "FIFO"
                                     else "color:#6c757d")
                             return styles
 
@@ -4621,7 +4630,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                 def _hl_disp(row):
                     v = row.get("임가공사 보유 추정 (kg)", 0) or 0
                     if v < -1:  return ["", "", "", "color:#b71c1c;font-weight:600"]
-                    if v > 0.5: return ["", "", "", "color:#7AA7F8;font-weight:600"]
+                    if v > 0.5: return ["", "", "", "color:#8AACFF;font-weight:600"]
                     return [""] * 4
                 st.dataframe(
                     pd.DataFrame(_disp_rows).style
@@ -6290,7 +6299,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
                            unsafe_allow_html=True)
             _cfc2.markdown(_kpi_card("INDEX 대기 (추정)", f"${_cf_wait:,.0f}",
                                      "최신 INDEX 기준 추정 — Final월 INDEX 등록 시 변동",
-                                     val_color="#9A9AA6"),
+                                     val_color="#ADA699"),
                            unsafe_allow_html=True)
             _cfc3.markdown(_kpi_card("합계 (미수 확정산)", f"${_cf_tot:,.0f}",
                                      f"KRW ₩{_cf_tot*XR:,.0f}",
@@ -6453,7 +6462,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
                                  hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>"))
         _in_q = [i for i, m in enumerate(_ms) if _qtr(m) == _f_q]
         if _in_q:                                          # 선택 분기 음영
-            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(59,130,246,0.12)", line_width=0)
+            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(216,203,179,0.07)", line_width=0)
         fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
         _fig_style(fig, height=230, top=8)
         _tt = [(f"{int(m[5:7])}월<br>{m[:4]}" if (i == 0 or m[5:7] == "01") else f"{int(m[5:7])}월")
@@ -6790,15 +6799,15 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
             # 이행률 progress bar — expander 바깥에서 항상 표시
             _prog_pct  = min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0
             _prog_pct  = 1.0 if _m["status"] == "complete" else _prog_pct
-            _bar_color = {"complete": "#4ade80", "ok": "#3B82F6", "short": "#ef4444"}.get(_m["status"], "#9A9AA6")
-            _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#2A2A30")
+            _bar_color = {"complete": "#4ade80", "ok": "#2F6BFF", "short": "#ef4444"}.get(_m["status"], "#ADA699")
+            _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#3D3C39")
             _sub_lbl   = f" / {_prname}" if _prname else ""
             _ct_box = _crc.container(key="panel_ctdetail")
             _ct_box.markdown(f"""
-<div style="background:#1C1C20;border:none;border-radius:14px;
+<div style="background:#2B2A28;border:none;border-radius:14px;
             padding:11px 16px 10px;margin-bottom:10px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span style="font-size:.85rem;font-weight:600;color:#ECECEF">
+    <span style="font-size:.85rem;font-weight:600;color:#F4F0E8">
       {_bname} &nbsp;·&nbsp; {_scname}{_sub_lbl}
     </span>
     <span style="font-size:.75rem;font-weight:600;color:{_bar_color};
@@ -6807,12 +6816,12 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
     </span>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
-    <div style="flex:1;background:#2A2A30;border-radius:20px;height:7px;overflow:hidden">
+    <div style="flex:1;background:#3D3C39;border-radius:20px;height:7px;overflow:hidden">
       <div style="width:{_prog_pct*100:.1f}%;height:100%;
                   background:linear-gradient(90deg,{_bar_color}cc,{_bar_color});
                   border-radius:20px"></div>
     </div>
-    <span style="font-size:.78rem;color:#9A9AA6;white-space:nowrap;min-width:160px;text-align:right">
+    <span style="font-size:.78rem;color:#ADA699;white-space:nowrap;min-width:160px;text-align:right">
       {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT &nbsp;({_m['fulfill_pct']:.1f}%)
     </span>
   </div>
