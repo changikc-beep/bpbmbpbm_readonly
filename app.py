@@ -362,7 +362,7 @@ a.td-go:hover{text-decoration:underline !important}
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 
-/* Palette 2b: beige for headings and card titles, neutral KPI sparklines (sign lives in the delta badge),
+/* Headings and card titles in Fog Silver, neutral KPI sparklines (sign lives in the delta badge),
    1px top highlight on cards for depth */
 :is(h1,h2,h3,h4), .sb-title,
 div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{color:#C9CDD2 !important}
@@ -1334,7 +1334,7 @@ def _sync_checks(before, after):
     return res
 
 
-# ── 차트 공통 스타일 (plotly) — 색 규칙: BP 파랑 / BM 초록 / 흑자 초록 / 적자 빨강 / 총계 보라 ──
+# ── 차트 공통 스타일 (plotly) — 색 역할: 본계열 스틸실버 / 강조·총계 주황 / 양수 틸 / 음수 코랄 / 대기 샌드 ──
 # Gunmetal theme roles: main series steel silver, focus line orange, + teal / − coral, total orange
 _C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#A7B4C2", "#4FB8A8", "#4FB8A8", "#F26D6D", "#FF7A1A", "#FF7A1A"
 _C_COST = {"원료 매입비": "#5B636C", "임가공비(순)": "#8A6E4B", "수출비": "#4A7A8C", "보관비": "#6E6A8C"}
@@ -2872,7 +2872,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     _df_g["라벨"] = _df_g.apply(
                         lambda r: f"{r['매입사'].split('(')[0].strip()}  "
                                   f"({(r['ETA']-r['ETD']).days}일)", axis=1)
-                    # 상태별 색상 — 색 규칙(가정산 노랑 / 최종 초록 / 입금 파랑)과 통일
+                    # 상태별 색상 — 가정산 샌드 / 최종 틸 / 입금 스틸블루
                     _cmap = {"🟡 Provisional": "#8C7338", "🟢 최종": "#2E7D72", "🔵 입금": "#4E6E94"}
                     _fig  = px.timeline(
                         _df_g, x_start="ETD", x_end="ETA", y="항차",
