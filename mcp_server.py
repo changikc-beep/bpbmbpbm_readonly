@@ -60,6 +60,13 @@ def _auth():
         base_url=os.environ["BASE_URL"],
         required_scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"],
         client_storage=storage,
+        # By default the token claude.ai holds mirrors Google's 1-hour access token, so after any idle
+        # period claude.ai must spend its one-time-use refresh token. A dashboard opening several sources
+        # at once on a cold instance could send that refresh twice (or lose the response), and the reused
+        # token is rejected with invalid_grant: the connector then had to be disconnected and reconnected.
+        # A 7-day client token avoids those refreshes; the server still re-validates and transparently
+        # refreshes the Google token on every request, so revoked access is still refused.
+        fastmcp_access_token_expiry_seconds=7 * 24 * 3600,
     )
 
 
