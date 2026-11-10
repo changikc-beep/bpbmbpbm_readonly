@@ -1373,14 +1373,17 @@ def _fig_monthly_pnl(rows, height=320, title=None):
                              hovertemplate="%{x}<br>" + _k + " $%{y:,.0f}<extra></extra>"))
     _real = [r["실질 손익"] for r in rows]
     fig.add_trace(go.Scatter(
-        x=_x, y=_real, name="실질 손익", mode="lines+markers+text",
+        x=_x, y=_real, name="실질 손익", mode="lines+markers",
         line=dict(color=_C_LINE, width=2),
         marker=dict(size=8, color=[_C_POS if v >= 0 else _C_NEG for v in _real],
                     line=dict(color="#2A2F35", width=1)),
-        text=[f"{_usd(v, 0)}" for v in _real], textposition="top center",
-        textfont=dict(size=9, color=_C_LINE),
         hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>",
     ))
+    # value labels on a dark chip so they stay legible where they overlap the bars
+    for _xi, _v in zip(_x, _real):
+        fig.add_annotation(x=_xi, y=_v, text=_usd(_v, 0), showarrow=False, yshift=14,
+                           font=dict(size=10, color="#FFB27A"), bgcolor="rgba(31,35,40,.88)",
+                           borderpad=2)
     fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
     fig.update_layout(barmode="relative", bargap=0.35)
     _fig_style(fig, height=height, title=title)
