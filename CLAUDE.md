@@ -29,6 +29,7 @@ python bp_ask.py ships [--buyer ...] [--status provisional|final|paid]
 python bp_ask.py pnl --by month|quarter|buyer|hbl|processor|scrap [--year 2026] [--buyer ...] [--product ...]
 python bp_ask.py stock                                                 # 원료·완제품 재고, 생산·재고 대사
 python bp_ask.py feed                                                  # 단가 계산기 Artifact용 JSON(재고·EUR/USD·반기 마진), 커넥터 calculator_feed
+python bp_ask.py tolling [--year 2026]                                 # 임가공비 분석 JSON(임가공사×제품 손익·투입kg, 재고, 월별 생산 보고), 커넥터 tolling
 ```
 
 - 출력 첫 줄의 `rev`·저장 시각을 답에 함께 밝힌다(데이터 기준 시점).

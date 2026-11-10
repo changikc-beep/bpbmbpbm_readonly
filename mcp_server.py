@@ -13,7 +13,7 @@ Environment (Cloud Run):
 Local test without sign-in (binds 127.0.0.1 only):
     BP_MCP_LOCAL=1 python mcp_server.py
 """
-import os, sys, time
+import os, sys, threading, time
 from typing import Literal, Optional
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -66,6 +66,9 @@ def _auth():
 mcp = FastMCP("BP/BM 데이터", instructions=INSTRUCTIONS, auth=_auth())
 
 _cache = {"at": 0.0, "cfg": None}
+# Calls arrive in parallel (a dashboard opens several sources at once). Without a lock, every call on a cold
+# instance imported bp_ask and downloaded config.json by itself, and some ran past the client's timeout.
+_lock = threading.Lock()
 
 def _bp_ask():
     # Imported on the first tool call, not at startup: it loads pandas/streamlit and app.py's helpers
@@ -75,9 +78,10 @@ def _bp_ask():
 
 def _cfg():
     """Drive config, reused for 2 minutes (same freshness as the app's own cache)."""
-    if _cache["cfg"] is None or time.time() - _cache["at"] > 120:
-        _cache["cfg"], _cache["at"] = _bp_ask().load_cfg(), time.time()
-    return _cache["cfg"]
+    with _lock:
+        if _cache["cfg"] is None or time.time() - _cache["at"] > 120:
+            _cache["cfg"], _cache["at"] = _bp_ask().load_cfg(), time.time()
+        return _cache["cfg"]
 
 def _run(*argv):
     if not LOCAL:
@@ -144,6 +148,14 @@ def calculator_feed(product: Optional[Literal["BP", "BM"]] = None, product_kg: O
     return _run("feed", *_opt("--product", product),
                 *_opt("--product-kg", str(product_kg) if product_kg else None),
                 *_opt("--conv", str(conv) if conv else None))
+
+
+@mcp.tool
+def tolling(year: Optional[int] = None) -> str:
+    """임가공비 분석용 JSON(한 번의 호출): 임가공사×제품별 배치 수·투입/생산 kg·매출·원료비·임가공비·수출비·보관비·실질손익
+    (손익 탭과 같은 엔진, 판관비 제외), 스크랩별 창고·임가공사 보유·완제품 재고 kg, 임가공사 월별 생산 보고(투입·생산 kg).
+    year를 주면 배치 손익월 기준으로 그 해만 집계."""
+    return _run("tolling", *_opt("--year", str(year) if year else None))
 
 
 if __name__ == "__main__":

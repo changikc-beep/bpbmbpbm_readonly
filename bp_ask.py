@@ -15,6 +15,8 @@ here and nothing is written anywhere.
     python bp_ask.py feed [--product BP --product-kg 300000 --conv 82.18]
                                # JSON for the BP/BM price calculator: stock, monthly EUR/USD, half-year margins,
                                # and with --product-kg the FIFO raw cost and storage of the next lot
+    python bp_ask.py tolling [--year 2026]
+                               # JSON: P&L + input kg by processor × product, stock, monthly production reports
 """
 import argparse, contextlib, io, json, os, sys, warnings
 from collections import defaultdict
@@ -226,6 +228,42 @@ def cmd_feed(cfg, a):
                       "lot": lot}, ensure_ascii=False))
 
 
+def cmd_tolling(cfg, a):
+    """Machine-readable tolling-fee base (JSON on one line): P&L and input kg by processor × product,
+    raw / finished stock by scrap type, and the processors' monthly production reports."""
+    m = cfg.get("_meta") or {}
+    rows = F["_batch_pnl_rows"](cfg, F["_pnl_context"](cfg))
+    if a.year:
+        rows = [x for x in rows if (x["month"] or "")[:4] == str(a.year)]
+    agg = {}
+    for x in rows:
+        k = (x["proc_nm"], x.get("product") or "")
+        g = agg.setdefault(k, {"processor": k[0], "product": k[1], "batches": 0, "input_kg": 0.0, "output_kg": 0.0,
+                               "revenue": 0.0, "raw_cost": 0.0, "fee": 0.0, "export_cost": 0.0, "storage": 0.0})
+        g["batches"] += 1; g["input_kg"] += x["inp"]; g["output_kg"] += x["out"]; g["revenue"] += x["bp"]
+        g["raw_cost"] += x["raw"]; g["fee"] += x["pf"]; g["export_cost"] += x["eu"]; g["storage"] += x["stor"]
+    pnl = []
+    for g in sorted(agg.values(), key=lambda g: (g["processor"], g["product"])):
+        g = {k: (round(v, 2) if isinstance(v, float) else v) for k, v in g.items()}
+        g["profit"] = round(g["revenue"] - g["raw_cost"] - g["fee"] - g["export_cost"] - g["storage"], 2)
+        pnl.append(g)
+    stock = []
+    for sc in cfg["scrap_types"]:
+        _, _, rem = F["_fifo_lot_trace"](cfg, sc["id"])
+        stock.append({"scrap": sc["id"], "name": sc["name"], "product": F["_sc_product"](sc),
+                      "warehouse_kg": round(sum(l.get("remain", 0) for l in rem), 1),
+                      "processor_kg": round(F["_at_processor_raw_kg"](cfg, sc["id"]), 1),
+                      "finished_kg": round(F["_finished_goods_kg"](cfg, sc["id"]), 1)})
+    pnames = {p["id"]: p["name"] for p in cfg.get("processors", [])}
+    sprod = {s["id"]: F["_sc_product"](s) for s in cfg["scrap_types"]}
+    monthly = [{"month": r.get("month"), "processor": pnames.get(r.get("processor_id"), r.get("processor_id")),
+                "scrap": r.get("scrap_type_id"), "product": sprod.get(r.get("scrap_type_id")),
+                "input_kg": float(r.get("input_kg") or 0), "output_kg": float(r.get("output_kg") or 0)}
+               for r in sorted(cfg.get("production_monthly", []), key=lambda r: (r.get("month") or "", r.get("processor_id") or ""))]
+    print(json.dumps({"rev": m.get("rev"), "saved_at": m.get("saved_at"), "pnl": pnl, "stock": stock,
+                      "monthly": monthly}, ensure_ascii=False))
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="bp_ask", description="BP/BM 앱 데이터 질의 (읽기 전용)", exit_on_error=False)
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -239,6 +277,7 @@ def build_parser():
     sp.add_parser("stock")
     s = sp.add_parser("feed"); s.add_argument("--product", choices=["BP", "BM"])
     s.add_argument("--product-kg", type=float); s.add_argument("--conv", type=float)
+    s = sp.add_parser("tolling"); s.add_argument("--year", type=int)
     return p
 
 
@@ -267,7 +306,7 @@ def ask(argv, cfg):
         try:
             a = build_parser().parse_args(argv)
             m = cfg.get("_meta") or {}
-            if a.cmd != "feed":   # feed is JSON and carries rev / saved_at itself
+            if a.cmd not in ("feed", "tolling"):   # JSON commands carry rev / saved_at themselves
                 print(f"(데이터: Drive config rev {m.get('rev')} · 저장 {m.get('saved_at')})")
                 print()
             globals()["cmd_" + a.cmd](cfg, a)
