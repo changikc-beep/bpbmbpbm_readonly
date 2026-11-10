@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
-APP_BUILD = "2026-11-10 E"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
+APP_BUILD = "2026-11-10 F"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
@@ -26,11 +26,11 @@ section[data-testid="stSidebar"]{
 }
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
 h4{font-size:1.15rem !important}
-.ro-pill{display:inline-block;font-size:.75rem;color:#C9A44A;background:rgba(245,158,11,.10);
+.ro-pill{display:inline-block;font-size:.75rem;color:#E0C27A;background:rgba(214,178,94,.12);
     padding:3px 10px;border-radius:999px;margin-bottom:4px}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0 9px 2px 1px;vertical-align:middle}
-.dot-r{background:#EF4444}
-.dot-y{background:#F59E0B}
+.dot-r{background:#FF7A1A}
+.dot-y{background:#D6B25E}
 h2,h3,h4{font-weight:650 !important;letter-spacing:-.02em}
 
 /* ── Tab bar — quiet segmented strip ── */
@@ -130,7 +130,7 @@ div[data-testid="stTextInput"] input:focus,
 div[data-testid="stNumberInput"] input:focus,
 div[data-testid="stTextAreaInput"] textarea:focus{
     border-color:#FF7A1A !important;
-    box-shadow:0 0 0 3px rgba(59,130,246,.22) !important;
+    box-shadow:0 0 0 3px rgba(255,122,26,.28) !important;
     outline:none !important
 }
 /* baseweb 버전에 따라 select 내부 div 깊이가 달라질 수 있어 루트와 1단계 자식 모두에
@@ -146,7 +146,7 @@ div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
 div[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
 div[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within{
     border-color:#FF7A1A !important;
-    box-shadow:0 0 0 3px rgba(59,130,246,.22) !important
+    box-shadow:0 0 0 3px rgba(255,122,26,.28) !important
 }
 div[data-testid="stWidgetLabel"] p{color:#A3AAB2 !important;font-size:.8rem !important;font-weight:500}
 
@@ -163,10 +163,10 @@ div[data-testid="stProgress"] p{font-size:.8rem;color:#A3AAB2;margin-bottom:5px}
 div[data-testid="stAlertContainer"]{
     border-radius:12px !important;border:none !important;padding:12px 16px !important
 }
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){background:rgba(245,158,11,.08) !important}
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){background:rgba(59,130,246,.08) !important}
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){background:rgba(34,197,94,.08) !important}
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){background:rgba(239,68,68,.09) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){background:rgba(214,178,94,.08) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){background:rgba(201,205,210,.06) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){background:rgba(79,184,168,.08) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){background:rgba(242,109,109,.09) !important}
 div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#D5D9DE !important}
 
 /* ── Spacing & dividers ── */
@@ -212,12 +212,12 @@ div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !i
 
 /* ── Status badges — tint only, no outline ── */
 .b-bp,.b-bm,.b-sc,.b-ok,.b-wn,.b-ng{padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:600}
-.b-bp{background:rgba(59,130,246,.15);color:#93B8FB}
-.b-bm{background:rgba(34,197,94,.13);color:#5FD68A}
-.b-sc{background:rgba(245,158,11,.13);color:#F2B544}
-.b-ok{background:rgba(34,197,94,.13);color:#5FD68A}
-.b-wn{background:rgba(245,158,11,.13);color:#F2B544}
-.b-ng{background:rgba(239,68,68,.14);color:#F47A7A}
+.b-bp{background:rgba(127,160,200,.16);color:#A9C2E2}
+.b-bm{background:rgba(79,184,168,.15);color:#6ACBBB}
+.b-sc{background:rgba(214,178,94,.15);color:#E0C27A}
+.b-ok{background:rgba(79,184,168,.15);color:#6ACBBB}
+.b-wn{background:rgba(214,178,94,.15);color:#E0C27A}
+.b-ng{background:rgba(242,109,109,.15);color:#F28B8B}
 
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
 section[data-testid="stSidebar"]{background:#1A1E22 !important}
@@ -1335,8 +1335,9 @@ def _sync_checks(before, after):
 
 
 # ── 차트 공통 스타일 (plotly) — 색 규칙: BP 파랑 / BM 초록 / 흑자 초록 / 적자 빨강 / 총계 보라 ──
-_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#3B82F6", "#22c55e", "#4ade80", "#ef4444", "#8b5cf6", "#C9CDD2"
-_C_COST = {"원료 매입비": "#6b7280", "임가공비(순)": "#a16207", "수출비": "#0e7490", "보관비": "#7c3aed"}
+# Gunmetal theme roles: main series steel silver, focus line orange, + teal / − coral, total orange
+_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#A7B4C2", "#4FB8A8", "#4FB8A8", "#F26D6D", "#FF7A1A", "#FF7A1A"
+_C_COST = {"원료 매입비": "#5B636C", "임가공비(순)": "#8A6E4B", "수출비": "#4A7A8C", "보관비": "#6E6A8C"}
 _GRID = "rgba(255,255,255,0.07)"
 
 def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None):
@@ -2159,14 +2160,14 @@ if st.session_state.get("last_sync_time"):
 def _sb_status_html():
     """사이드바 '데이터 상태' 카드 — 저장 시각이 3일 넘으면 노란 점."""
     _rows = []
-    _dot = "#4ade80"
+    _dot = "#6ACBBB"
     if _sb_meta.get("saved_at"):
         try:
             _age = (_now().replace(tzinfo=None) - datetime.fromisoformat(_sb_meta["saved_at"][:19])).days
         except Exception:
             _age = 0
         if _age >= 3:
-            _dot = "#F59E0B"
+            _dot = "#D6B25E"
         _rows.append(("저장", f"{_sb_meta['saved_at'][5:16].replace('T', ' ')} · rev {_sb_meta.get('rev', 0)}"))
     if st.session_state.get("last_sync_time"):
         _rows.append(("동기화", st.session_state["last_sync_time"][5:16]))
@@ -2327,10 +2328,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         m1,m2,m3,m4,m5=st.columns(5)
         m1.markdown(_kpi_card("총 선적건", f"{len(shipments)}건"), unsafe_allow_html=True)
         m2.markdown(_kpi_card("총 중량", f"{total_wkg/1000:,.1f} MT"), unsafe_allow_html=True)
-        _p_col = "#fb923c" if prov_cnt else "#E8EAED"
+        _p_col = "#E0C27A" if prov_cnt else "#E8EAED"
         m3.markdown(_kpi_card("Provisional 정산", f"{prov_cnt}건", val_color=_p_col), unsafe_allow_html=True)
         m4.markdown(_kpi_card("최종정산", f"{final_cnt}건"), unsafe_allow_html=True)
-        m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#4ade80"), unsafe_allow_html=True)
+        m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#6ACBBB"), unsafe_allow_html=True)
         # ── 미완료 알림 ──
         _pend = [s for s in shipments if s.get("status") in ("provisional","final")]
         if _pend:
@@ -2728,9 +2729,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _final_per_kg = _display_final / final_w if final_w else 0
                         _inv_vs_final = _display_final - new_iusd
                         _inv_vs_final_adj = _inv_vs_final + new_other_adj
-                        _net_col  = "#4ade80" if net_settle >= 0 else "#f87171"
-                        _diff_col = "#4ade80" if _inv_vs_final >= 0 else "#f87171"
-                        _diff_adj_col = "#4ade80" if _inv_vs_final_adj >= 0 else "#f87171"
+                        _net_col  = "#6ACBBB" if net_settle >= 0 else "#F28B8B"
+                        _diff_col = "#6ACBBB" if _inv_vs_final >= 0 else "#F28B8B"
+                        _diff_adj_col = "#6ACBBB" if _inv_vs_final_adj >= 0 else "#F28B8B"
                         _final_lbl = "③ 최종정산액 (확정)" if _snapped_final else "③ 최종정산액 (계산)"
                         _net_lbl   = "④ 확정산 청구액" if net_settle >= 0 else "④ 확정산 반환액"
                         rs1.markdown(_kpi_card("① Invoice 총액",
@@ -2807,10 +2808,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         st.markdown("**정산 요약 (확정)**")
                         rs1, rs2, rs3, rs4 = st.columns(4)
                         _inv_per_kg = new_iusd / new_wkg if new_wkg else 0
-                        _net_col = "#4ade80" if net_settle >= 0 else "#f87171"
+                        _net_col = "#6ACBBB" if net_settle >= 0 else "#F28B8B"
                         _inv_vs_final = _display_final - new_iusd
                         _inv_vs_final_adj = _inv_vs_final + new_other_adj
-                        _diff_adj_col = "#4ade80" if _inv_vs_final_adj >= 0 else "#f87171"
+                        _diff_adj_col = "#6ACBBB" if _inv_vs_final_adj >= 0 else "#F28B8B"
                         rs1.markdown(_kpi_card("① Invoice 총액", f"${new_iusd:,.2f}",
                                                f"단가 ${_inv_per_kg:.2f}/kg  ·  {new_wkg:,.0f} kg"), unsafe_allow_html=True)
                         rs2.markdown(_kpi_card("③ 최종정산액 (확정)", f"${_display_final:,.2f}",
@@ -2872,7 +2873,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         lambda r: f"{r['매입사'].split('(')[0].strip()}  "
                                   f"({(r['ETA']-r['ETD']).days}일)", axis=1)
                     # 상태별 색상 — 색 규칙(가정산 노랑 / 최종 초록 / 입금 파랑)과 통일
-                    _cmap = {"🟡 Provisional": "#b45309", "🟢 최종": "#15803d", "🔵 입금": "#1d4ed8"}
+                    _cmap = {"🟡 Provisional": "#8C7338", "🟢 최종": "#2E7D72", "🔵 입금": "#4E6E94"}
                     _fig  = px.timeline(
                         _df_g, x_start="ETD", x_end="ETA", y="항차",
                         color="상태", text="라벨",
@@ -3135,8 +3136,8 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         _gp_pct_s1 = _tot_gp_s1 / _tot_bp * 100 if _tot_bp > 0 else 0
 
         _km1,_km2,_km3,_km4 = st.columns(4)
-        _op_col = "#4ade80" if _tot_op_s1 >= 0 else "#f87171"
-        _gp_col = "#4ade80" if _tot_gp_s1 >= 0 else "#f87171"
+        _op_col = "#6ACBBB" if _tot_op_s1 >= 0 else "#F28B8B"
+        _gp_col = "#6ACBBB" if _tot_gp_s1 >= 0 else "#F28B8B"
         _km1.markdown(_kpi_card("총 BP 생산",   f"{_tot_out/1000:,.2f} MT",
                                 f"투입 {_tot_inp/1000:,.2f} MT"), unsafe_allow_html=True)
         _km2.markdown(_kpi_card("매출 (BP 매각)", f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
@@ -3169,7 +3170,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                     increasing=dict(marker=dict(color=_C_BP)),
                     decreasing=dict(marker=dict(color=_C_NEG)),
                     totals=dict(marker=dict(color=_C_TOT)),
-                    connector=dict(line=dict(color="#484848", width=1, dash="dot")),
+                    connector=dict(line=dict(color="#5B636C", width=1, dash="dot")),
                     hovertemplate="%{x}<br>$%{y:+,.2f}<extra></extra>",
                 ))
                 _fig_style(_wf, height=340, legend=False, top=24)
@@ -3211,7 +3212,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             st.caption("장부·세금계산서 대사용 총액입니다. 스크랩 매각수익과 BP 재매입원가의 "
                        "스크랩 부분은 상계 — 순 차감원가 = 임가공비 + 수출비")
             _kg1,_kg2,_kg3,_kg4 = st.columns(4)
-            _net_col = "#4ade80" if _tot_net >= 0 else "#f87171"
+            _net_col = "#6ACBBB" if _tot_net >= 0 else "#F28B8B"
             _kg1.markdown(_kpi_card("BP 매각 수익",  f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
             _kg2.markdown(_kpi_card("스크랩 매각수익", f"${_tot_sc_rev:,.0f}",
                                     sub=f"${_tot_sc_rev/_tot_out:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
@@ -3320,7 +3321,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                 mv   = row["이동평균 기준 ($/kg BP)"]
                 diff = row["차이"]
                 if "실질 손익" in lbl:
-                    bg = "rgba(34,197,94,.16)" if fv >= 0 else "rgba(239,68,68,.16)"
+                    bg = "rgba(79,184,168,.16)" if fv >= 0 else "rgba(242,109,109,.16)"
                     s  = f"background-color:{bg};color:white;font-weight:700"
                     return ["font-weight:700", s, s, "font-weight:700"]
                 if lbl.startswith("="):
@@ -3331,8 +3332,8 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                             "color:#FFB27A;font-weight:600", ""]
                 if "원료" in lbl and abs(diff) > 0.0001:
                     # 낮은 값(= 유리한 쪽)을 녹색으로 표시
-                    fc = "color:#5FD68A;font-weight:600" if fv <= mv else "color:#F47A7A;font-weight:600"
-                    mc = "color:#5FD68A;font-weight:600" if mv <= fv else "color:#F47A7A;font-weight:600"
+                    fc = "color:#6ACBBB;font-weight:600" if fv <= mv else "color:#F28B8B;font-weight:600"
+                    mc = "color:#6ACBBB;font-weight:600" if mv <= fv else "color:#F28B8B;font-weight:600"
                     return ["color:#555", fc, mc, "font-weight:600"]
                 return ["color:#555", "", "", ""]
 
@@ -3552,10 +3553,10 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             for _h in _hbl_agg.values()
         )
         _fm1, _fm2 = st.columns(2)
-        _fh_col = "#4ade80" if _tot_real_hbl >= 0 else "#f87171"
+        _fh_col = "#6ACBBB" if _tot_real_hbl >= 0 else "#F28B8B"
         _unlinked = len(_ph_all) - len(_linked_pnl)
         _fm1.markdown(_kpi_card("전체 HBL 합산 실질 손익", f"{_usd(_tot_real_hbl, 0)}", val_color=_fh_col), unsafe_allow_html=True)
-        _fm2.markdown(_kpi_card_badge("미연결 배치", f"{_unlinked}건", "#fb923c" if _unlinked else "#4ade80",
+        _fm2.markdown(_kpi_card_badge("미연결 배치", f"{_unlinked}건", "#E0C27A" if _unlinked else "#6ACBBB",
                                   f"{_unlinked}건", "재고·임가공 > 임가공사·배치에서 HBL 연결"), unsafe_allow_html=True)
 
         # ── 요약 테이블 ──────────────────────────────────────────────────────
@@ -3648,7 +3649,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             lbl = row["항목"]
                             v   = row["금액 (USD)"]
                             if "실질 손익" in lbl:
-                                bg = "rgba(34,197,94,.16)" if v >= 0 else "rgba(239,68,68,.16)"
+                                bg = "rgba(79,184,168,.16)" if v >= 0 else "rgba(242,109,109,.16)"
                                 return ["font-weight:700",
                                         f"background-color:{bg};color:white;font-weight:700"]
                             if lbl.startswith("="):
@@ -3661,7 +3662,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             width="stretch", hide_index=True, height=280,
                         )
                         _mk1, _mk2 = st.columns(2)
-                        _mg_col = "#4ade80" if _hreal >= 0 else "#f87171"
+                        _mg_col = "#6ACBBB" if _hreal >= 0 else "#F28B8B"
                         _mk1.markdown(_kpi_card("BP 생산",  f"{_h['out']/1000:.2f} MT"), unsafe_allow_html=True)
                         _mk2.markdown(_kpi_card("수익률",   f"{_hmgr:+.1f}%", val_color=_mg_col), unsafe_allow_html=True)
                     with _cr:
@@ -3675,12 +3676,12 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             src = row.get("원가기준", "")
                             if "실질손익" in _bc:
                                 styles[_bc.index("실질손익")] = (
-                                    "color:#5FD68A;font-weight:600" if v >= 0
-                                    else "color:#F47A7A;font-weight:600")
+                                    "color:#6ACBBB;font-weight:600" if v >= 0
+                                    else "color:#F28B8B;font-weight:600")
                             if "원가기준" in _bc:
                                 styles[_bc.index("원가기준")] = (
                                     "color:#FFB27A;font-weight:600" if src == "FIFO"
-                                    else "color:#6c757d")
+                                    else "color:#6E767F")
                             return styles
 
                         st.dataframe(
@@ -3925,8 +3926,8 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             _ra1, _ra2, _ra3, _ra4, _ra5, _ra6 = st.columns(6)
             _gp_sub  = f"매출 대비 {_gp_pct_r:+.1f}%" if _tot_bp > 0 else ""
             _stor_sub = f"{_auto_stor_cnt}건 FIFO 자동" if _auto_stor_cnt else "미입력"
-            _rn_col  = "#4ade80" if _real_net_r >= 0 else "#f87171"
-            _gp_col  = "#4ade80" if _gp_r >= 0 else "#f87171"
+            _rn_col  = "#6ACBBB" if _real_net_r >= 0 else "#F28B8B"
+            _gp_col  = "#6ACBBB" if _gp_r >= 0 else "#F28B8B"
             _ra1.markdown(_kpi_card("매출총이익",         f"{_usd(_gp_r, 0)}", _gp_sub,
                                     val_color=_gp_col), unsafe_allow_html=True)
             _ra2.markdown(_kpi_card("수출비",             f"−${_tot_eu:,.0f}"),      unsafe_allow_html=True)
@@ -3999,8 +4000,8 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
             _df_ds_pnl = pd.DataFrame(_ds_rows_pnl)
             def _hl_ds(row):
                 v = row.get("거래 마진 (USD)", 0) or 0
-                c = ("background-color:rgba(34,197,94,.16);color:#5FD68A;font-weight:600" if v >= 0
-                     else "background-color:rgba(239,68,68,.16);color:#F47A7A;font-weight:600")
+                c = ("background-color:rgba(79,184,168,.16);color:#6ACBBB;font-weight:600" if v >= 0
+                     else "background-color:rgba(242,109,109,.16);color:#F28B8B;font-weight:600")
                 return [""] * (len(row) - 2) + [c, ""]
             st.dataframe(
                 _df_ds_pnl.style.apply(_hl_ds, axis=1).format(na_rep="—", formatter={
@@ -4019,7 +4020,7 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
             _ds_tot_cost = sum(r["원가 합계 (USD)"] or 0 for r in _ds_rows_pnl)
             _ds_mg_pct   = _ds_tot_net / _ds_tot_rev * 100 if _ds_tot_rev > 0 else 0
             _dsk1, _dsk2, _dsk3 = st.columns(3)
-            _dsk_col = "#4ade80" if _ds_tot_net >= 0 else "#f87171"
+            _dsk_col = "#6ACBBB" if _ds_tot_net >= 0 else "#F28B8B"
             _dsk1.markdown(_kpi_card("직접 판매 매출액",  f"${_ds_tot_rev:,.0f}"), unsafe_allow_html=True)
             _dsk2.markdown(_kpi_card("직접 판매 원가",   f"${_ds_tot_cost:,.0f}"), unsafe_allow_html=True)
             _dsk3.markdown(_kpi_card("직접 판매 매출이익",f"{_usd(_ds_tot_net, 0)}",
@@ -4633,7 +4634,7 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     })
                 def _hl_disp(row):
                     v = row.get("임가공사 보유 추정 (kg)", 0) or 0
-                    if v < -1:  return ["", "", "", "color:#b71c1c;font-weight:600"]
+                    if v < -1:  return ["", "", "", "color:#F28B8B;font-weight:600"]
                     if v > 0.5: return ["", "", "", "color:#FFB27A;font-weight:600"]
                     return [""] * 4
                 st.dataframe(
@@ -6299,7 +6300,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
             _cfc1, _cfc2, _cfc3 = st.columns(3)
             _cfc1.markdown(_kpi_card("청구 가능 (INDEX 확정)", f"${_cf_now:,.0f}",
                                      f"{sum(1 for r in _cf_rows if r['구분'] == '청구 가능')}건",
-                                     val_color="#4ade80" if _cf_now >= 0 else "#f87171"),
+                                     val_color="#6ACBBB" if _cf_now >= 0 else "#F28B8B"),
                            unsafe_allow_html=True)
             _cfc2.markdown(_kpi_card("INDEX 대기 (추정)", f"${_cf_wait:,.0f}",
                                      "최신 INDEX 기준 추정 — Final월 INDEX 등록 시 변동",
@@ -6307,7 +6308,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
                            unsafe_allow_html=True)
             _cfc3.markdown(_kpi_card("합계 (미수 확정산)", f"${_cf_tot:,.0f}",
                                      f"KRW ₩{_cf_tot*XR:,.0f}",
-                                     val_color="#4ade80" if _cf_tot >= 0 else "#f87171"),
+                                     val_color="#6ACBBB" if _cf_tot >= 0 else "#F28B8B"),
                            unsafe_allow_html=True)
             # 월별 예상 입금 일정
             _cf_by_mon = defaultdict(lambda: {"건수": 0, "금액": 0.0})
@@ -6803,8 +6804,8 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
             # 이행률 progress bar — expander 바깥에서 항상 표시
             _prog_pct  = min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0
             _prog_pct  = 1.0 if _m["status"] == "complete" else _prog_pct
-            _bar_color = {"complete": "#4ade80", "ok": "#3B82F6", "short": "#ef4444"}.get(_m["status"], "#A3AAB2")
-            _stat_badge_color = {"complete": "#166534", "ok": "#1e3a5f", "short": "#7f1d1d"}.get(_m["status"], "#3B4148")
+            _bar_color = {"complete": "#4FB8A8", "ok": "#7FA0C8", "short": "#F26D6D"}.get(_m["status"], "#A3AAB2")
+            _stat_badge_color = {"complete": "#24574F", "ok": "#2F4258", "short": "#5E2E2E"}.get(_m["status"], "#3B4148")
             _sub_lbl   = f" / {_prname}" if _prname else ""
             _ct_box = _crc.container(key="panel_ctdetail")
             _ct_box.markdown(f"""
@@ -6850,8 +6851,8 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
                 _rem_val = f"{_m['remaining_mt']:,.2f} MT" if _m["remaining_mt"] > 0 else "충족"
-                _rem_col = "#f87171" if _m["remaining_mt"] > 0 else "#4ade80"
-                _avl_col = "#4ade80" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#f87171"
+                _rem_col = "#F28B8B" if _m["remaining_mt"] > 0 else "#6ACBBB"
+                _avl_col = "#6ACBBB" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#F28B8B"
                 _avl_sub = f"{_m['total_avail_mt']-_m['remaining_mt']:+.2f} MT 여유" if _m["remaining_mt"] > 0 else ""
                 _mc1.markdown(_kpi_card("계약량",          f"{_m['qty_mt']:,.1f} MT",
                                         f"허용 {_m['min_mt']:,.1f}~{_m['max_mt']:,.1f} MT"), unsafe_allow_html=True)

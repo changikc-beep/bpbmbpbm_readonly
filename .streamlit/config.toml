@@ -15,8 +15,28 @@ metricValueFontSize      = "1.6rem"
 # 한글 가독성: Pretendard (CDN). 로드 실패 시 브라우저 기본 sans-serif로 대체된다.
 font        = "'Pretendard Variable':https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
 headingFont = "'Pretendard Variable':https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
-# 차트 기본 색 — 앱 색 규칙(BP 파랑 / BM 초록 / 추세 주황 / 총계 보라 / 적자 빨강)과 통일
-chartCategoricalColors   = ["#3B82F6", "#22c55e", "#f59e0b", "#8b5cf6", "#ef4444", "#0e7490", "#a16207", "#6b7280"]
+# 차트 기본 색 — Gunmetal 테마 역할(본계열 스틸실버 / 양수 틸 / 강조 주황 / 대기 샌드 / 음수 코랄)
+chartCategoricalColors   = ["#A7B4C2", "#4FB8A8", "#FF7A1A", "#D6B25E", "#F26D6D", "#7FA0C8", "#8A6E4B", "#5B636C"]
+
+# Basic palette (metric deltas, alerts, badges) re-toned to the Gunmetal theme
+redColor                 = "#F26D6D"
+redTextColor             = "#F28B8B"
+redBackgroundColor       = "rgba(242,109,109,0.16)"
+greenColor               = "#4FB8A8"
+greenTextColor           = "#6ACBBB"
+greenBackgroundColor     = "rgba(79,184,168,0.16)"
+orangeColor              = "#FF7A1A"
+orangeTextColor          = "#FF9A4D"
+orangeBackgroundColor    = "rgba(255,122,26,0.16)"
+yellowColor              = "#D6B25E"
+yellowTextColor          = "#E0C27A"
+yellowBackgroundColor    = "rgba(214,178,94,0.16)"
+blueColor                = "#7FA0C8"
+blueTextColor            = "#A9C2E2"
+blueBackgroundColor      = "rgba(127,160,200,0.16)"
+grayColor                = "#9AA1A9"
+grayTextColor            = "#A3AAB2"
+grayBackgroundColor      = "rgba(154,161,169,0.16)"
 
 [client]
 # Hide the Deploy/developer toolbar entries for a cleaner header
