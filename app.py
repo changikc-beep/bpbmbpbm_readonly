@@ -5,13 +5,13 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 st.set_page_config(page_title="BP/BM 재고·손익 관리", layout="wide", initial_sidebar_state="expanded")
-APP_BUILD = "2026-11-10 G"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
+APP_BUILD = "2026-11-23 L"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════
    Refined dark — borderless surfaces, one accent
-   bg:#1F2328  surface:#2A2F35  surface-2:#343A41  line:#3B4148
-   text:#E8EAED  text-2:#A3AAB2  accent:#FF7A1A
+   bg:#EEF4F8  surface:#FFFFFF  surface-2:#F2F6F9  line:#D3DCE4
+   text:#22272D  text-2:#5E6670  accent:#F26B1D
    ══════════════════════════════════════════════ */
 
 /* ── Layout ── */
@@ -22,30 +22,30 @@ st.markdown("""
 header[data-testid="stHeader"]{background:transparent !important}
 section[data-testid="stSidebar"]{
     min-width:268px;max-width:300px;
-    border-right:1px solid #3B4148 !important
+    border-right:1px solid #D3DCE4 !important
 }
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
 h4{font-size:1.15rem !important}
-.ro-pill{display:inline-block;font-size:.75rem;color:#E0C27A;background:rgba(214,178,94,.12);
+.ro-pill{display:inline-block;font-size:.75rem;color:#A16207;background:rgba(212,167,44,.14);
     padding:3px 10px;border-radius:999px;margin-bottom:4px}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0 9px 2px 1px;vertical-align:middle}
-.dot-r{background:#FF7A1A}
-.dot-y{background:#D6B25E}
+.dot-r{background:#F26B1D}
+.dot-y{background:#D4A72C}
 h2,h3,h4{font-weight:650 !important;letter-spacing:-.02em}
 
 /* ── Tab bar — quiet segmented strip ── */
 div[data-testid="stTabs"] div[data-baseweb="tab-list"]{
-    background:#2A2F35;border-radius:12px;padding:4px;border:none;gap:2px
+    background:#FFFFFF;border-radius:12px;padding:4px;border:none;gap:2px
 }
 div[data-testid="stTabs"] button[role="tab"]{
     border-radius:9px !important;font-size:.85rem;font-weight:500;
-    padding:6px 14px !important;color:#A3AAB2;
+    padding:6px 14px !important;color:#5E6670;
     transition:background .15s,color .15s;border:none !important;
     white-space:nowrap
 }
-div[data-testid="stTabs"] button[role="tab"]:hover{color:#E8EAED}
+div[data-testid="stTabs"] button[role="tab"]:hover{color:#22272D}
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
-    background:#454B53 !important;color:#E8EAED !important;font-weight:600
+    background:#DFE8EF !important;color:#22272D !important;font-weight:600
 }
 div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
 div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
@@ -53,43 +53,43 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
 /* ── Cards: bordered containers (key="card_*"), metrics, expanders, forms ── */
 div[class*="st-key-card_"]{
-    background:#2A2F35 !important;border:none !important;
+    background:#FFFFFF !important;border:none !important;
     border-radius:16px !important;padding:20px 22px !important
 }
 div[data-testid="stMetric"]{
-    background:#2A2F35 !important;border:none !important;
+    background:#FFFFFF !important;border:none !important;
     border-radius:16px !important;padding:16px 18px !important
 }
 div[data-testid="stMetricValue"]{
-    color:#E8EAED !important;font-size:1.6rem !important;font-weight:700;letter-spacing:-.03em;
+    color:#22272D !important;font-size:1.6rem !important;font-weight:700;letter-spacing:-.03em;
     font-variant-numeric:tabular-nums
 }
-div[data-testid="stMetricLabel"] p{font-size:.8rem !important;color:#A3AAB2 !important;font-weight:500}
+div[data-testid="stMetricLabel"] p{font-size:.8rem !important;color:#5E6670 !important;font-weight:500}
 div[data-testid="stMetricDelta"]{font-size:.78rem !important}
 div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
 div[data-testid="stMetric"] svg{background:transparent !important}
 /* nested stat tiles inside a card sit one step lighter */
-div[class*="st-key-card_"] .kpi-tile{background:#343A41 !important}
+div[class*="st-key-card_"] .kpi-tile{background:#F2F6F9 !important}
 
 div[data-testid="stExpander"] details{
     border-radius:14px !important;border:none !important;
-    background:#2A2F35 !important;overflow:hidden
+    background:#FFFFFF !important;overflow:hidden
 }
 div[data-testid="stExpander"] details summary{
     padding:14px 18px !important;font-weight:600;background:transparent !important
 }
-div[data-testid="stExpander"] details summary:hover{background:#3B4148 !important}
-div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid #3B4148 !important}
+div[data-testid="stExpander"] details summary:hover{background:#D3DCE4 !important}
+div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid #D3DCE4 !important}
 div[data-testid="stExpander"] details>div,
 div[data-testid="stExpander"] details>div>div{padding:16px 20px !important}
 
 div[data-testid="stForm"]{
     border-radius:16px !important;border:none !important;
-    background:#2A2F35 !important;padding:20px !important
+    background:#FFFFFF !important;padding:20px !important
 }
 
 /* ── Sidebar metric cards ── */
-section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:#2A2F35 !important}
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{background:#FFFFFF !important}
 
 /* ── Buttons ── */
 div[data-testid="stButton"]>button,
@@ -98,23 +98,23 @@ div[data-testid="stDownloadButton"]>button,
 div[data-testid="stFormSubmitButton"]>button{
     border-radius:10px !important;font-weight:600;
     transition:background .15s,border-color .15s;
-    border:1px solid #3B4148 !important;background:#343A41 !important
+    border:1px solid #D3DCE4 !important;background:#F2F6F9 !important
 }
 div[data-testid="stButton"]>button:hover,
 div[data-testid="stPopover"]>button:hover,
 div[data-testid="stDownloadButton"]>button:hover,
 div[data-testid="stFormSubmitButton"]>button:hover{
-    background:#454B53 !important;border-color:#525962 !important
+    background:#DFE8EF !important;border-color:#B8C4CF !important
 }
 div[data-testid="stButton"]>button[kind="primary"],
 div[data-testid="stFormSubmitButton"]>button[kind="primaryFormSubmit"]{
-    background:#FF7A1A !important;border-color:#FF7A1A !important;color:#1F2328 !important
+    background:#F26B1D !important;border-color:#F26B1D !important;color:#22272D !important
 }
 div[data-testid="stButton"]>button[kind="primary"]:hover,
 div[data-testid="stFormSubmitButton"]>button[kind="primaryFormSubmit"]:hover{
-    background:#E5630A !important
+    background:#D9581A !important
 }
-button:focus-visible{outline:2px solid #FF7A1A !important;outline-offset:2px}
+button:focus-visible{outline:2px solid #F26B1D !important;outline-offset:2px}
 
 /* ── Inputs ── */
 div[data-testid="stTextInput"] input,
@@ -122,15 +122,15 @@ div[data-testid="stNumberInput"] input,
 div[data-testid="stTextAreaInput"] textarea,
 div[data-testid="stDateInput"] input{
     border-radius:10px !important;
-    background:#343A41 !important;
+    background:#F2F6F9 !important;
     border:1px solid transparent !important;
-    color:#E8EAED !important
+    color:#22272D !important
 }
 div[data-testid="stTextInput"] input:focus,
 div[data-testid="stNumberInput"] input:focus,
 div[data-testid="stTextAreaInput"] textarea:focus{
-    border-color:#FF7A1A !important;
-    box-shadow:0 0 0 3px rgba(255,122,26,.28) !important;
+    border-color:#F26B1D !important;
+    box-shadow:0 0 0 3px rgba(242,107,29,.28) !important;
     outline:none !important
 }
 /* baseweb 버전에 따라 select 내부 div 깊이가 달라질 수 있어 루트와 1단계 자식 모두에
@@ -140,39 +140,39 @@ div[data-testid="stSelectbox"] [data-baseweb="select"]>div,
 div[data-testid="stMultiSelect"] [data-baseweb="select"],
 div[data-testid="stMultiSelect"] [data-baseweb="select"]>div{
     border-radius:10px !important;
-    background:#343A41 !important;
+    background:#F2F6F9 !important;
     border:1px solid transparent !important
 }
 div[data-testid="stSelectbox"] [data-baseweb="select"]:focus-within,
 div[data-testid="stMultiSelect"] [data-baseweb="select"]:focus-within{
-    border-color:#FF7A1A !important;
-    box-shadow:0 0 0 3px rgba(255,122,26,.28) !important
+    border-color:#F26B1D !important;
+    box-shadow:0 0 0 3px rgba(242,107,29,.28) !important
 }
-div[data-testid="stWidgetLabel"] p{color:#A3AAB2 !important;font-size:.8rem !important;font-weight:500}
+div[data-testid="stWidgetLabel"] p{color:#5E6670 !important;font-size:.8rem !important;font-weight:500}
 
 /* ── Progress bars — slim accent ── */
 div[data-testid="stProgress"]{margin-bottom:14px !important;margin-top:2px !important}
 div[data-testid="stProgress"]>div{
     border-radius:20px !important;height:6px !important;
-    overflow:hidden;background:#3B4148 !important
+    overflow:hidden;background:#D3DCE4 !important
 }
-div[data-testid="stProgress"]>div>div{border-radius:20px !important;background:#FF7A1A !important}
-div[data-testid="stProgress"] p{font-size:.8rem;color:#A3AAB2;margin-bottom:5px}
+div[data-testid="stProgress"]>div>div{border-radius:20px !important;background:#F26B1D !important}
+div[data-testid="stProgress"] p{font-size:.8rem;color:#5E6670;margin-bottom:5px}
 
 /* ── Alerts — muted tint instead of saturated blocks ── */
 div[data-testid="stAlertContainer"]{
     border-radius:12px !important;border:none !important;padding:12px 16px !important
 }
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){background:rgba(214,178,94,.08) !important}
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){background:rgba(201,205,210,.06) !important}
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){background:rgba(79,184,168,.08) !important}
-div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){background:rgba(242,109,109,.09) !important}
-div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#D5D9DE !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){background:rgba(212,167,44,.08) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){background:rgba(94,102,112,.06) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){background:rgba(42,157,143,.07) !important}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){background:rgba(224,82,74,.07) !important}
+div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#2E343B !important}
 
 /* ── Spacing & dividers ── */
 div[data-testid="stHorizontalBlock"]{margin-bottom:12px !important}
-hr{border-color:#3B4148 !important;margin:1.4rem 0}
-div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] p{color:#9AA1A9 !important}
+hr{border-color:#D3DCE4 !important;margin:1.4rem 0}
+div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] p{color:#66707A !important}
 
 /* ── Dataframes ── */
 div[data-testid="stDataFrame"]{
@@ -185,45 +185,45 @@ div[data-testid="stMarkdown"] table{
     border-collapse:separate !important;border-spacing:0 !important;
     border:none !important;border-radius:12px !important;
     overflow:hidden !important;width:100%;margin-bottom:12px !important;
-    background:#2A2F35;font-variant-numeric:tabular-nums
+    background:#FFFFFF;font-variant-numeric:tabular-nums
 }
 div[data-testid="stMarkdown"] table thead tr th{
-    background:#2A2F35 !important;color:#A3AAB2 !important;
+    background:#FFFFFF !important;color:#5E6670 !important;
     font-weight:600 !important;padding:10px 14px !important;
-    border-bottom:1px solid #3B4148 !important;font-size:.8rem !important;
+    border-bottom:1px solid #D3DCE4 !important;font-size:.8rem !important;
     white-space:nowrap
 }
 div[data-testid="stMarkdown"] table tbody tr td{
-    padding:9px 14px !important;border-bottom:1px solid #3B4148 !important;
-    color:#D5D9DE !important;font-size:.84rem !important
+    padding:9px 14px !important;border-bottom:1px solid #D3DCE4 !important;
+    color:#2E343B !important;font-size:.84rem !important
 }
 div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !important}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
-    background:#2A2F35 !important;border:none !important;
+    background:#FFFFFF !important;border:none !important;
     border-radius:16px !important;padding:16px 18px;margin:6px 0
 }
 .ph{
     font-size:1.4rem !important;font-weight:700 !important;
-    color:#E8EAED !important;letter-spacing:-.03em;font-variant-numeric:tabular-nums
+    color:#22272D !important;letter-spacing:-.03em;font-variant-numeric:tabular-nums
 }
-.sp{font-size:.8rem;color:#A3AAB2;margin-bottom:3px}
+.sp{font-size:.8rem;color:#5E6670;margin-bottom:3px}
 
 /* ── Status badges — tint only, no outline ── */
 .b-bp,.b-bm,.b-sc,.b-ok,.b-wn,.b-ng{padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:600}
-.b-bp{background:rgba(127,160,200,.16);color:#A9C2E2}
-.b-bm{background:rgba(79,184,168,.15);color:#6ACBBB}
-.b-sc{background:rgba(214,178,94,.15);color:#E0C27A}
-.b-ok{background:rgba(79,184,168,.15);color:#6ACBBB}
-.b-wn{background:rgba(214,178,94,.15);color:#E0C27A}
-.b-ng{background:rgba(242,109,109,.15);color:#F28B8B}
+.b-bp{background:rgba(111,143,184,.16);color:#3B5B85}
+.b-bm{background:rgba(42,157,143,.13);color:#0F766E}
+.b-sc{background:rgba(212,167,44,.16);color:#A16207}
+.b-ok{background:rgba(42,157,143,.13);color:#0F766E}
+.b-wn{background:rgba(212,167,44,.16);color:#A16207}
+.b-ng{background:rgba(224,82,74,.12);color:#B42318}
 
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
-section[data-testid="stSidebar"]{background:#1A1E22 !important}
+section[data-testid="stSidebar"]{background:#E3EBF1 !important}
 section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding-top:.5rem}
-.sb-title{font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:#E8EAED;line-height:1.25;margin:0 0 16px 4px}
-.sb-title span{font-size:1.08rem;font-weight:500;color:#A3AAB2}
+.sb-title{font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:#22272D;line-height:1.25;margin:0 0 16px 4px}
+.sb-title span{font-size:1.08rem;font-weight:500;color:#5E6670}
 section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
 .st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
 .st-key-nav_top label[data-baseweb="radio"]{
@@ -231,11 +231,11 @@ section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
     cursor:pointer;transition:background .15s
 }
 .st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
-.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.4rem !important;font-weight:500;color:#A9B0B8}
+.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.4rem !important;font-weight:500;color:#5E6670}
 .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.65rem !important}
-.st-key-nav_top label[data-baseweb="radio"]:hover{background:#262B30}
-.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#343A41}
-.st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#E8EAED;font-weight:600}
+.st-key-nav_top label[data-baseweb="radio"]:hover{background:#EAF0F5}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#F2F6F9}
+.st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#22272D;font-weight:600}
 .st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{margin-right:6px}
 section[data-testid="stSidebar"] hr{margin:.8rem 0}
 section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.95rem;line-height:1.6}
@@ -259,7 +259,7 @@ div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st
 
 /* Shipment list / detail panels (not stretched: the list stays put while the detail scrolls) */
 div[class*="st-key-panel_"]{
-    background:#2A2F35;border-radius:16px;padding:18px 18px !important
+    background:#FFFFFF;border-radius:16px;padding:18px 18px !important
 }
 div[class*="st-key-panel_"][class*="list"]{position:sticky;top:4rem}
 /* number inputs: drop the +/- steppers (amounts are typed), so values are not cut off */
@@ -270,21 +270,21 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .st-key-nav_sub div[data-testid="stElementContainer"]{width:100% !important}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stSegmentedControl"]{margin-top:6px;margin-bottom:8px}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"]{
-    background:transparent;border:none;border-bottom:1px solid #3B4148;border-radius:0;
+    background:transparent;border:none;border-bottom:1px solid #D3DCE4;border-radius:0;
     padding:0;width:100%
 }
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] > div{width:100% !important;max-width:none !important;
     display:flex;gap:6px;flex-wrap:wrap}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button{
     border:none !important;border-bottom:2px solid transparent !important;border-radius:0 !important;
-    background:transparent !important;color:#9AA1A9 !important;min-height:42px;
+    background:transparent !important;color:#66707A !important;min-height:42px;
     font-size:.92rem !important;font-weight:500 !important;padding:8px 18px 9px !important;
     margin-bottom:-1px;box-shadow:none !important;transition:color .15s,border-color .15s
 }
-:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button:hover{color:#E8EAED !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button:hover{color:#22272D !important}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{
-    color:#E8EAED !important;font-weight:600 !important;border-bottom:2px solid #E8EAED !important
+    color:#22272D !important;font-weight:600 !important;border-bottom:2px solid #22272D !important
 }
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button p{font-weight:inherit !important;font-size:inherit !important}
 /* in-page pickers (scrap type, processor): larger pills, the chosen one filled with the accent */
@@ -292,12 +292,12 @@ div[data-testid="stNumberInput"] button{display:none !important}
     min-height:38px;padding:6px 20px !important;border-radius:999px !important;font-size:.98rem !important;font-weight:600 !important
 }
 :is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] button:is([kind="segmented_controlActive"], [data-testid="stBaseButton-segmented_controlActive"]){
-    background:#FF7A1A !important;border-color:#FF7A1A !important;color:#1F2328 !important
+    background:#F26B1D !important;border-color:#F26B1D !important;color:#22272D !important
 }
 :is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick){margin-bottom:6px}
 /* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
-.nav-crumb{font-size:.78rem;color:#9AA1A9;text-align:right;margin:2px 2px 0}
-.nav-crumb a{color:#A3AAB2 !important}
+.nav-crumb{font-size:.78rem;color:#66707A;text-align:right;margin:2px 2px 0}
+.nav-crumb a{color:#5E6670 !important}
 
 /* ── Sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) ──
    solid surfaces, selected item = lighter chip with a blue accent bar; text vertically centred */
@@ -309,21 +309,21 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .st-key-nav_top label[data-testid="stRadioOption"] div:has(> div[data-testid="stMarkdownContainer"]) > div:not([data-testid]){display:none !important}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) div[data-testid="stMarkdownContainer"]{display:flex;align-items:center}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{
-    font-size:1.2rem !important;font-weight:500;color:#A3AAB2;letter-spacing:-.01em;
+    font-size:1.2rem !important;font-weight:500;color:#5E6670;letter-spacing:-.01em;
     margin:0 !important;padding:0 !important;line-height:1.3 !important;display:flex;align-items:center
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){
     font-size:1.35rem !important;margin-right:8px;line-height:1 !important;vertical-align:middle
 }
-.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#262B30}
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#EAF0F5}
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]){
-    background:#343A41;border-color:#454B53
+    background:#F2F6F9;border-color:#DFE8EF
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"])::before{
-    content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#FF7A1A
+    content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#F26B1D
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) p{
-    color:#E8EAED !important;font-weight:600
+    color:#22272D !important;font-weight:600
 }
 
 /* KPI cards: labels and delta descriptions wrap instead of being cut with "…" */
@@ -332,26 +332,26 @@ div[data-testid="stMetricDelta"]{flex-wrap:wrap;row-gap:2px}
 div[data-testid="stMetricDelta"] > div{white-space:normal !important;overflow:visible !important;text-overflow:clip !important}
 /* 할 일: HBL chips + one "go" link per item */
 .td-item{margin:0 0 14px}
-.td-title{font-weight:600;color:#E8EAED;font-size:.95rem;margin-bottom:6px}
+.td-title{font-weight:600;color:#22272D;font-size:.95rem;margin-bottom:6px}
 .td-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px 16px}
-a.hbl-chip{display:inline-block;padding:3px 10px;border-radius:999px;background:#343A41;border:1px solid #4A515A;
-    color:#D5D9DE !important;text-decoration:none !important;font-size:.8rem;font-variant-numeric:tabular-nums}
-a.hbl-chip:hover{background:#454B53;border-color:#FF7A1A}
-.td-note{color:#A3AAB2;font-size:.82rem;margin:0 0 4px 16px}
-a.td-go{margin-left:16px;font-size:.82rem;color:#FF9A4D !important;text-decoration:none !important;font-weight:600}
+a.hbl-chip{display:inline-block;padding:3px 10px;border-radius:999px;background:#F2F6F9;border:1px solid #C9D3DC;
+    color:#2E343B !important;text-decoration:none !important;font-size:.8rem;font-variant-numeric:tabular-nums}
+a.hbl-chip:hover{background:#DFE8EF;border-color:#F26B1D}
+.td-note{color:#5E6670;font-size:.82rem;margin:0 0 4px 16px}
+a.td-go{margin-left:16px;font-size:.82rem;color:#B84A0C !important;text-decoration:none !important;font-weight:600}
 a.td-go:hover{text-decoration:underline !important}
 /* home filter bar stays visible while scrolling */
-.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:rgba(31,35,40,.92);
+.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:rgba(238,244,248,.92);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 10px;
-    border-bottom:1px solid #3B4148;margin-bottom:6px}
+    border-bottom:1px solid #D3DCE4;margin-bottom:6px}
 /* sidebar data status card */
-.sb-status{background:#2A2F35;border:1px solid #3B4148;border-radius:12px;
-    padding:10px 12px;margin-top:6px;font-size:.88rem;color:#B4BAC1;line-height:1.55}
+.sb-status{background:#FFFFFF;border:1px solid #D3DCE4;border-radius:12px;
+    padding:10px 12px;margin-top:6px;font-size:.88rem;color:#8C98A5;line-height:1.55}
 .sb-status .row{display:flex;justify-content:space-between;gap:8px}
-.sb-status .k{color:#9AA1A9}
-.sb-status .v{color:#E8EAED;font-variant-numeric:tabular-nums;text-align:right}
-.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#E8EAED;margin-bottom:4px}
-.sb-status .ft{color:#6E767F;font-size:.76rem;margin-top:4px}
+.sb-status .k{color:#66707A}
+.sb-status .v{color:#22272D;font-variant-numeric:tabular-nums;text-align:right}
+.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#22272D;margin-bottom:4px}
+.sb-status .ft{color:#7A848E;font-size:.76rem;margin-top:4px}
 
 @media (min-width:1500px){
     .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{font-size:1.3rem !important}
@@ -365,15 +365,15 @@ a.td-go:hover{text-decoration:underline !important}
 /* Headings and card titles in Fog Silver, neutral KPI sparklines (sign lives in the delta badge),
    1px top highlight on cards for depth */
 :is(h1,h2,h3,h4), .sb-title,
-div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{color:#C9CDD2 !important}
-div[data-testid="stMetric"], div[class*="st-key-card_"]{box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
-div[data-testid="stMetricChart"] .mark-area path{fill:rgba(201,205,210,.10) !important}
-div[data-testid="stMetricChart"] .mark-line path{stroke:#B4BAC1 !important}
-div[data-testid="stMetricChart"] .mark-symbol path{stroke:#B4BAC1 !important}
+div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{color:#3A4048 !important}
+div[data-testid="stMetric"], div[class*="st-key-card_"]{box-shadow:0 0 0 1px #DCE4EB}
+div[data-testid="stMetricChart"] .mark-area path{fill:rgba(94,102,112,.10) !important}
+div[data-testid="stMetricChart"] .mark-line path{stroke:#8C98A5 !important}
+div[data-testid="stMetricChart"] .mark-symbol path{stroke:#8C98A5 !important}
 
 /* Gunmetal palette: Streamlit primary widgets carry dark ink on the orange accent */
-button[kind="primary"], button[data-testid="stBaseButton-primary"]{color:#1F2328 !important}
-button[kind="primary"] p, button[data-testid="stBaseButton-primary"] p{color:#1F2328 !important}
+button[kind="primary"], button[data-testid="stBaseButton-primary"]{color:#22272D !important}
+button[kind="primary"] p, button[data-testid="stBaseButton-primary"] p{color:#22272D !important}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
@@ -1335,28 +1335,28 @@ def _sync_checks(before, after):
 
 # ── 차트 공통 스타일 (plotly) — 색 역할: 본계열 스틸실버 / 강조·총계 주황 / 양수 틸 / 음수 코랄 / 대기 샌드 ──
 # Gunmetal theme roles: main series steel silver, focus line orange, + teal / − coral, total orange
-_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#A7B4C2", "#4FB8A8", "#4FB8A8", "#F26D6D", "#FF7A1A", "#FF7A1A"
-_C_COST = {"원료 매입비": "#5B636C", "임가공비(순)": "#8A6E4B", "수출비": "#4A7A8C", "보관비": "#6E6A8C"}
-_GRID = "rgba(255,255,255,0.07)"
+_C_BP, _C_BM, _C_POS, _C_NEG, _C_TOT, _C_LINE = "#9AA8B6", "#2A9D8F", "#2A9D8F", "#E0524A", "#F26B1D", "#F26B1D"
+_C_COST = {"원료 매입비": "#8D98A4", "임가공비(순)": "#B08D5E", "수출비": "#6E9CAE", "보관비": "#9A95B8"}
+_GRID = "rgba(34,39,45,0.07)"
 
 def _fig_style(fig, height=300, title=None, legend=True, y_fmt="$,.0f", top=None):
     """모든 plotly 차트에 같은 배경·격자·글꼴·여백·범례를 적용한다."""
     fig.update_layout(
         height=height,
         # empty text, not None: plotly.js draws the literal "undefined" for a None title
-        title=dict(text=title or "", font=dict(size=13, color="#E8EAED"), x=0, xanchor="left"),
+        title=dict(text=title or "", font=dict(size=13, color="#22272D"), x=0, xanchor="left"),
         margin=dict(l=10, r=10, t=(top if top is not None else (48 if title else 30)), b=10),
-        plot_bgcolor="#2A2F35", paper_bgcolor="#2A2F35",
-        font=dict(color="#C9CDD2", size=11),
+        plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF",
+        font=dict(color="#3A4048", size=11),
         showlegend=legend,
         legend=dict(title="", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
         xaxis_title="", yaxis_title="",
-        hoverlabel=dict(bgcolor="rgba(52,58,65,.96)", bordercolor="rgba(255,255,255,.14)", font=dict(color="#E8EAED", size=11)),
+        hoverlabel=dict(bgcolor="rgba(255,255,255,.98)", bordercolor="rgba(34,39,45,.14)", font=dict(color="#22272D", size=11)),
     )
-    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#C9CDD2"), zeroline=False)
+    fig.update_xaxes(showgrid=False, tickfont=dict(size=10, color="#3A4048"), zeroline=False)
     fig.update_yaxes(showgrid=True, gridcolor=_GRID, tickformat=y_fmt, automargin=True,
-                     tickfont=dict(size=10, color="#C9CDD2"), zeroline=False)
+                     tickfont=dict(size=10, color="#3A4048"), zeroline=False)
     return fig
 
 def _fig_monthly_pnl(rows, height=320, title=None):
@@ -1375,15 +1375,15 @@ def _fig_monthly_pnl(rows, height=320, title=None):
         x=_x, y=_real, name="실질 손익", mode="lines+markers",
         line=dict(color=_C_LINE, width=2),
         marker=dict(size=8, color=[_C_POS if v >= 0 else _C_NEG for v in _real],
-                    line=dict(color="#2A2F35", width=1)),
+                    line=dict(color="#FFFFFF", width=1)),
         hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>",
     ))
     # value labels on a dark chip so they stay legible where they overlap the bars
     for _xi, _v in zip(_x, _real):
         fig.add_annotation(x=_xi, y=_v, text=_usd(_v, 0), showarrow=False, yshift=14,
-                           font=dict(size=10, color="#FFB27A"), bgcolor="rgba(31,35,40,.88)",
+                           font=dict(size=10, color="#B84A0C"), bgcolor="rgba(255,255,255,.9)",
                            borderpad=2)
-    fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+    fig.add_hline(y=0, line_color="rgba(34,39,45,0.25)", line_width=1)
     fig.update_layout(barmode="relative", bargap=0.35)
     _fig_style(fig, height=height, title=title)
     fig.update_xaxes(type="category")   # "YYYY-MM" 문자열을 날짜로 해석하지 않게
@@ -1424,31 +1424,31 @@ def _usd(v, dec=0, sign=True, md=False):
         return body
     return ("-" if v < 0 else ("+" if sign else "")) + body
 
-def _kpi_card(label, value, sub="", val_color="#E8EAED", left_border=""):
+def _kpi_card(label, value, sub="", val_color="#22272D", left_border=""):
     _bl    = f"border-left:3px solid {left_border};" if left_border else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#A3AAB2;margin-top:6px;line-height:1.4">'
+    _sub_h = (f'<div style="font-size:.75rem;color:#5E6670;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
-    return (f'<div class="kpi-tile" style="background:#2A2F35;border:none;border-radius:16px;'
+    return (f'<div class="kpi-tile" style="background:#FFFFFF;border:none;border-radius:16px;'
             f'padding:16px 18px;{_bl}'
             f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#A3AAB2;margin-bottom:8px;font-weight:500">{label}</div>'
+            f'<div style="font-size:.75rem;color:#5E6670;margin-bottom:8px;font-weight:500">{label}</div>'
             f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
             f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
             f'{_sub_h}</div>')
 
 def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
-                    val_color="#E8EAED", left_border=""):
+                    val_color="#22272D", left_border=""):
     _bl  = f"border-left:3px solid {left_border};" if left_border else ""
     _bdg = (f'<span style="background:{badge_color}26;color:{badge_color};padding:1px 8px;'
             f'border-radius:20px;font-size:.68rem;font-weight:600;'
             f'border:1px solid {badge_color}44;margin-left:7px;'
             f'vertical-align:middle">{badge_txt}</span>') if badge_txt else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#A3AAB2;margin-top:6px;line-height:1.4">'
+    _sub_h = (f'<div style="font-size:.75rem;color:#5E6670;margin-top:6px;line-height:1.4">'
               f'{sub}</div>') if sub else ""
-    return (f'<div class="kpi-tile" style="background:#2A2F35;border:none;border-radius:16px;'
+    return (f'<div class="kpi-tile" style="background:#FFFFFF;border:none;border-radius:16px;'
             f'padding:16px 18px;{_bl}'
             f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#A3AAB2;margin-bottom:8px;font-weight:500">'
+            f'<div style="font-size:.75rem;color:#5E6670;margin-bottom:8px;font-weight:500">'
             f'{label}{_bdg}</div>'
             f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
             f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
@@ -2097,7 +2097,7 @@ def _month_list(key, sel_key, items, date_of, cols_of, widths, default_id=None, 
         st.caption("항목 없음")
         return sel_id
     df = pd.DataFrame(rows)
-    sty = df.style.apply(lambda r: ["background-color:#30353B" if grp[r.name] % 2 else ""] * len(r), axis=1)
+    sty = df.style.apply(lambda r: ["background-color:#F4F8FB" if grp[r.name] % 2 else ""] * len(r), axis=1)
     cc = {month_label: st.column_config.TextColumn(width=52), "일": st.column_config.TextColumn(width=30)}
     cc.update({k: st.column_config.TextColumn(width=w) for k, w in widths.items()})
     st.dataframe(sty, key=key, on_select="rerun", selection_mode="single-cell", hide_index=True,
@@ -2162,14 +2162,14 @@ if st.session_state.get("last_sync_time"):
 def _sb_status_html():
     """사이드바 '데이터 상태' 카드 — 저장 시각이 3일 넘으면 노란 점."""
     _rows = []
-    _dot = "#6ACBBB"
+    _dot = "#0F766E"
     if _sb_meta.get("saved_at"):
         try:
             _age = (_now().replace(tzinfo=None) - datetime.fromisoformat(_sb_meta["saved_at"][:19])).days
         except Exception:
             _age = 0
         if _age >= 3:
-            _dot = "#D6B25E"
+            _dot = "#D4A72C"
         _rows.append(("저장", f"{_sb_meta['saved_at'][5:16].replace('T', ' ')} · rev {_sb_meta.get('rev', 0)}"))
     if st.session_state.get("last_sync_time"):
         _rows.append(("동기화", st.session_state["last_sync_time"][5:16]))
@@ -2330,10 +2330,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         m1,m2,m3,m4,m5=st.columns(5)
         m1.markdown(_kpi_card("총 선적건", f"{len(shipments)}건"), unsafe_allow_html=True)
         m2.markdown(_kpi_card("총 중량", f"{total_wkg/1000:,.1f} MT"), unsafe_allow_html=True)
-        _p_col = "#E0C27A" if prov_cnt else "#E8EAED"
+        _p_col = "#A16207" if prov_cnt else "#22272D"
         m3.markdown(_kpi_card("Provisional 정산", f"{prov_cnt}건", val_color=_p_col), unsafe_allow_html=True)
         m4.markdown(_kpi_card("최종정산", f"{final_cnt}건"), unsafe_allow_html=True)
-        m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#6ACBBB"), unsafe_allow_html=True)
+        m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#0F766E"), unsafe_allow_html=True)
         # ── 미완료 알림 ──
         _pend = [s for s in shipments if s.get("status") in ("provisional","final")]
         if _pend:
@@ -2728,9 +2728,9 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         _final_per_kg = _display_final / final_w if final_w else 0
                         _inv_vs_final = _display_final - new_iusd
                         _inv_vs_final_adj = _inv_vs_final + new_other_adj
-                        _net_col  = "#6ACBBB" if net_settle >= 0 else "#F28B8B"
-                        _diff_col = "#6ACBBB" if _inv_vs_final >= 0 else "#F28B8B"
-                        _diff_adj_col = "#6ACBBB" if _inv_vs_final_adj >= 0 else "#F28B8B"
+                        _net_col  = "#0F766E" if net_settle >= 0 else "#B42318"
+                        _diff_col = "#0F766E" if _inv_vs_final >= 0 else "#B42318"
+                        _diff_adj_col = "#0F766E" if _inv_vs_final_adj >= 0 else "#B42318"
                         _final_lbl = "③ 최종정산액 (확정)" if _snapped_final else "③ 최종정산액 (계산)"
                         _net_lbl   = "④ 확정산 청구액" if net_settle >= 0 else "④ 확정산 반환액"
                         rs1.markdown(_kpi_card("① Invoice 총액",
@@ -2807,10 +2807,10 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         st.markdown("**정산 요약 (확정)**")
                         rs1, rs2, rs3, rs4 = st.columns(4)
                         _inv_per_kg = new_iusd / new_wkg if new_wkg else 0
-                        _net_col = "#6ACBBB" if net_settle >= 0 else "#F28B8B"
+                        _net_col = "#0F766E" if net_settle >= 0 else "#B42318"
                         _inv_vs_final = _display_final - new_iusd
                         _inv_vs_final_adj = _inv_vs_final + new_other_adj
-                        _diff_adj_col = "#6ACBBB" if _inv_vs_final_adj >= 0 else "#F28B8B"
+                        _diff_adj_col = "#0F766E" if _inv_vs_final_adj >= 0 else "#B42318"
                         rs1.markdown(_kpi_card("① Invoice 총액", f"${new_iusd:,.2f}",
                                                f"단가 ${_inv_per_kg:.2f}/kg  ·  {new_wkg:,.0f} kg"), unsafe_allow_html=True)
                         rs2.markdown(_kpi_card("③ 최종정산액 (확정)", f"${_display_final:,.2f}",
@@ -2871,7 +2871,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                         lambda r: f"{r['매입사'].split('(')[0].strip()}  "
                                   f"({(r['ETA']-r['ETD']).days}일)", axis=1)
                     # 상태별 색상 — 가정산 샌드 / 최종 틸 / 입금 스틸블루
-                    _cmap = {"🟡 Provisional": "#8C7338", "🟢 최종": "#2E7D72", "🔵 입금": "#4E6E94"}
+                    _cmap = {"🟡 Provisional": "#A8842C", "🟢 최종": "#1F7A70", "🔵 입금": "#4E6E94"}
                     _fig  = px.timeline(
                         _df_g, x_start="ETD", x_end="ETA", y="항차",
                         color="상태", text="라벨",
@@ -2883,7 +2883,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     _fig.update_traces(
                         textposition="inside", insidetextanchor="middle",
                         textfont=dict(color="white", size=10),
-                        marker_line=dict(color="rgba(255,255,255,0.35)", width=1),
+                        marker_line=dict(color="rgba(255,255,255,0.6)", width=1),
                     )
                     # 이미 도착(ETA 경과)한 항차는 흐리게
                     for _tr in _fig.data:
@@ -2899,7 +2899,7 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
                     )
                     _fig_style(_fig, height=max(220, len(_gantt)*38+90), y_fmt=None)
                     _fig.update_yaxes(autorange="reversed", showgrid=True, gridcolor=_GRID,
-                                      tickfont=dict(size=11, color="#D5D9DE"))
+                                      tickfont=dict(size=11, color="#2E343B"))
                     _fig.update_xaxes(showgrid=True, gridcolor=_GRID, tickformat="%m/%d")
                     st.plotly_chart(_fig, width="stretch")
             except ImportError:
@@ -3131,8 +3131,8 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         _gp_pct_s1 = _tot_gp_s1 / _tot_bp * 100 if _tot_bp > 0 else 0
 
         _km1,_km2,_km3,_km4 = st.columns(4)
-        _op_col = "#6ACBBB" if _tot_op_s1 >= 0 else "#F28B8B"
-        _gp_col = "#6ACBBB" if _tot_gp_s1 >= 0 else "#F28B8B"
+        _op_col = "#0F766E" if _tot_op_s1 >= 0 else "#B42318"
+        _gp_col = "#0F766E" if _tot_gp_s1 >= 0 else "#B42318"
         _km1.markdown(_kpi_card("총 BP 생산",   f"{_tot_out/1000:,.2f} MT",
                                 f"투입 {_tot_inp/1000:,.2f} MT"), unsafe_allow_html=True)
         _km2.markdown(_kpi_card("매출 (BP 매각)", f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
@@ -3203,7 +3203,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         with st.expander("세금계산서 기준 총액 흐름 (스크랩 매각·BP 재매입 상계 전)", expanded=False):
             st.caption("장부·세금계산서 대사용 총액 · 순 차감원가 = 임가공비 + 수출비")
             _kg1,_kg2,_kg3,_kg4 = st.columns(4)
-            _net_col = "#6ACBBB" if _tot_net >= 0 else "#F28B8B"
+            _net_col = "#0F766E" if _tot_net >= 0 else "#B42318"
             _kg1.markdown(_kpi_card("BP 매각 수익",  f"${_tot_bp:,.0f}"), unsafe_allow_html=True)
             _kg2.markdown(_kpi_card("스크랩 매각수익", f"${_tot_sc_rev:,.0f}",
                                     sub=f"${_tot_sc_rev/_tot_out:.4f}/kg BP" if _tot_out>0 else ""), unsafe_allow_html=True)
@@ -3312,19 +3312,19 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
                 mv   = row["이동평균 기준 ($/kg BP)"]
                 diff = row["차이"]
                 if "실질 손익" in lbl:
-                    bg = "rgba(79,184,168,.16)" if fv >= 0 else "rgba(242,109,109,.16)"
+                    bg = "rgba(42,157,143,.14)" if fv >= 0 else "rgba(224,82,74,.12)"
                     s  = f"background-color:{bg};color:white;font-weight:700"
                     return ["font-weight:700", s, s, "font-weight:700"]
                 if lbl.startswith("="):
                     return ["font-weight:700", "font-weight:700", "font-weight:700", "font-weight:700"]
                 if "BP 매각가" in lbl:
                     return ["font-weight:700",
-                            "color:#FFB27A;font-weight:600",
-                            "color:#FFB27A;font-weight:600", ""]
+                            "color:#B84A0C;font-weight:600",
+                            "color:#B84A0C;font-weight:600", ""]
                 if "원료" in lbl and abs(diff) > 0.0001:
                     # 낮은 값(= 유리한 쪽)을 녹색으로 표시
-                    fc = "color:#6ACBBB;font-weight:600" if fv <= mv else "color:#F28B8B;font-weight:600"
-                    mc = "color:#6ACBBB;font-weight:600" if mv <= fv else "color:#F28B8B;font-weight:600"
+                    fc = "color:#0F766E;font-weight:600" if fv <= mv else "color:#B42318;font-weight:600"
+                    mc = "color:#0F766E;font-weight:600" if mv <= fv else "color:#B42318;font-weight:600"
                     return ["color:#555", fc, mc, "font-weight:600"]
                 return ["color:#555", "", "", ""]
 
@@ -3539,10 +3539,10 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             for _h in _hbl_agg.values()
         )
         _fm1, _fm2 = st.columns(2)
-        _fh_col = "#6ACBBB" if _tot_real_hbl >= 0 else "#F28B8B"
+        _fh_col = "#0F766E" if _tot_real_hbl >= 0 else "#B42318"
         _unlinked = len(_ph_all) - len(_linked_pnl)
         _fm1.markdown(_kpi_card("전체 HBL 합산 실질 손익", f"{_usd(_tot_real_hbl, 0)}", val_color=_fh_col), unsafe_allow_html=True)
-        _fm2.markdown(_kpi_card_badge("미연결 배치", f"{_unlinked}건", "#E0C27A" if _unlinked else "#6ACBBB",
+        _fm2.markdown(_kpi_card_badge("미연결 배치", f"{_unlinked}건", "#A16207" if _unlinked else "#0F766E",
                                   f"{_unlinked}건", "재고·임가공 > 임가공사·배치에서 HBL 연결"), unsafe_allow_html=True)
 
         # ── 요약 테이블 ──────────────────────────────────────────────────────
@@ -3635,7 +3635,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             lbl = row["항목"]
                             v   = row["금액 (USD)"]
                             if "실질 손익" in lbl:
-                                bg = "rgba(79,184,168,.16)" if v >= 0 else "rgba(242,109,109,.16)"
+                                bg = "rgba(42,157,143,.14)" if v >= 0 else "rgba(224,82,74,.12)"
                                 return ["font-weight:700",
                                         f"background-color:{bg};color:white;font-weight:700"]
                             if lbl.startswith("="):
@@ -3648,7 +3648,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             width="stretch", hide_index=True, height=280,
                         )
                         _mk1, _mk2 = st.columns(2)
-                        _mg_col = "#6ACBBB" if _hreal >= 0 else "#F28B8B"
+                        _mg_col = "#0F766E" if _hreal >= 0 else "#B42318"
                         _mk1.markdown(_kpi_card("BP 생산",  f"{_h['out']/1000:.2f} MT"), unsafe_allow_html=True)
                         _mk2.markdown(_kpi_card("수익률",   f"{_hmgr:+.1f}%", val_color=_mg_col), unsafe_allow_html=True)
                     with _cr:
@@ -3662,12 +3662,12 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                             src = row.get("원가기준", "")
                             if "실질손익" in _bc:
                                 styles[_bc.index("실질손익")] = (
-                                    "color:#6ACBBB;font-weight:600" if v >= 0
-                                    else "color:#F28B8B;font-weight:600")
+                                    "color:#0F766E;font-weight:600" if v >= 0
+                                    else "color:#B42318;font-weight:600")
                             if "원가기준" in _bc:
                                 styles[_bc.index("원가기준")] = (
-                                    "color:#FFB27A;font-weight:600" if src == "FIFO"
-                                    else "color:#6E767F")
+                                    "color:#B84A0C;font-weight:600" if src == "FIFO"
+                                    else "color:#7A848E")
                             return styles
 
                         st.dataframe(
@@ -3784,7 +3784,7 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                         textposition="outside", textfont=dict(size=10),
                         hovertemplate="%{x}<br>$%{y:+.4f}/kg<extra></extra>",
                     ))
-                    _fig_by.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+                    _fig_by.add_hline(y=0, line_color="rgba(34,39,45,0.25)", line_width=1)
                     st.plotly_chart(_fig_style(_fig_by, height=280, legend=False, y_fmt="$,.2f",
                                                title="실질 손익 ($/kg BP) — 매입사별"),
                                     width="stretch")
@@ -3908,8 +3908,8 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
             _ra1, _ra2, _ra3, _ra4, _ra5, _ra6 = st.columns(6)
             _gp_sub  = f"매출 대비 {_gp_pct_r:+.1f}%" if _tot_bp > 0 else ""
             _stor_sub = f"{_auto_stor_cnt}건 FIFO 자동" if _auto_stor_cnt else "미입력"
-            _rn_col  = "#6ACBBB" if _real_net_r >= 0 else "#F28B8B"
-            _gp_col  = "#6ACBBB" if _gp_r >= 0 else "#F28B8B"
+            _rn_col  = "#0F766E" if _real_net_r >= 0 else "#B42318"
+            _gp_col  = "#0F766E" if _gp_r >= 0 else "#B42318"
             _ra1.markdown(_kpi_card("매출총이익",         f"{_usd(_gp_r, 0)}", _gp_sub,
                                     val_color=_gp_col), unsafe_allow_html=True)
             _ra2.markdown(_kpi_card("수출비",             f"−${_tot_eu:,.0f}"),      unsafe_allow_html=True)
@@ -3980,8 +3980,8 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
             _df_ds_pnl = pd.DataFrame(_ds_rows_pnl)
             def _hl_ds(row):
                 v = row.get("거래 마진 (USD)", 0) or 0
-                c = ("background-color:rgba(79,184,168,.16);color:#6ACBBB;font-weight:600" if v >= 0
-                     else "background-color:rgba(242,109,109,.16);color:#F28B8B;font-weight:600")
+                c = ("background-color:rgba(42,157,143,.14);color:#0F766E;font-weight:600" if v >= 0
+                     else "background-color:rgba(224,82,74,.12);color:#B42318;font-weight:600")
                 return [""] * (len(row) - 2) + [c, ""]
             st.dataframe(
                 _df_ds_pnl.style.apply(_hl_ds, axis=1).format(na_rep="—", formatter={
@@ -4000,7 +4000,7 @@ if _page == PG_PNL and _sub == SUB_PNL_DS:
             _ds_tot_cost = sum(r["원가 합계 (USD)"] or 0 for r in _ds_rows_pnl)
             _ds_mg_pct   = _ds_tot_net / _ds_tot_rev * 100 if _ds_tot_rev > 0 else 0
             _dsk1, _dsk2, _dsk3 = st.columns(3)
-            _dsk_col = "#6ACBBB" if _ds_tot_net >= 0 else "#F28B8B"
+            _dsk_col = "#0F766E" if _ds_tot_net >= 0 else "#B42318"
             _dsk1.markdown(_kpi_card("직접 판매 매출액",  f"${_ds_tot_rev:,.0f}"), unsafe_allow_html=True)
             _dsk2.markdown(_kpi_card("직접 판매 원가",   f"${_ds_tot_cost:,.0f}"), unsafe_allow_html=True)
             _dsk3.markdown(_kpi_card("직접 판매 매출이익",f"{_usd(_ds_tot_net, 0)}",
@@ -4600,8 +4600,8 @@ if _page == PG_STOCK and _sub == SUB_INOUT:
                     })
                 def _hl_disp(row):
                     v = row.get("임가공사 보유 추정 (kg)", 0) or 0
-                    if v < -1:  return ["", "", "", "color:#F28B8B;font-weight:600"]
-                    if v > 0.5: return ["", "", "", "color:#FFB27A;font-weight:600"]
+                    if v < -1:  return ["", "", "", "color:#B42318;font-weight:600"]
+                    if v > 0.5: return ["", "", "", "color:#B84A0C;font-weight:600"]
                     return [""] * 4
                 st.dataframe(
                     pd.DataFrame(_disp_rows).style
@@ -6261,15 +6261,15 @@ if _page == PG_HOME and _sub == SUB_DASH:
             _cfc1, _cfc2, _cfc3 = st.columns(3)
             _cfc1.markdown(_kpi_card("청구 가능", f"${_cf_now:,.0f}",
                                      f"{sum(1 for r in _cf_rows if r['구분'] == '청구 가능')}건",
-                                     val_color="#6ACBBB" if _cf_now >= 0 else "#F28B8B"),
+                                     val_color="#0F766E" if _cf_now >= 0 else "#B42318"),
                            unsafe_allow_html=True)
             _cfc2.markdown(_kpi_card("INDEX 대기", f"${_cf_wait:,.0f}",
                                      "추정치",
-                                     val_color="#A3AAB2"),
+                                     val_color="#5E6670"),
                            unsafe_allow_html=True)
             _cfc3.markdown(_kpi_card("미수 합계", f"${_cf_tot:,.0f}",
                                      f"KRW ₩{_cf_tot*XR:,.0f}",
-                                     val_color="#6ACBBB" if _cf_tot >= 0 else "#F28B8B"),
+                                     val_color="#0F766E" if _cf_tot >= 0 else "#B42318"),
                            unsafe_allow_html=True)
             # 월별 예상 입금 일정
             _cf_by_mon = defaultdict(lambda: {"건수": 0, "금액": 0.0})
@@ -6424,8 +6424,8 @@ if _page == PG_HOME and _sub == SUB_DASH:
                                  hovertemplate="%{x}<br>실질 손익 $%{y:+,.0f}<extra></extra>"))
         _in_q = [i for i, m in enumerate(_ms) if _qtr(m) == _f_q]
         if _in_q:                                          # 선택 분기 음영
-            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(255,122,26,0.08)", line_width=0)
-        fig.add_hline(y=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+            fig.add_vrect(x0=_in_q[0] - 0.5, x1=_in_q[-1] + 0.5, fillcolor="rgba(242,107,29,0.08)", line_width=0)
+        fig.add_hline(y=0, line_color="rgba(34,39,45,0.25)", line_width=1)
         _fig_style(fig, height=230, top=8)
         _tt = [(f"{int(m[5:7])}월<br>{m[:4]}" if (i == 0 or m[5:7] == "01") else f"{int(m[5:7])}월")
                for i, m in enumerate(_ms)]
@@ -6758,15 +6758,15 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
             # 이행률 progress bar — expander 바깥에서 항상 표시
             _prog_pct  = min(1.0, _m["shipped_mt"] / _m["max_mt"]) if _m["max_mt"] else 0
             _prog_pct  = 1.0 if _m["status"] == "complete" else _prog_pct
-            _bar_color = {"complete": "#4FB8A8", "ok": "#7FA0C8", "short": "#F26D6D"}.get(_m["status"], "#A3AAB2")
-            _stat_badge_color = {"complete": "#24574F", "ok": "#2F4258", "short": "#5E2E2E"}.get(_m["status"], "#3B4148")
+            _bar_color = {"complete": "#2A9D8F", "ok": "#6F8FB8", "short": "#E0524A"}.get(_m["status"], "#5E6670")
+            _stat_badge_color = {"complete": "#DDF1EE", "ok": "#E3EBF5", "short": "#FBE4E1"}.get(_m["status"], "#D3DCE4")
             _sub_lbl   = f" / {_prname}" if _prname else ""
             _ct_box = _crc.container(key="panel_ctdetail")
             _ct_box.markdown(f"""
-<div style="background:#2A2F35;border:none;border-radius:14px;
+<div style="background:#FFFFFF;border:none;border-radius:14px;
             padding:11px 16px 10px;margin-bottom:10px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span style="font-size:.85rem;font-weight:600;color:#E8EAED">
+    <span style="font-size:.85rem;font-weight:600;color:#22272D">
       {_bname} &nbsp;·&nbsp; {_scname}{_sub_lbl}
     </span>
     <span style="font-size:.75rem;font-weight:600;color:{_bar_color};
@@ -6775,12 +6775,12 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
     </span>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
-    <div style="flex:1;background:#3B4148;border-radius:20px;height:7px;overflow:hidden">
+    <div style="flex:1;background:#D3DCE4;border-radius:20px;height:7px;overflow:hidden">
       <div style="width:{_prog_pct*100:.1f}%;height:100%;
                   background:linear-gradient(90deg,{_bar_color}cc,{_bar_color});
                   border-radius:20px"></div>
     </div>
-    <span style="font-size:.78rem;color:#A3AAB2;white-space:nowrap;min-width:160px;text-align:right">
+    <span style="font-size:.78rem;color:#5E6670;white-space:nowrap;min-width:160px;text-align:right">
       {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT &nbsp;({_m['fulfill_pct']:.1f}%)
     </span>
   </div>
@@ -6805,8 +6805,8 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
                 _rem_val = f"{_m['remaining_mt']:,.2f} MT" if _m["remaining_mt"] > 0 else "충족"
-                _rem_col = "#F28B8B" if _m["remaining_mt"] > 0 else "#6ACBBB"
-                _avl_col = "#6ACBBB" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#F28B8B"
+                _rem_col = "#B42318" if _m["remaining_mt"] > 0 else "#0F766E"
+                _avl_col = "#0F766E" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#B42318"
                 _avl_sub = f"{_m['total_avail_mt']-_m['remaining_mt']:+.2f} MT 여유" if _m["remaining_mt"] > 0 else ""
                 _mc1.markdown(_kpi_card("계약량",          f"{_m['qty_mt']:,.1f} MT",
                                         f"허용 {_m['min_mt']:,.1f}~{_m['max_mt']:,.1f} MT"), unsafe_allow_html=True)

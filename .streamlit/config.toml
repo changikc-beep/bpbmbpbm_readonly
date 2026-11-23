@@ -1,12 +1,13 @@
-# base = "dark" pinned: app.py's custom CSS hard-codes dark surfaces/text colours.
+# base = "light" pinned: app.py's custom CSS hard-codes light surfaces/text colours.
 [theme]
-base                     = "dark"
-primaryColor             = "#FF7A1A"
-backgroundColor          = "#1F2328"
-secondaryBackgroundColor = "#2A2F35"
-textColor                = "#E8EAED"
-borderColor              = "#3B4148"
-dataframeHeaderBackgroundColor = "#2A2F35"
+# Light theme A: Ice Blue / Graphite / Flame Orange (print palette of the tolling-fee dashboard)
+base                     = "light"
+primaryColor             = "#F26B1D"
+backgroundColor          = "#EEF4F8"
+secondaryBackgroundColor = "#F4F8FB"
+textColor                = "#22272D"
+borderColor              = "#C9D3DC"
+dataframeHeaderBackgroundColor = "#F4F8FB"
 showWidgetBorder         = false
 baseRadius               = "0.625rem"
 # 14px root size: every rem-based size (theme and app.py CSS) shrinks together for denser forms
@@ -15,28 +16,28 @@ metricValueFontSize      = "1.6rem"
 # 한글 가독성: Pretendard (CDN). 로드 실패 시 브라우저 기본 sans-serif로 대체된다.
 font        = "'Pretendard Variable':https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
 headingFont = "'Pretendard Variable':https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
-# 차트 기본 색 — Gunmetal 테마 역할(본계열 스틸실버 / 양수 틸 / 강조 주황 / 대기 샌드 / 음수 코랄)
-chartCategoricalColors   = ["#A7B4C2", "#4FB8A8", "#FF7A1A", "#D6B25E", "#F26D6D", "#7FA0C8", "#8A6E4B", "#5B636C"]
+# 차트 기본 색: 본계열 스틸 / 양수 틸 / 강조 주황 / 대기 황토 / 음수 레드
+chartCategoricalColors   = ["#9AA8B6", "#2A9D8F", "#F26B1D", "#D4A72C", "#E0524A", "#6F8FB8", "#B08D5E", "#8D98A4"]
 
-# Basic palette (metric deltas, alerts, badges) re-toned to the Gunmetal theme
-redColor                 = "#F26D6D"
-redTextColor             = "#F28B8B"
-redBackgroundColor       = "rgba(242,109,109,0.16)"
-greenColor               = "#4FB8A8"
-greenTextColor           = "#6ACBBB"
-greenBackgroundColor     = "rgba(79,184,168,0.16)"
-orangeColor              = "#FF7A1A"
-orangeTextColor          = "#FF9A4D"
-orangeBackgroundColor    = "rgba(255,122,26,0.16)"
-yellowColor              = "#D6B25E"
-yellowTextColor          = "#E0C27A"
-yellowBackgroundColor    = "rgba(214,178,94,0.16)"
-blueColor                = "#7FA0C8"
-blueTextColor            = "#A9C2E2"
-blueBackgroundColor      = "rgba(127,160,200,0.16)"
-grayColor                = "#9AA1A9"
-grayTextColor            = "#A3AAB2"
-grayBackgroundColor      = "rgba(154,161,169,0.16)"
+# Basic palette (metric deltas, alerts, badges)
+redColor                 = "#E0524A"
+redTextColor             = "#B42318"
+redBackgroundColor       = "rgba(224,82,74,0.12)"
+greenColor               = "#2A9D8F"
+greenTextColor           = "#0F766E"
+greenBackgroundColor     = "rgba(42,157,143,0.13)"
+orangeColor              = "#F26B1D"
+orangeTextColor          = "#B84A0C"
+orangeBackgroundColor    = "rgba(242,107,29,0.12)"
+yellowColor              = "#D4A72C"
+yellowTextColor          = "#A16207"
+yellowBackgroundColor    = "rgba(212,167,44,0.15)"
+blueColor                = "#6F8FB8"
+blueTextColor            = "#3B5B85"
+blueBackgroundColor      = "rgba(111,143,184,0.15)"
+grayColor                = "#8C98A5"
+grayTextColor            = "#5E6670"
+grayBackgroundColor      = "rgba(94,102,112,0.10)"
 
 [client]
 # Hide the Deploy/developer toolbar entries for a cleaner header
