@@ -51,6 +51,52 @@ div[data-testid="stTabs"] button[role="tab"] p{font-weight:inherit !important}
 div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important}
 div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
+/* ── Shipment status grid (home): buyer x month dots ── */
+.sg-grid{display:grid;gap:6px 4px;align-items:center;margin-top:6px}
+.sg-mh{font-size:.7rem;color:#5E6670;text-align:center;line-height:1.15}
+.sg-mh.sg-hl{color:#B84A0C;font-weight:700}
+.sg-lbl{font-size:.8rem;color:#22272D;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg-lbl span{font-size:.68rem;color:#5E6670;font-weight:500;margin-left:5px}
+.sg-c{display:flex;justify-content:center}
+.sg-c a{text-decoration:none !important}
+.sg-d{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
+    font-size:.7rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums}
+.sg-e{width:9px;height:9px;background:#DCE5EC}
+.sg-provisional{background:#D4A72C}
+.sg-final{background:#6F8FB8}
+.sg-paid{background:#2A9D8F}
+.sg-sm{width:10px;height:10px;margin-right:6px;vertical-align:-1px}
+.sg-legend{display:flex;gap:16px;font-size:.75rem;color:#5E6670;margin-top:12px}
+
+/* ── Cost breakdown rows (P&L summary) ── */
+.cb-row{display:grid;grid-template-columns:minmax(130px,1.1fr) 2fr minmax(110px,.9fr);gap:14px;align-items:center;
+    padding:9px 0;border-bottom:1px solid #EEF4F8}
+.cb-nm{font-size:.85rem;font-weight:600;color:#22272D}
+.cb-nm span,.cb-v span{display:block;font-size:.72rem;color:#5E6670;font-weight:500;margin-top:2px}
+.cb-bar{height:8px;background:#EEF4F8;border-radius:20px;overflow:hidden}
+.cb-bar i{display:block;height:100%;background:#9AA8B6;border-radius:20px}
+.cb-v{text-align:right;font-size:.9rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums}
+.cb-tot{border-bottom:none}
+.cb-tot .cb-nm,.cb-tot .cb-v{color:#B84A0C}
+
+/* ── Month-close progress header ── */
+.mc-head{background:#FFFFFF;border-radius:16px;padding:20px 22px;margin-bottom:10px}
+.mc-top{display:flex;justify-content:space-between;align-items:flex-start}
+.mc-cap{font-size:.75rem;color:#5E6670;font-weight:600;letter-spacing:.04em}
+.mc-big{font-size:2rem;font-weight:700;color:#22272D;letter-spacing:-.03em;line-height:1.2;font-variant-numeric:tabular-nums}
+.mc-big span{font-size:1.1rem;color:#5E6670;font-weight:600}
+.mc-st{font-size:.78rem;font-weight:600;color:#A16207;background:rgba(212,167,44,.15);padding:4px 11px;border-radius:999px}
+.mc-st.mc-st-ok{color:#0F766E;background:rgba(42,157,143,.13)}
+.mc-bar{height:8px;background:#EEF4F8;border-radius:20px;overflow:hidden;margin-top:12px}
+.mc-bar i{display:block;height:100%;background:#F26B1D;border-radius:20px}
+.mc-pct{font-size:.72rem;color:#5E6670;text-align:right;margin-top:4px}
+.mc-groups{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:10px}
+.mc-gl{font-size:.75rem;color:#5E6670;margin-bottom:6px}
+.mc-gl b{color:#22272D}
+.mc-d{display:inline-block;width:16px;height:16px;border-radius:50%;margin-right:5px}
+.mc-ok{background:#2A9D8F}
+.mc-open{background:#FFFFFF;border:2px solid #D4A72C;box-sizing:border-box}
+
 /* ── Cards: bordered containers (key="card_*"), metrics, expanders, forms ── */
 div[class*="st-key-card_"]{
     background:#FFFFFF !important;border:none !important;
@@ -1404,6 +1450,112 @@ def _cc_money(*cols, dec=2, kg=(), pct=(), perkg=(), small=()):
     for c in small:
         cc[c] = st.column_config.NumberColumn(c, format="%d", width="small")
     return cc
+
+def _month_range(end_month, n=12):
+    """['YYYY-MM', ...] — n months ending at end_month (inclusive), oldest first."""
+    y, m = int(end_month[:4]), int(end_month[5:7])
+    out = []
+    for _ in range(n):
+        out.append(f"{y}-{m:02d}")
+        y, m = (y - 1, 12) if m == 1 else (y, m - 1)
+    return out[::-1]
+
+def _month_series(rows, key_fn, months):
+    """{key: [real P&L per month]} from _batch_pnl_rows-style rows (real = bp - raw - pf - eu - stor)."""
+    idx = {m: i for i, m in enumerate(months)}
+    ser = defaultdict(lambda: [0.0] * len(months))
+    for x in rows:
+        i = idx.get(x.get("month", ""))
+        if i is None:
+            continue
+        ser[key_fn(x)][i] += x["bp"] - x["raw"] - x["pf"] - x["eu"] - x["stor"]
+    return {k: [round(v, 0) for v in vs] for k, vs in ser.items()}
+
+_SG_RANK = {"provisional": 0, "final": 1, "paid": 2}
+_SG_LBL  = {"provisional": "가정산", "final": "확정산", "paid": "입금완료"}
+
+def _status_grid_html(ships, buyers, months, hl_months=(), link_fn=None):
+    """Buyer x loading-month dot grid. Each cell = shipment count, colored by the least advanced status."""
+    import html as _h
+    bm = {b["id"]: b for b in buyers}
+    mset = set(months)
+    cells = defaultdict(list)
+    for s in ships:
+        m = (s.get("loading_date") or "")[:7]
+        if m in mset:
+            cells[(s.get("buyer_id", ""), m)].append(s)
+    rows = sorted({bid for bid, _ in cells},
+                  key=lambda b: (bm.get(b, {}).get("name", "?"), bm.get(b, {}).get("product", "")))
+    if not rows:
+        return ""
+    cnt = defaultdict(int)
+    head = ['<div class="sg-lbl"></div>'] + [
+        f'<div class="sg-mh{" sg-hl" if m in hl_months else ""}">'
+        f'{int(m[5:7])}월{"<br>" + m[:4] if (i == 0 or m[5:7] == "01") else ""}</div>'
+        for i, m in enumerate(months)]
+    body = []
+    for bid in rows:
+        b = bm.get(bid, {})
+        body.append(f'<div class="sg-lbl">{_h.escape(b.get("name", "?"))}'
+                    f'<span>{_h.escape(b.get("product", ""))}</span></div>')
+        for m in months:
+            ss = cells.get((bid, m), [])
+            if not ss:
+                body.append('<div class="sg-c"><span class="sg-d sg-e"></span></div>')
+                continue
+            st_ = min((s.get("status") or "provisional" for s in ss), key=lambda x: _SG_RANK.get(x, 0))
+            for s in ss:
+                cnt[s.get("status") or "provisional"] += 1
+            tip = "&#10;".join(_h.escape(f'{(s.get("hbl") or "HBL미정").strip()}, '
+                                         f'{_SG_LBL.get(s.get("status") or "provisional", "?")}') for s in ss)
+            dot = f'<span class="sg-d sg-{st_}">{len(ss)}</span>'
+            if link_fn and len(ss) == 1 and (ss[0].get("hbl") or "").strip():
+                dot = f'<a target="_self" href="{link_fn(ss[0]["hbl"].strip())}">{dot}</a>'
+            body.append(f'<div class="sg-c" title="{_h.escape(b.get("name", ""))} {m}&#10;{tip}">{dot}</div>')
+    legend = "".join(f'<span><span class="sg-d sg-{k} sg-sm"></span>{v} {cnt.get(k, 0)}</span>'
+                     for k, v in _SG_LBL.items())
+    return (f'<div class="sg-grid" style="grid-template-columns:minmax(110px,1.3fr) repeat({len(months)},minmax(26px,1fr))">'
+            + "".join(head + body) + f'</div><div class="sg-legend">{legend}</div>')
+
+def _cost_breakdown_html(items, rev, out_kg):
+    """Cost rows with a horizontal bar: [(label, usd)] -> share of revenue, $/kg BP, bar scaled to the largest."""
+    import html as _h
+    top = max([max(v, 0) for _, v in items] or [0]) or 1
+    tot = sum(v for _, v in items)
+    rows = []
+    for lbl, v in items:
+        pct = f"매출 대비 {v / rev * 100:.1f}%" if rev > 0 else "매출 없음"
+        pkg = f"&#36;{v / out_kg:.4f}/kg" if out_kg > 0 else ""
+        rows.append(f'<div class="cb-row"><div class="cb-nm">{_h.escape(lbl)}<span>{pct}</span></div>'
+                    f'<div class="cb-bar"><i style="width:{max(v, 0) / top * 100:.1f}%"></i></div>'
+                    f'<div class="cb-v">&#36;{v:,.0f}<span>{pkg}</span></div></div>')
+    pct_t = f"매출 대비 {tot / rev * 100:.1f}%" if rev > 0 else ""
+    pkg_t = f"&#36;{tot / out_kg:.4f}/kg" if out_kg > 0 else ""
+    rows.append(f'<div class="cb-row cb-tot"><div class="cb-nm">원가 합계<span>{pct_t}</span></div>'
+                f'<div></div><div class="cb-v">&#36;{tot:,.0f}<span>{pkg_t}</span></div></div>')
+    return "".join(rows)
+
+def _close_progress_html(month, checks, sections):
+    """Month-close header: done / total, progress bar, one dot per check grouped by section."""
+    import html as _h
+    n = len(checks)
+    done = sum(1 for c in checks if c[2])
+    pct = done / n * 100 if n else 0
+    grp = []
+    for sec in sections:
+        cs = [c for c in checks if c[0] == sec]
+        if not cs:
+            continue
+        dots = "".join(f'<span class="mc-d {"mc-ok" if c[2] else "mc-open"}" title="{_h.escape(c[1])}"></span>'
+                       for c in cs)
+        grp.append(f'<div class="mc-g"><div class="mc-gl">{_h.escape(sec)} '
+                   f'<b>{sum(1 for c in cs if c[2])}/{len(cs)}</b></div><div>{dots}</div></div>')
+    status = "모두 완료" if done == n else f"확인 필요 {n - done}개"
+    return (f'<div class="mc-head"><div class="mc-top"><div><div class="mc-cap">{month} 마감 점검</div>'
+            f'<div class="mc-big">{done}<span> / {n}</span></div></div>'
+            f'<div class="mc-st {"mc-st-ok" if done == n else ""}">{status}</div></div>'
+            f'<div class="mc-bar"><i style="width:{pct:.1f}%"></i></div><div class="mc-pct">{pct:.0f}%</div>'
+            f'<div class="mc-groups">{"".join(grp)}</div></div>')
 
 def status_badge(s):
     m={"provisional":("Provisional 정산","b-wn"),"final":("최종정산","b-ok"),"paid":("입금완료","b-bp")}
@@ -3199,6 +3351,14 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             for _rb in _rev_map.values():
                 _rb_cnt[_rb[1]] += 1
 
+        # ── 원가 구성: 항목별 금액, 매출 대비 비중, BP kg당 원가 (위 손익 흐름과 같은 숫자) ──
+        with st.container(key="card_costmix"):
+            st.markdown("**원가 구성**", help="막대 = 가장 큰 원가 대비 길이, kg당 = BP 생산량 기준, 원료비 FIFO")
+            st.markdown(_cost_breakdown_html(
+                [("원료 매입비", _raw_fifo_s1), ("임가공비 (순)", _tot_pf), ("수출비", _tot_eu),
+                 ("보관비", _stor_s1), ("판관비/기타", _sga_s1 + _other_s1)],
+                _tot_bp, _tot_out), unsafe_allow_html=True)
+
         # ── 세금계산서 기준 총액 흐름 (상계 전 — 백데이터 검증용) ─────────────
         with st.expander("세금계산서 기준 총액 흐름 (스크랩 매각/BP 재매입 상계 전)", expanded=False):
             st.caption("장부/세금계산서 대사용 총액, 순 차감원가 = 임가공비 + 수출비")
@@ -3764,11 +3924,30 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 })
             _by_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
 
+            # 월별 실질 손익 미니 막대 (최근 12개월 선적월, 모든 행 같은 축)
+            _tr_src = [x for x in _batch_pnl_rows(cfg, _pctx, _rmc_mode, _default_rmc) if x["sid"] and x["month"]]
+            _tr_end = max([x["month"] for x in _tr_src] or [_today().strftime("%Y-%m")])
+            _tr_ms  = _month_range(_tr_end, 12)
+            # key by the shipment's buyer, the same basis as _hbl_agg above (a batch may carry its own buyer_id)
+            _tr_lbl = lambda x: (f"{_bm_pnl.get(x['ship'].get('buyer_id', ''), {}).get('name', '?')} "
+                                 f"({_bm_pnl.get(x['ship'].get('buyer_id', ''), {}).get('product', '?')})")
+            _tr_ser = _month_series(_tr_src, _tr_lbl, _tr_ms)
+            for _r in _by_rows:
+                _r["월별 실질 손익"] = _tr_ser.get(_r["매입사"], [0.0] * len(_tr_ms))
+            _tr_all = [v for s in _tr_ser.values() for v in s] or [0.0]
+            _tr_cc = {"월별 실질 손익": st.column_config.BarChartColumn(
+                "월별 실질 손익", help=f"{_tr_ms[0]} ~ {_tr_ms[-1]} 선적월 기준, 모든 행 같은 축",
+                y_min=min(0.0, min(_tr_all)), y_max=max(1.0, max(_tr_all)), width="medium")}
+
             st.dataframe(
                 pd.DataFrame(_by_rows), width="stretch", hide_index=True,
-                column_config=_cc_money("매출(BP)", "매출총이익", "실질 손익",
-                                        kg=("BP생산(kg)",), pct=("마진율(%)",),
-                                        perkg=("매출단가/kg", "실질손익/kg")),
+                column_config={**_cc_money("매출(BP)", "매출총이익", "실질 손익",
+                                           kg=("BP생산(kg)",), pct=("마진율(%)",),
+                                           perkg=("매출단가/kg", "실질손익/kg")),
+                               "마진율(%)": st.column_config.ProgressColumn(
+                                   "마진율(%)", format="%.1f%%", min_value=0, max_value=max(
+                                       [10.0] + [r["마진율(%)"] or 0 for r in _by_rows])),
+                               **_tr_cc},
             )
 
             # 실질손익/kg 막대 차트 — 매입사 간 단위 수익성 비교
@@ -3813,11 +3992,23 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 })
             _pr_rows.sort(key=lambda r: (r["실질손익/kg"] is None, -(r["실질손익/kg"] or 0)))
             if _pr_rows:
+                # 월별 실질 손익 미니 막대 (최근 12개월 선적월, 모든 행 같은 축)
+                _tr_end = max([x["month"] for x in _pr_src if x["month"]] or [_today().strftime("%Y-%m")])
+                _tr_ms  = _month_range(_tr_end, 12)
+                _tr_ser = _month_series(_pr_src, lambda x: x["proc_nm"], _tr_ms)
+                for _r in _pr_rows:
+                    _r["월별 실질 손익"] = _tr_ser.get(_r["임가공사"], [0.0] * len(_tr_ms))
+                _tr_all = [v for s in _tr_ser.values() for v in s] or [0.0]
                 st.dataframe(pd.DataFrame(_pr_rows), width="stretch", hide_index=True,
-                             column_config=_cc_money("임가공비(순)", "매출총이익", "실질 손익",
-                                                     kg=("투입(kg)", "생산(kg)"),
-                                                     perkg=("임가공비/kg BP", "실질손익/kg"),
-                                                     pct=("실제 전환율(%)",)))
+                             column_config={**_cc_money("임가공비(순)", "매출총이익", "실질 손익",
+                                                        kg=("투입(kg)", "생산(kg)"),
+                                                        perkg=("임가공비/kg BP", "실질손익/kg"),
+                                                        pct=("실제 전환율(%)",)),
+                                            "실제 전환율(%)": st.column_config.ProgressColumn(
+                                                "실제 전환율(%)", format="%.1f%%", min_value=0, max_value=100),
+                                            "월별 실질 손익": st.column_config.BarChartColumn(
+                                                "월별 실질 손익", help=f"{_tr_ms[0]} ~ {_tr_ms[-1]} 선적월 기준, 모든 행 같은 축",
+                                                y_min=min(0.0, min(_tr_all)), y_max=max(1.0, max(_tr_all)), width="medium")})
 
     st.divider()
 
@@ -6184,6 +6375,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
     _slot_kpi   = st.container()
     _hl, _hr    = st.columns([2, 1], gap="medium")
     _r3a, _r3b  = st.columns([1.4, 1], gap="medium")
+    _slot_grid  = st.container()
     _more = st.toggle("분석 더 보기", key="home_more", value=False,
                       help="원료/정산 상태/임가공사별 매출, 운영 현황")
     if _more:
@@ -6446,6 +6638,21 @@ if _page == PG_HOME and _sub == SUB_DASH:
 
     _panel(_hl, "월별 매출 추이", "", _b_trend)
     _panel(_r3b, "매입사별 매출", _f_q, _b_buyer)
+
+    # ── 선적 정산 상태 격자: 매입사 x 선적월(최근 12개월), 점 색 = 그 달 선적 중 가장 덜 진행된 상태 ──
+    _sg_months = _month_range(_today().strftime("%Y-%m"), 12)
+    _sg_html = _status_grid_html(
+        _f_ships, cfg["buyers"], _sg_months,
+        hl_months={m for m in _sg_months if _qtr(m) == _f_q},
+        link_fn=lambda h: f"?page=ship&sub={_urlq(SUB_SHIP)}&hbl={_urlq(h)}")
+    with _slot_grid, st.container(border=True, key="card_statusgrid"):
+        st.markdown("**선적 정산 상태**", help="숫자 = 선적 건수, 색 = 그 달 선적 중 가장 덜 진행된 상태, "
+                                                 "주황 월 = 선택 분기, 점에 마우스를 올리면 HBL 표시, 1건이면 클릭 시 선적 정산으로 이동")
+        st.caption("최근 12개월, 선적월 기준" + ("" if _f_b == "전체" and _f_p == "전체" else ", 필터 적용"))
+        if _sg_html:
+            st.markdown(_sg_html, unsafe_allow_html=True)
+        else:
+            st.caption("최근 12개월 선적 없음")
     if _more:
         _panel(_g2[0], "스크랩 유형별 매출", _f_q, _b_scrap)
         _panel(_g2[1], "정산 상태", f"{_f_q}, 건수", _b_status)
@@ -6559,13 +6766,12 @@ if _page == PG_HOME and _sub == SUB_CLOSE:
                         else f"미입력, 앱 추정 {_est[_prod]:,.0f} kg"))
 
     # ── 요약 + 구역별 표 ──
-    _open = [c for c in _checks if not c[2]]
-    _k1, _k2 = st.columns(2)
-    _k1.metric("점검 항목", f"{len(_checks)}개", border=True)
-    _k2.metric("확인 필요", f"{len(_open)}개", border=True,
-               delta=("모두 완료" if not _open else None), delta_color="off")
-    for _sec in ("기준 데이터", "선적/정산", "입금", "생산/재고"):
+    _mc_secs = ("기준 데이터", "선적/정산", "입금", "생산/재고")
+    st.markdown(_close_progress_html(_mc_m, _checks, _mc_secs), unsafe_allow_html=True)
+    for _sec in _mc_secs:
         _rows = [c for c in _checks if c[0] == _sec]
+        if not _rows:
+            continue
         _n_open = sum(1 for c in _rows if not c[2])
         with st.container(border=True, key=f"card_close_{_sec}"):
             st.markdown(f"**{_sec}**, " + (f":orange[확인 필요 {_n_open}]" if _n_open else ":green[완료]"))
