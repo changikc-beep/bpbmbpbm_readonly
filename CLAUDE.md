@@ -20,6 +20,14 @@ INDEX 탭 3열(Co Mid)을 비우고 7열(Co Low)만 넣은 행도 받는다(기�
 홈 3번째 줄은 업계 동향(Google News RSS 검색, 제목/출처/날짜/링크만, 6시간 캐시, 검색어는 app.py `_NEWS_TABS`) | 메탈 INDEX(`index_history` 최근 10개월).
 미수 현금 전망 카드는 홈에서 뺐고(2026-11-27), 계산(`_receivable_rows`)은 KPI 미수금과 엑셀 보고서가 계속 쓴다. 매입사별 매출은 홈 1줄 카드. 이전 카드형 홈(`?v=1`)은 삭제.
 
+## 메일 → 시트 입력 (tools/)
+
+- `tools/mail_ingest.py`: 다우오피스 IMAP(`imap.daouoffice.com:993`) 읽기 전용 접속. 자격 증명은 Windows 자격 증명 관리자 `daou-imap`
+  (사용자가 `cmdkey /generic:daou-imap /user:<메일 주소> /pass`로 등록). 첨부는 메모리에서만 연다(디스크 저장 시 문서 보안 프로그램이 암호화).
+- `tools/ingest.py all|inout|tolling|tgl|szamla [--write]`: 기본은 미리보기. `--write`는 입출고(입고/출고 탭 새 행)와 생산(성일 월 합계)만 쓴다.
+  TGL 리포트와 szamla는 보고만 한다(HBL 키 교체는 세 탭을 같이 바꿔야 하고, ETD/ETA는 MSC 기준이 우선).
+- 월 입고 단가는 `tools/prices.json`('스크랩/출발지' 키). 같은 메일을 다시 돌려도 이미 있는 행은 건너뛴다(날짜+중량, SZ Form/서류번호로 대조).
+
 ## 데이터 질문에 답하는 법
 
 사용자가 수치·상태를 물으면(예: "3분기 매출", "EcoPro 미수", "26090002 정산 상태", "BM 재고") 추정하지 말고

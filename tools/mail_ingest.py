@@ -22,7 +22,7 @@ HOST, PORT, CRED_TARGET = "imap.daouoffice.com", 993, "daou-imap"
 # subject patterns per kind (matched on the decoded subject, case-insensitive)
 KINDS = {
     "inout":   re.compile(r"입출고"),
-    "tolling": re.compile(r"톨링"),
+    "tolling": re.compile(r"톨링\s*처리\s*내역"),
     "tgl":     re.compile(r"KHE\s*REPORT", re.I),
     "szamla":  re.compile(r"SURRENDER\s*BL", re.I),
     "export":  re.compile(r"export", re.I),
@@ -96,7 +96,8 @@ def attachments(m, uid):
     out = []
     for part in msg.walk():
         fn = part.get_filename()
-        if fn:
+        # skip inline pictures (signatures, pasted photos): only real document attachments
+        if fn and part.get_content_maintype() != "image":
             out.append((_dec(fn), part.get_payload(decode=True) or b""))
     return out
 
@@ -117,7 +118,8 @@ def cmd_peek(args):
     import openpyxl
     m, _ = connect()
     rx = KINDS[args.kind]
-    hit = next((r for r in recent(m, args.days) if rx.search(r[3])), None)
+    # newest original mail of the kind (replies/forwards skipped: they repeat or drop the attachment)
+    hit = next((r for r in recent(m, args.days) if rx.search(r[3]) and not re.match(r"\s*(re|fw|fwd)\s*:", r[3], re.I)), None)
     if not hit:
         sys.exit(f"최근 {args.days}일 '{args.kind}' 메일 없음")
     uid, d, frm, subj, _ = hit
