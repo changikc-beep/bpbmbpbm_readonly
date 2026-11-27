@@ -196,6 +196,37 @@ a.h2-nr:hover .h2-nt{color:#B84A0C}
 .h2 .sg-legend{font-size:11.5px;margin-top:6px;gap:14px}
 .h2 .sg-sm{width:9px;height:9px}
 
+/* ── Contract detail (선적/계약 > 계약 이행): title + pills + progress, KPI strip, terms grid ── */
+.ct-d{container-type:inline-size;font-size:13px;color:#22272D}
+.ct-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.ct-tt{font-size:14px;font-weight:700}
+.ct-tt span{display:block;font-size:11.5px;font-weight:500;color:#5E6670;margin-top:2px}
+.ct-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.ct-p{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:#EEF2F5;color:#5E6670;white-space:nowrap}
+.ct-warn{background:rgba(212,167,44,.18);color:#A16207}
+.ct-neg{background:rgba(224,82,74,.12);color:#B42318}
+.ct-bar{display:flex;align-items:center;gap:10px;margin:10px 0 10px}
+.ct-bar > div{flex:1;height:7px;background:#E4EBF1;border-radius:20px;overflow:hidden}
+.ct-bar i{display:block;height:100%;border-radius:20px}
+.ct-bar span{font-size:12px;color:#5E6670;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ct-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#F6F8FA;border-radius:8px;overflow:hidden}
+.ct-kpis .h2-k{border-top:none;margin:0;border-left:1px solid #E4EBF1}
+.ct-kpis .h2-k:first-child{border-left:none}
+.ct-kpis .h2-kv{font-size:19px}
+.ct-dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 16px;margin:10px 0 0}
+.ct-dl > div{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #F0F3F6;min-width:0}
+.ct-dl dt{font-size:11.5px;color:#8C98A5;font-weight:500;white-space:nowrap}
+.ct-dl dd{margin:0;font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}
+.ct-dl .ct-note{grid-column:1 / -1;display:block}
+.ct-dl .ct-note dd{text-align:left;margin-top:2px;color:#3A4048}
+@container (max-width:640px){
+  .ct-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ct-kpis .h2-k:nth-child(3){border-left:none}
+  .ct-kpis .h2-k:nth-child(n+3){border-top:1px solid #E4EBF1}
+  .ct-dl{grid-template-columns:minmax(0,1fr)}
+}
+@container (min-width:641px) and (max-width:900px){ .ct-dl{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
 /* ── Industry news card (home): date | title | source rows ── */
 .nw-list{display:flex;flex-direction:column}
 a.nw-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:baseline;padding:8px 4px;
@@ -704,7 +735,10 @@ div[data-testid="stExpander"] details>div, div[data-testid="stExpander"] details
     min-height:34px !important;padding:5px 14px 6px !important;font-size:13px !important}
 :is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stSegmentedControl"]{margin:0 0 2px !important}
 :is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] button{
-    min-height:30px !important;padding:3px 14px !important;font-size:12.5px !important}
+    min-height:30px !important;padding:3px 14px !important;font-size:12.5px !important;margin:0 !important}
+/* segmented buttons are joined edge to edge (-1px) by default; the pill pickers get a real gap */
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] div:has(> button){
+    column-gap:6px !important;row-gap:6px !important;flex-wrap:wrap}
 /* KPI tiles and strips: same proportions as the home strip */
 div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)){
     border-radius:10px !important;padding:0 !important}
@@ -7684,90 +7718,64 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
             _stat_badge_color = {"complete": "#DDF1EE", "ok": "#E3EBF5", "short": "#FBE4E1"}.get(_m["status"], "#D3DCE4")
             _sub_lbl   = f" / {_prname}" if _prname else ""
             _ct_box = _crc.container(key="panel_ctdetail")
-            _ct_box.markdown(f"""
-<div style="background:#FFFFFF;border:none;border-radius:14px;
-            padding:11px 16px 10px;margin-bottom:10px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span style="font-size:.85rem;font-weight:600;color:#22272D">
-      {_bname}  /  {_scname}{_sub_lbl}
-    </span>
-    <span style="font-size:.84rem;font-weight:600;color:{_bar_color};
-                 background:{_stat_badge_color};border-radius:5px;padding:2px 8px">
-      {_stat_label}
-    </span>
-  </div>
-  <div style="display:flex;align-items:center;gap:10px">
-    <div style="flex:1;background:#D3DCE4;border-radius:20px;height:7px;overflow:hidden">
-      <div style="width:{_prog_pct*100:.1f}%;height:100%;
-                  background:linear-gradient(90deg,{_bar_color}cc,{_bar_color});
-                  border-radius:20px"></div>
-    </div>
-    <span style="font-size:.86rem;color:#5E6670;white-space:nowrap;min-width:160px;text-align:right">
-      {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT &nbsp;({_m['fulfill_pct']:.1f}%)
-    </span>
-  </div>
-</div>""", unsafe_allow_html=True)
+            # Contract detail as one HTML block: title + status pills + progress, KPI strip, terms grid.
+            # (the old caption line with the status dot repeated what the grid below shows)
+            import html as _hc
+            _pills = []
+            if _m["max_mt"] > 0 and _m["shipped_mt"] > _m["max_mt"]:
+                _pills.append(f'<span class="ct-p ct-warn" title="선적량 {_m["shipped_mt"]:.2f} MT, 계약 상한 {_m["max_mt"]:.2f} MT">'
+                              f'상한 {_m["shipped_mt"] - _m["max_mt"]:.2f} MT 초과</span>')
+            elif _m["min_mt"] > 0 and 0 < _m["shipped_mt"] < _m["min_mt"] and _ct_cstatus == "closed":
+                _pills.append(f'<span class="ct-p ct-neg" title="선적량 {_m["shipped_mt"]:.2f} MT, 계약 하한 {_m["min_mt"]:.2f} MT">'
+                              f'하한 {_m["min_mt"] - _m["shipped_mt"]:.2f} MT 미달</span>')
+            if _m.get("oop_alloc_mt", 0) > 0:
+                _pills.append(f'<span class="ct-p" title="계약 기간 밖 선적일의 배분, 협의 물량으로 보고 이행량에 포함">'
+                              f'기간 밖 배분 {_m["oop_alloc_mt"]:.2f} MT</span>')
+            _pills.append(f'<span class="ct-p">{_ct_cst_lbl}</span>')
+            _pills.append(f'<span class="ct-p" style="color:{_bar_color};background:{_stat_badge_color}">{_stat_label}</span>')
+
+            _rem_sub = "계약량 충족" if _m["remaining_mt"] <= 0 else f"이행률 {_m['fulfill_pct']:.1f}%"
+            _rem_col = "#B42318" if _m["remaining_mt"] > 0 else "#0F766E"
+            _avl_col = "#0F766E" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#B42318"
+            _avl_sub = f"{_m['total_avail_mt'] - _m['remaining_mt']:+.2f} MT 여유" if _m["remaining_mt"] > 0 else "잔여 의무 없음"
+            _kc = [("계약량", f"{_m['qty_mt']:,.1f} MT", f"허용 {_m['min_mt']:,.1f}~{_m['max_mt']:,.1f} MT", "#22272D"),
+                   ("선적 완료", f"{_m['shipped_mt']:,.2f} MT", f"이행률 {_m['fulfill_pct']:.1f}%", "#22272D"),
+                   ("잔여 의무", f"{max(_m['remaining_mt'], 0):,.2f} MT", _rem_sub, _rem_col),
+                   ("충당 가능 (BP)", f"{_m['total_avail_mt']:,.2f} MT", _avl_sub, _avl_col)]
+            _kc_h = "".join(f'<div class="h2-k"><div class="h2-kl">{l}</div><div class="h2-kv" style="color:{c}">{_kv(v)}</div>'
+                            f'<div class="h2-ks">{s}</div></div>' for l, v, s, c in _kc)
+
+            _ct_ni_disp = f"{_ct['ni_payable_pct']:.2f}%" if _ct.get("ni_payable_pct") else "매입사 기본"
+            _ct_co_disp = f"{_ct['co_payable_pct']:.2f}%" if _ct.get("co_payable_pct") else "매입사 기본"
+            _prov_pct_disp = f"{_ct['prov_pct']:.0f}%" if _ct.get("prov_pct") else "100%"
+            _prov_idx_d = {"prov": "가정산월", "loading": "선적월"}.get(_ct.get("prov_index_basis", "prov"), "가정산월")
+            _final_idx_d = {"final": "확정월", "prov": "가정산월", "loading": "선적월"}.get(_ct.get("final_index_basis", "final"), "확정월")
+            _dl = [
+                ("계약 기간", f"{_ct.get('start_date') or '—'} ~ {_ct.get('end_date') or '—'}"),
+                ("전환율", f"{_m['conv_pct']:.0f}% ({_m.get('conv_src', '실적')})"),
+                ("임가공사", _prname or "전체"),
+                ("창고 원료", f"{_m['warehouse_raw_kg'] / 1000:,.2f} MT → BP {_m['warehouse_bp_mt']:,.2f} MT"),
+                ("임가공사 미처리", f"{_m['at_proc_raw_kg'] / 1000:,.2f} MT → BP {_m['at_proc_bp_mt']:,.2f} MT"),
+                ("완제품 (미연결 배치)", f"{_m.get('finished_bp_mt', 0):,.2f} MT"),
+                ("Ni / Co 지불율", f"{_ct_ni_disp} / {_ct_co_disp}"),
+                ("가정산", _prov_pct_disp),
+                ("INDEX 기준", f"Prov {_prov_idx_d}, Final {_final_idx_d}"),
+            ] + ([("RFQ", _ct["rfq_id"])] if _ct.get("rfq_id") else [])
+            _dl_h = "".join(f'<div><dt>{_hc.escape(k)}</dt><dd>{_hc.escape(str(v))}</dd></div>' for k, v in _dl)
+            if _ct.get("notes"):
+                _dl_h += f'<div class="ct-note"><dt>메모</dt><dd>{_hc.escape(str(_ct["notes"]))}</dd></div>'
+
+            _ct_box.markdown(
+                f'<div class="ct-d">'
+                f'<div class="ct-hd"><div class="ct-tt">{_hc.escape(_bname)} / {_hc.escape(_scname)}{_hc.escape(_sub_lbl)}'
+                f'<span>계약 {_m["qty_mt"]:,.1f} MT ±{_ct.get("tolerance_pct", 0):.0f}%, {_hc.escape(_ct.get("product", "BP"))}</span></div>'
+                f'<div class="ct-pills">{"".join(_pills)}</div></div>'
+                f'<div class="ct-bar"><div><i style="width:{_prog_pct * 100:.1f}%;background:{_bar_color}"></i></div>'
+                f'<span>{_m["shipped_mt"]:,.1f} / {_m["qty_mt"]:,.1f} MT ({_m["fulfill_pct"]:.1f}%)</span></div>'
+                f'<div class="ct-kpis">{_kc_h}</div>'
+                f'<dl class="ct-dl">{_dl_h}</dl></div>', unsafe_allow_html=True)
 
             with _ct_box:
-                st.caption(f"{_ct_cst_ico} {_ct_cst_lbl}"
-                           + (f", RFQ {_ct['rfq_id']}" if _ct.get("rfq_id") else "")
-                           + f", {_ct.get('product','BP')} / {_scname}"
-                           + (f" / {_prname}" if _prname else "")
-                           + f", 계약 {_m['qty_mt']:,.1f} MT ±{_ct.get('tolerance_pct',0):.0f}%")
-                # 상한 초과 / 하한 미달 경고 (협의 하에 발생 가능 — 저장은 항상 허용, 안내만 표시)
-                if _m["max_mt"] > 0 and _m["shipped_mt"] > _m["max_mt"]:
-                    st.warning(f"선적량({_m['shipped_mt']:.2f} MT)이 계약 상한({_m['max_mt']:.2f} MT)을 "
-                               f"{_m['shipped_mt']-_m['max_mt']:.2f} MT 초과")
-                elif _m["min_mt"] > 0 and _m["shipped_mt"] > 0 and _m["shipped_mt"] < _m["min_mt"] and _ct_cstatus == "closed":
-                    st.warning(f"선적량({_m['shipped_mt']:.2f} MT)이 계약 하한({_m['min_mt']:.2f} MT)에 "
-                               f"{_m['min_mt']-_m['shipped_mt']:.2f} MT 미달")
-                if _m.get("oop_alloc_mt", 0) > 0:
-                    st.info(f"계약 기간 밖 선적일의 배분 {_m['oop_alloc_mt']:.2f} MT가 "
-                            f"이행량에 포함 (협의 물량으로 봄)")
-
-                _mc1, _mc2, _mc3, _mc4 = st.columns(4)
-                # always a number in the value line (same type as the other tiles); "충족" goes to the sub line
-                _rem_val = f"{max(_m['remaining_mt'], 0):,.2f} MT"
-                _rem_sub = "계약량 충족" if _m["remaining_mt"] <= 0 else f"이행률 {_m['fulfill_pct']:.1f}%"
-                _rem_col = "#B42318" if _m["remaining_mt"] > 0 else "#0F766E"
-                _avl_col = "#0F766E" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#B42318"
-                _avl_sub = f"{_m['total_avail_mt']-_m['remaining_mt']:+.2f} MT 여유" if _m["remaining_mt"] > 0 else ""
-                _mc1.markdown(_kpi_card("계약량",          f"{_m['qty_mt']:,.1f} MT",
-                                        f"허용 {_m['min_mt']:,.1f}~{_m['max_mt']:,.1f} MT"), unsafe_allow_html=True)
-                _mc2.markdown(_kpi_card("선적 완료",       f"{_m['shipped_mt']:,.2f} MT",
-                                        f"이행률 {_m['fulfill_pct']:.1f}%"), unsafe_allow_html=True)
-                _mc3.markdown(_kpi_card("잔여 의무",       _rem_val, _rem_sub, val_color=_rem_col), unsafe_allow_html=True)
-                _mc4.markdown(_kpi_card("충당 가능 (BP)",  f"{_m['total_avail_mt']:,.2f} MT",
-                                        _avl_sub, val_color=_avl_col), unsafe_allow_html=True)
-
-                _pr_scope = f"임가공사: {_prname}" if _prname else "임가공사: 전체"
-                st.caption(
-                    f"전환율 {_m['conv_pct']:.0f}% ({_m.get('conv_src','실적')}) 적용, {_pr_scope}, "
-                    f"창고 원료 {_m['warehouse_raw_kg']/1000:,.2f} MT → BP {_m['warehouse_bp_mt']:,.2f} MT, "
-                    f"임가공사 미처리 {_m['at_proc_raw_kg']/1000:,.2f} MT → BP {_m['at_proc_bp_mt']:,.2f} MT, "
-                    f"완제품(미연결 배치) {_m.get('finished_bp_mt',0):,.2f} MT"
-                )
-
-                # 가격/정산 조건 표시
-                _ct_ni_disp = f"{_ct['ni_payable_pct']:.2f}%" if _ct.get("ni_payable_pct") else "매입사 기본"
-                _ct_co_disp = f"{_ct['co_payable_pct']:.2f}%" if _ct.get("co_payable_pct") else "매입사 기본"
-                _prov_pct_disp = f"{_ct['prov_pct']:.0f}%" if _ct.get("prov_pct") else "100%"
-                _prov_idx_disp_map = {"prov": "가정산월", "loading": "선적월"}
-                _final_idx_disp_map = {"final": "확정월", "prov": "가정산월", "loading": "선적월"}
-                _prov_idx_d = _prov_idx_disp_map.get(_ct.get("prov_index_basis","prov"), "가정산월")
-                _final_idx_d = _final_idx_disp_map.get(_ct.get("final_index_basis","final"), "확정월")
-                st.caption(
-                    f"Ni 지불율: {_ct_ni_disp}, Co 지불율: {_ct_co_disp}, "
-                    f"가정산: {_prov_pct_disp}, Prov INDEX: {_prov_idx_d}, Final INDEX: {_final_idx_d}"
-                )
-                if _ct.get("notes"):
-                    st.caption(f"{_ct['notes']}")
-
-                # 기간 표시
-                if _ct.get("start_date") or _ct.get("end_date"):
-                    st.caption(f"계약 기간: {_ct.get('start_date','—')} ~ {_ct.get('end_date','—')}")
-
-
                 # ── 이 계약으로 나간 B/L — 시트 선적 탭 '계약ID' 연결, 또는 기존 배분 기록(나눠 배정한 B/L) ──
                 st.divider()
                 st.markdown("**연결된 B/L**")
