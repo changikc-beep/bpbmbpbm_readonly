@@ -302,7 +302,7 @@ def main():
     _fa = {s["hbl"]: s.get("final_amount_usd") for s in sc4["shipments"]}
     check("sync: 선적 tab 확정액 column", _fa == {"H1": 999.5, "H2": 222.0})
 
-    # 계약 / 견적 / 실사 tabs: the sheet is the source; unknown bidders become buyers; allocations follow contract ids
+    # 계약 / 실사 tabs: the sheet is the source; unknown contract buyers become buyers; allocations follow contract ids (견적 tab removed 2026-11-27)
     sc3 = _sync_cfg()
     sc3["contracts"] = [{"id": "OLD", "buyer_id": "?"}]
     sc3["contract_allocations"] = [{"contract_id": "C1", "shipment_id": "X"}, {"contract_id": "OLD", "shipment_id": "X"}]
@@ -312,15 +312,14 @@ def main():
                             "", "", "30", "45", "O", ""],
                ["R1", "2026-09-21", "BM", "80", "GSE", "115", "115", "21.5", "5.4", "Low", "100", "", "", "", "", "", ""]]
     cnt_tab = [["월"], ["2026-10", "bm", "51000", "창고"], ["bad", "BP", "1", ""]]
-    _, log3 = run_sync(sc3, {"계약": ct_tab, "견적": rfq_tab, "실사": cnt_tab})
+    _, log3 = run_sync(sc3, {"계약": ct_tab, "실사": cnt_tab})
     c1 = sc3["contracts"][0] if sc3["contracts"] else {}
-    check("sync: 계약/견적/실사 tabs",
+    check("sync: 계약/실사 tabs",
           len(sc3["contracts"]) == 1 and c1.get("id") == "C1" and c1.get("co_basis") == "Low"
           and c1.get("ni_payable_pct") == 118.0 and c1.get("final_pay_days") == 45
           and c1.get("prov_index_basis") == "prov" and c1.get("scrap_type_id") == "S"
           and any(b["name"] == "POSCO" and b["product"] == "BM" for b in sc3["buyers"])
           and [a["contract_id"] for a in sc3["contract_allocations"]] == ["C1"]
-          and len(sc3["rfqs"]) == 2 and sc3["rfqs"][0]["selected"] and not sc3["rfqs"][1]["selected"]
           and sc3["stock_counts"] == [{"month": "2026-10", "product": "BM", "kg": 51000.0, "note": "창고"}])
 
     # 출고 tab '재고조정' rows: + decreases / − increases warehouse stock, and FIFO consumes / adds lots
