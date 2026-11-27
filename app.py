@@ -4,7 +4,8 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-st.set_page_config(page_title="BP/BM 재고/손익 관리", layout="wide", initial_sidebar_state="expanded")
+# "auto": sidebar open on desktop, collapsed on phones (an open sidebar covers the whole page there)
+st.set_page_config(page_title="BP/BM 재고/손익 관리", layout="wide", initial_sidebar_state="auto")
 APP_BUILD = "2026-11-23 M"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
@@ -732,6 +733,78 @@ table.pl-tbl{font-size:12.5px;border-radius:8px}
 .mc-groups{margin-top:6px;gap:6px 22px}
 .mc-d{width:13px;height:13px}
 .st-key-home_filters{border-radius:10px;padding:6px 12px 4px !important}
+
+/* ══ Responsive (2026-11-27): layouts follow the space they get, not the screen they were drawn for ══
+   The home grid reacts to its own width (container queries), so the sidebar or a narrow browser pane is
+   accounted for. KPI cells wrap instead of overflowing; wide tables scroll inside their card. */
+.h2{container-type:inline-size;container-name:h2}
+/* 6 KPI cells: one row, then 3x2, then 2x3 (never a lone cell on a second row) */
+.h2-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+@container h2 (max-width:940px){ .h2-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@container h2 (max-width:520px){ .h2-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
+/* hairlines on every cell, the outer ones pulled under the clipped edge, so wrapped rows stay ruled */
+.h2-kpis{overflow:hidden}
+.h2-k, .h2-k:first-child{border-left:1px solid #EEF2F5;border-top:1px solid #EEF2F5;margin:-1px 0 0 -1px}
+.h2-kv{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;white-space:normal;font-size:clamp(17px,1.6vw,21px)}
+.h2-kv .h2-d{margin-left:0}
+.h2-body{overflow-x:auto}
+.h2 .sg-tbl{min-width:620px}
+.h2-t{min-width:440px}
+@container h2 (max-width:1180px){
+  .h2-r1{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .h2-r1 > .h2-card:first-child{grid-column:1 / -1}
+}
+@container h2 (max-width:980px){
+  .h2-r2, .h2-r3{grid-template-columns:minmax(0,1fr)}
+}
+@container h2 (max-width:620px){
+  .h2-r1{grid-template-columns:minmax(0,1fr)}
+  /* the chart's viewBox is 560 wide, so on a phone its axis text would shrink to ~6px; enlarge it in SVG units */
+  .h2-chart .xa, .h2-chart .ya{font-size:15px}
+  .h2-k{padding:8px 10px}
+  a.h2-nr{grid-template-columns:34px minmax(0,1fr)}
+  a.h2-nr .h2-ng, a.h2-nr .h2-ns{display:none}
+}
+/* filter bars: wrap the selects instead of squeezing them */
+:is(.st-key-h2_filters, .st-key-home_filters) div[data-testid="stHorizontalBlock"]{flex-wrap:wrap !important;row-gap:6px !important}
+:is(.st-key-h2_filters, .st-key-home_filters) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]{flex:1 1 140px !important;min-width:140px !important}
+/* KPI strips on other pages: cells wrap below ~150px and values shrink a step */
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)){
+    flex-wrap:wrap !important}
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) > div[data-testid="stColumn"]{
+    flex:1 1 150px !important;min-width:150px !important}
+/* the main area is a size container, so rows react to the space left beside the sidebar */
+div[data-testid="stMainBlockContainer"]{container-type:inline-size;container-name:main}
+@container main (max-width:900px){
+  /* KPI strips: two per row; an odd last tile takes the full row */
+  div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) > div[data-testid="stColumn"]{
+      flex:1 1 calc(50% - 1px) !important;min-width:0 !important}
+  div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) > div[data-testid="stColumn"]:last-child:nth-child(odd){
+      flex-basis:100% !important}
+  /* rows of side-by-side cards/panels (chart | table, list | detail) stack */
+  div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] :is([class*="st-key-card_"], [class*="st-key-panel_"])){
+      flex-wrap:wrap !important}
+  div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] :is([class*="st-key-card_"], [class*="st-key-panel_"])) > div[data-testid="stColumn"]{
+      flex:1 1 100% !important;width:100% !important;min-width:0 !important}
+  div[class*="st-key-panel_"][class*="list"]{position:static !important}
+  /* field grids inside panels/cards/forms (4 inputs per row) drop to two per row */
+  :is(div[class*="st-key-panel_"], div[class*="st-key-card_"], div[data-testid="stForm"]) div[data-testid="stHorizontalBlock"]:has(:is([data-testid="stTextInput"], [data-testid="stNumberInput"], [data-testid="stSelectbox"], [data-testid="stDateInput"])){
+      flex-wrap:wrap !important}
+  :is(div[class*="st-key-panel_"], div[class*="st-key-card_"], div[data-testid="stForm"]) div[data-testid="stHorizontalBlock"]:has(:is([data-testid="stTextInput"], [data-testid="stNumberInput"], [data-testid="stSelectbox"], [data-testid="stDateInput"])) > div[data-testid="stColumn"]{
+      flex:1 1 calc(50% - 8px) !important;min-width:0 !important}
+}
+.kpi-tile .kv{font-size:clamp(17px,1.6vw,21px)}
+div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] p{font-size:clamp(17px,1.6vw,21px) !important}
+/* HTML tables in cards scroll sideways rather than spilling out */
+div[data-testid="stMarkdownContainer"]:has(> table.pl-tbl){overflow-x:auto}
+.pl-tbl td{white-space:nowrap}
+/* phones: Streamlit stacks columns below 640px; tighten the page frame */
+@media (max-width:640px){
+  .main .block-container, div[data-testid="stMainBlockContainer"]{padding:3rem 10px 2rem !important}
+  div[class*="st-key-card_"], div[class*="st-key-panel_"]{padding:8px 10px !important}
+  .cb-row{grid-template-columns:minmax(0,1fr) auto}
+  .cb-bar{grid-column:1 / -1;order:3}
+}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
@@ -7138,14 +7211,14 @@ if _page == PG_HOME and _sub == SUB_DASH and _HOME_V2:
     _f_buyers = {f"{b['name']} ({b.get('product', '?')})": b["id"] for b in cfg["buyers"]
                  if any(s.get("buyer_id") == b["id"] for s in _ships_all)}
     with st.container(key="h2_filters"):
-        _fc = st.columns([0.9, 1.3, 0.7, 0.9, 0.9, 2.3], vertical_alignment="bottom")
+        _fc = st.columns([0.9, 1.3, 0.7, 0.9, 0.9], vertical_alignment="bottom")
         _f_q = _fc[0].selectbox("분기", _q_opts, index=_q_opts.index(_q_dflt), key="home_q")
         _f_b = _fc[1].selectbox("매입사", ["전체"] + sorted(_f_buyers), key="home_buyer")
         _f_p = _fc[2].selectbox("제품", ["전체", "BP", "BM"], key="home_prod")
         _rpt_opts = hist_opts if hist_opts else [_today().strftime("%Y-%m")]
         _rpt_m = _fc[3].selectbox("보고서 기준월", _rpt_opts, key="rpt_month_sel")
         _slot_xl2 = _fc[4].container()
-        _slot_cap2 = _fc[5].container()
+        _slot_cap2 = st.container()      # caption row under the filters (keeps the selects wide on narrow screens)
 
     _f_bid = _f_buyers.get(_f_b)
     _f_rows, _f_ships = _filtered_pnl(cfg, _f_bid, None if _f_p == "전체" else _f_p,
