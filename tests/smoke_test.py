@@ -336,6 +336,16 @@ def main():
           and abs(sum(l["remain"] for l in _rem5) - 670.0) < 0.01
           and any(e["type"] == "재고조정" and e["qty"] == 50.0 for e in _ev5))
 
+    # 재고조정 tab (2026-11-27): when present it is the only source (+ 증가 / − 감소); 출고 tab 재고조정 rows are ignored
+    sc5b = _sync_cfg()
+    sc5b["raw_material_inventory"] = {"S": {"opening": {"date": "2026-01-01", "quantity_kg": 1000, "unit_cost": 5.0},
+                                            "purchases": []}}
+    run_sync(sc5b, {"출고": out_tab, "재고조정": [["일자"], ["2026-03-31", "양극", "-50", "실사 감량", ""],
+                                                  ["2026-04-30", "양극", "20", "재분류", ""], ["bad", "양극", "5", "", ""]]})
+    check("sync: 재고조정 tab replaces 출고 tab adjustments",
+          len(sc5b["stock_adjustments"]) == 2 and f["_inv_balance"](sc5b, "S") == 670.0
+          and sorted(a["quantity_kg"] for a in sc5b["stock_adjustments"]) == [-20.0, 50.0])
+
     # INDEX tab: a row with Co Low only keeps the existing Co, or falls back to Co Low when the month is new
     sc6 = _sync_cfg(); sc6["index_history"] = [{"month": "2026-08", "ni_index": 1.0, "co_index": 2.0}]
     run_sync(sc6, {"INDEX": [["월"], ["2026-08", "1", "", "", "", "", "1.5"], ["2026-10", "3", "", "", "", "", "4"]]})

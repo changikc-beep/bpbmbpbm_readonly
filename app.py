@@ -5610,6 +5610,37 @@ def _sync_from_gsheets(cfg_ref):
         except Exception as e:
             log.append(f"셀/모듈 탭 오류: {e}")
 
+    # ── ③-1b 재고조정 탭 (선택, 2026-11-27~): 모든 스크랩의 재고조정을 한 곳에서 관리 ─────────────
+    #   일자 / 스크랩유형(양극/젤리롤/셀/모듈) / 증감(kg, + 증가 / − 감소) / 근거 / 비고.
+    #   이 탭이 있으면 재고조정의 원본은 이 탭 하나다: 출고 탭 '재고조정' 행과 셀·모듈 탭 '재고조정' 행은 무시한다
+    #   (같은 조정이 두 번 잡히지 않게). 내부 저장은 기존 부호(quantity_kg + = 감소)를 유지한다.
+    try:
+        rows = sh.worksheet("재고조정").get_all_values()
+    except Exception:
+        rows = None
+    if rows is not None:
+        try:
+            _adj, _adj_skip = [], set()
+            for row in rows[1:]:
+                row = [c.strip() for c in row] + [""] * 5
+                dt, sc_nm, dq, why, note = row[:5]
+                if not dt or not dq:
+                    continue
+                scid = scrap_map.get(sc_nm)
+                if not scid or not _valid_date_str(dt):
+                    _adj_skip.add(sc_nm or dt); continue
+                _adj.append({"id": str(uuid.uuid4())[:8], "date": dt, "scrap_type_id": scid,
+                             "quantity_kg": -_to_float(dq),            # + 증가 → internal − (increase)
+                             "notes": " / ".join(x for x in (why, note) if x)})
+            _replaced = len(cfg_ref.get("stock_adjustments", []))
+            cfg_ref["stock_adjustments"] = sorted(_adj, key=lambda a: a["date"])
+            _msg = f"재고조정: {len(_adj)}건 (출고/셀·모듈 탭의 재고조정 {_replaced}건 대신 사용)"
+            if _adj_skip:
+                _msg += f", 주의: 스크랩명/일자 오류 스킵: {', '.join(sorted(_adj_skip))}"
+            log.append(_msg)
+        except Exception as e:
+            log.append(f"재고조정 탭 오류: {e}")
+
     # ── ③-2 생산 탭 (선택): 월 / 임가공사 / 스크랩유형 / 입고 / 투입 / 생산 / 부산물 / 불량 / 비고 ──
     # 임가공사 월별 생산 보고의 월 합계. 탭 전체로 교체한다(월 중 갱신 시 같은 월 행 값을 고쳐 쓰면 됨).
     # 이 자료가 있는 임가공사/스크랩은 완제품 재고 = 누적 생산 − 선적 배치, 보유 원료 = 출고 − 실제 투입.

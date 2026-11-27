@@ -1,7 +1,7 @@
 """Mail attachments -> bp_calculator_sync sheet. Dry run by default; --write applies the in/out and production rows.
 
     py -V:3.12 tools\\ingest.py all              # dry run of all four kinds (nothing written)
-    py -V:3.12 tools\\ingest.py inout --write    # append new purchase / dispatch rows to 입고 / 출고
+    py -V:3.12 tools\\ingest.py inout --write    # append new purchase / dispatch rows to 입고 / 출고, ledger adjustments to 재고조정
     py -V:3.12 tools\\ingest.py tolling --write  # overwrite 생산 rows (month, Sungeel, scrap) from the tolling file
     py -V:3.12 tools\\ingest.py tgl              # report: TGL report vs 선적 tab (HBL for TBD keys, ETD/ETA) — never writes
     py -V:3.12 tools\\ingest.py szamla           # report: HBLs with a TGL szamla mail but no export cost in 선적 — never writes
@@ -92,15 +92,19 @@ def _sheet():
 # ── 입출고 ──────────────────────────────────────────────────────────────────
 def parse_inout(wb):
     """{'in': [...], 'out': [...], 'incomplete': [...]} from the logistics workbook (CF/JR only)."""
-    res = {"in": [], "out": [], "incomplete": []}
+    res = {"in": [], "out": [], "incomplete": [], "adj": []}
     for code, scrap in SCRAP.items():
         hdr, rows = _table(wb[f"{code} 입고"], "하역일")
         c_org, c_kg, c_tb, c_sz, c_day = (_col(hdr, "출발지"), _col(hdr, "SK 기준 중량 (kg)", "중량(kg) SK기준", "중량*"),
                                           _col(hdr, "Ton Bag", "Pallets"), _col(hdr, "SZ Form No."), _col(hdr, "하역일"))
         for r in rows:
             d, kg = _day(r[c_day]), _num(r[c_kg])
-            if not d or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]+", str(r[c_org] or "").strip()):
-                continue      # ledger adjustment ('+') and year-separator rows are not purchases
+            org_raw = str(r[c_org] or "").strip()
+            if d and org_raw == "+" and kg:
+                res["adj"].append({"scrap": scrap, "date": d, "delta": kg, "src": f"{code} 입고"})   # ledger increase
+                continue
+            if not d or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]+", org_raw):
+                continue      # year-separator rows are not purchases
             item = {"scrap": scrap, "date": d, "kg": kg, "bags": _num(r[c_tb]), "doc": str(r[c_sz] or "").strip(),
                     "origin": str(r[c_org] or "").strip()}
             (res["in"] if kg and kg > 0 else res["incomplete"]).append(item)
@@ -109,10 +113,15 @@ def parse_inout(wb):
         c_pr = _col(hdr, "단가 (USD)", "단가")
         c_sz = _col(hdr, "SZ Form") if "SZ Form" in hdr else _col(hdr, "서류번호")
         c_doc2 = _col(hdr, "서류번호") if "SZ Form" in hdr and "서류번호" in hdr else None
+        c_prod = _col(hdr, "제품") if "제품" in hdr else None
         for r in rows:
             d, kg, to = _day(r[c_day]), _num(r[c_kg]), str(r[c_to] or "").strip()
+            if d and kg and (any(str(x or "").strip() == "+" for x in r[:4])
+                             or (c_prod is not None and str(r[c_prod] or "").strip() == "재고조정")):
+                res["adj"].append({"scrap": scrap, "date": d, "delta": -kg, "src": f"{code} 출고"})  # ledger decrease
+                continue
             if not d or not to or to == "None" or re.fullmatch(r"[\d+]+", to):
-                continue      # 재고조정 / subtotal rows of the ledger
+                continue      # subtotal rows of the ledger
             docs = [str(r[c_sz] or "").strip()] + ([str(r[c_doc2] or "").strip()] if c_doc2 is not None else [])
             item = {"scrap": scrap, "date": d, "kg": kg, "bags": _num(r[c_tb]), "to": to, "price": _num(r[c_pr]),
                     "doc": " / ".join(x for x in docs if x and x != "None")}
@@ -189,6 +198,27 @@ def plan_inout(src, sh):
                                       f"{it['bags']:.0f}" if it["bags"] else "", it["doc"],
                                       f"{it['price']:g}" if (typ == "직접판매" and it["price"]) else ""]})
     return {"new_in": new_in, "new_out": new_out, "unknown_out": unknown, "ws_in": ws_in, "ws_out": ws_out}
+
+
+def plan_adj(src, sh, mail_tag):
+    """Ledger adjustment rows not yet in the 재고조정 tab (matched by date + scrap + signed kg)."""
+    ws = sh.worksheet("재고조정")
+    rows = [r for r in ws.get_all_values()[1:] if len(r) > 2]
+    have = {(_day(r[0]), r[1].strip(), round(_num(r[2]) or 0)) for r in rows}
+    by_day = defaultdict(list)
+    for r in rows:
+        by_day[(_day(r[0]), r[1].strip())].append(round(_num(r[2]) or 0))
+    new, handled = [], []
+    for a in src["adj"]:
+        if (a["date"], a["scrap"], round(a["delta"])) in have:
+            continue
+        if by_day.get((a["date"], a["scrap"])):
+            # the tab already holds a hand-reconciled entry for that day (e.g. 04-30 net of the opening-stock gap)
+            handled.append({**a, "tab": by_day[(a["date"], a["scrap"])]})
+            continue
+        new.append({**a, "row": [a["date"], a["scrap"], f"{a['delta']:g}", f"원장 재고조정 ({a['src']} '+' 행)",
+                                 f"입출고 메일 {mail_tag}"]})
+    return {"new": new, "handled": handled, "ws": ws}
 
 
 # ── 생산 (성일 톨링) ────────────────────────────────────────────────────────
@@ -309,6 +339,18 @@ def run(kinds, write, days):
             print(f"  + 출고 {it['row']}")
         for it in p["unknown_out"]:
             print(f"  ? 출고처 분류 불명(쓰지 않음): {it['scrap']} {it['date']} {it['to']} {it['kg']:.0f}kg {it['doc']}")
+        try:
+            pa = plan_adj(src, sh, (re.search(r"\((\d{6})\)", mail[3]) or [None, mail[1][:10]])[1])
+        except gspread.exceptions.WorksheetNotFound:
+            pa = {"new": [], "ws": None}
+            print("  ! 재고조정 탭 없음: 원장 재고조정은 건너뜀")
+        for it in pa["new"]:
+            print(f"  + 재고조정 {it['row']}")
+        for it in pa.get("handled", []):
+            print(f"  = 재고조정 원장 {it['date']} {it['scrap']} {it['delta']:+,.0f}kg: 탭에 같은 날 {it['tab']} 있음(수동 조정으로 보고 쓰지 않음)")
+        if write and pa["new"]:
+            pa["ws"].append_rows([it["row"] for it in pa["new"]], value_input_option="USER_ENTERED")
+            print(f"  -> 재고조정 {len(pa['new'])}행 추가함")
         for it in [x for x in src["incomplete"] if x["date"] >= "2026-10-01"]:
             print(f"  ! 원본 중량 비어 있음(쓰지 않음): {it['scrap']} {it['date']} {it['doc']}")
         if not (p["new_in"] or p["new_out"]):
