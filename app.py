@@ -91,6 +91,110 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 .cb-tot{border-bottom:none}
 .cb-tot .cb-nm,.cb-tot .cb-v{color:#B84A0C}
 
+/* ══ Home v2 draft (?v=2): dense HTML grid. 13px base, 8px gaps, 10px radius, 28-30px table rows ══ */
+.st-key-h2_filters{background:#FFFFFF;border-radius:10px;padding:6px 12px 4px !important;gap:4px !important;
+    box-shadow:0 1px 2px rgba(34,39,45,.06);margin-bottom:-8px}
+.st-key-h2_filters div[data-testid="stWidgetLabel"] p{font-size:.8rem !important}
+.st-key-h2_filters div[data-testid="stCaptionContainer"] p{font-size:.84rem;margin:0 0 8px;text-align:right}
+.h2{font-size:13px;color:#22272D;font-variant-numeric:tabular-nums}
+.h2 a{text-decoration:none !important}
+.h2-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));background:#FFFFFF;border-radius:10px;
+    box-shadow:0 1px 2px rgba(34,39,45,.06);margin-bottom:8px}
+.h2-k{padding:9px 14px 10px;border-left:1px solid #EEF2F5;min-width:0}
+.h2-k:first-child{border-left:none}
+.h2-kl{font-size:11.5px;font-weight:600;color:#5E6670}
+.h2-kv{font-size:21px;font-weight:700;letter-spacing:-.02em;line-height:1.25;margin-top:1px;white-space:nowrap}
+.h2-kv small{font-size:12px;font-weight:600;color:#5E6670;margin-left:2px}
+.h2-ks{font-size:11.5px;color:#5E6670;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2-d{font-size:11.5px;font-weight:650;margin-left:6px;letter-spacing:0}
+.h2-up{color:#0F766E}
+.h2-dn{color:#B42318}
+.h2-row{display:grid;gap:8px;margin-bottom:8px;align-items:stretch}
+.h2-r1{grid-template-columns:minmax(0,5fr) minmax(0,3fr) minmax(0,4fr)}
+.h2-r2, .h2-r3{grid-template-columns:minmax(0,7fr) minmax(0,5fr)}
+.h2-card{background:#FFFFFF;border-radius:10px;box-shadow:0 1px 2px rgba(34,39,45,.06);padding:9px 12px 10px;
+    min-width:0;display:flex;flex-direction:column}
+.h2-card > header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #EEF2F5}
+.h2-card > header b{font-size:13px;font-weight:700;color:#22272D}
+.h2-card > header span{font-size:11.5px;color:#8C98A5;white-space:nowrap}
+.h2-body{flex:1 1 auto;min-height:0}
+.h2-empty{font-size:12px;color:#8C98A5;padding:8px 0}
+.h2-mut{color:#8C98A5;font-size:11.5px}
+/* chart */
+.h2-chart{width:100%;height:auto;display:block}
+.h2-chart .g{stroke:#EEF2F5;stroke-width:1}
+.h2-chart .z{stroke:#C9D3DC;stroke-width:1}
+.h2-chart .ya{font-size:10px;fill:#8C98A5;text-anchor:end}
+.h2-chart .xa{font-size:10px;fill:#8C98A5;text-anchor:middle}
+.h2-chart .b{fill:#9AA8B6}
+.h2-chart .b:hover{fill:#6F8FB8}
+.h2-chart .hl{fill:rgba(242,107,29,.07)}
+.h2-chart .ln{fill:none;stroke:#F26B1D;stroke-width:2}
+.h2-chart .pt{fill:#F26B1D}
+.lg-b, .lg-l{display:inline-block;vertical-align:middle;margin:0 4px 0 8px}
+.lg-b{width:9px;height:9px;background:#9AA8B6;border-radius:2px}
+.lg-l{width:12px;height:2px;background:#F26B1D}
+/* buyer bars */
+.h2-br{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) auto;gap:8px;align-items:center;padding:5px 0;
+    border-bottom:1px solid #F3F6F9;font-size:12.5px}
+.h2-br:last-child{border-bottom:none}
+.h2-bn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2-bb{height:7px;background:#EEF2F5;border-radius:4px;overflow:hidden}
+.h2-bb i{display:block;height:100%;background:#9AA8B6;border-radius:4px}
+.h2-bv{font-weight:650;text-align:right;white-space:nowrap}
+.h2-bv em{font-style:normal;font-weight:500;color:#8C98A5;margin-left:5px;font-size:11.5px}
+/* to-do */
+.h2-td{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:5px 0;border-bottom:1px solid #F3F6F9}
+.h2-td:last-child{border-bottom:none}
+.h2-td .dot{margin:0 2px 0 0}
+.h2-tt{font-size:12.5px;font-weight:600;margin-right:4px}
+.h2-chip{font-size:11.5px;padding:1px 7px;border-radius:999px;background:#F3F6F9;border:1px solid #D3DCE4;color:#2E343B !important}
+a.h2-chip:hover{border-color:#F26B1D}
+/* tables */
+.h2-t{width:100%;border-collapse:collapse;font-size:12.5px}
+.h2-t th{font-size:11.5px;font-weight:600;color:#8C98A5;text-align:left;padding:0 6px 5px;border-bottom:1px solid #EEF2F5}
+.h2-t td{padding:5px 6px;border-bottom:1px solid #F3F6F9;white-space:nowrap}
+.h2-t tr:last-child td{border-bottom:none}
+.h2-t tbody tr:hover td{background:#F6F8FA}
+.h2-t .r{text-align:right}
+.h2-t a{color:#22272D !important;font-weight:600}
+.h2-t a:hover{color:#B84A0C !important}
+.h2-s{font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px}
+.h2-sp{background:rgba(212,167,44,.16);color:#A16207}
+.h2-sf{background:rgba(111,143,184,.16);color:#3B5B85}
+.h2-sd{background:rgba(42,157,143,.13);color:#0F766E}
+/* news */
+a.h2-nr{display:grid;grid-template-columns:34px auto minmax(0,1fr) auto;gap:8px;align-items:center;padding:5px 2px;
+    border-bottom:1px solid #F3F6F9;color:#22272D !important}
+a.h2-nr:last-child{border-bottom:none}
+a.h2-nr:hover{background:#F6F8FA}
+a.h2-nr:hover .h2-nt{color:#B84A0C}
+.h2-nd{font-size:11.5px;color:#8C98A5}
+.h2-ng{font-size:10.5px;font-weight:600;color:#5E6670;background:#EEF2F5;border-radius:4px;padding:1px 5px}
+.h2-nt{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2-ns{font-size:11px;color:#8C98A5;max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* reused blocks, compacted inside v2 */
+.h2 .ix-panel{height:auto}
+.h2 .ix-row{flex:none;grid-template-columns:76px minmax(0,1fr) auto;gap:10px;padding:5px 0}
+.h2 .ix-nm{font-size:12.5px}
+.h2 .ix-nm span{font-size:11px}
+.h2 .ix-sp{height:22px}
+.h2 .ix-v{font-size:13px}
+.h2 .ix-chg{font-size:11px;display:inline;margin-left:6px}
+.h2 .ix-ft{font-size:11px;margin-top:6px;line-height:1.4}
+.h2 .sg-tbl{margin-top:0}
+.h2 .sg-tbl tbody tr{height:30px}
+.h2 .sg-tbl thead th{font-size:11.5px;padding-bottom:5px}
+.h2 .sg-tbl thead th span{font-size:10.5px}
+.h2 .sg-tbl .sg-lbl{font-size:12.5px;width:112px;padding-left:8px}
+.h2 .sg-tbl .sg-lbl span{font-size:11px}
+.h2 .sg-tbl .sg-tot{font-size:12px;width:48px;padding-right:8px}
+.h2 .sg-d{width:20px;height:20px;font-size:11px}
+.h2 .sg-e{width:6px;height:6px}
+.h2 .sg-legend{font-size:11.5px;margin-top:6px;gap:14px}
+.h2 .sg-sm{width:9px;height:9px}
+
 /* ── Industry news card (home): date | title | source rows ── */
 .nw-list{display:flex;flex-direction:column}
 a.nw-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:baseline;padding:8px 4px;
@@ -308,23 +412,23 @@ div[data-testid="stDataFrame"]{
 }
 
 /* ── Markdown tables ── */
-div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl){
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl):not(.h2-t){
     border-collapse:separate !important;border-spacing:0 !important;
     border:none !important;border-radius:12px !important;
     overflow:hidden !important;width:100%;margin-bottom:12px !important;
     background:#FFFFFF;font-variant-numeric:tabular-nums
 }
-div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl) thead tr th{
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl):not(.h2-t) thead tr th{
     background:#E9EFF4 !important;color:#5E6670 !important;
     font-weight:600 !important;padding:10px 14px !important;
     border-bottom:1px solid #D3DCE4 !important;font-size:.8rem !important;
     white-space:nowrap
 }
-div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl) tbody tr td{
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl):not(.h2-t) tbody tr td{
     padding:9px 14px !important;border-bottom:1px solid #D3DCE4 !important;
     color:#2E343B !important;font-size:.84rem !important
 }
-div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl) tbody tr:last-child td{border-bottom:none !important}
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl):not(.h2-t) tbody tr:last-child td{border-bottom:none !important}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
@@ -564,6 +668,70 @@ div[data-testid="stMetricChart"] .mark-symbol path{stroke:#8C98A5 !important}
 /* Gunmetal palette: Streamlit primary widgets carry dark ink on the orange accent */
 button[kind="primary"], button[data-testid="stBaseButton-primary"]{color:#22272D !important}
 button[kind="primary"] p, button[data-testid="stBaseButton-primary"] p{color:#22272D !important}
+
+/* ══ Dense system (2026-11-27): the home's HTML-grid density applied to every page ══
+   one spacing unit 8px between blocks, cards 10x12px inside / 10px radius, titles 13px,
+   tables 28-30px rows, KPI strips like the home strip (label 11.5px, value 21px). Overrides the rules above. */
+div[data-testid="stMainBlockContainer"] div[data-testid="stVerticalBlock"]{gap:8px !important}
+div[data-testid="stMainBlockContainer"] div[data-testid="stHorizontalBlock"]{gap:8px !important}
+div[class*="st-key-card_"], div[class*="st-key-panel_"]{padding:10px 12px !important;border-radius:10px !important}
+div[class*="st-key-card_"] div[data-testid="stVerticalBlock"]{gap:6px !important}
+div[class*="st-key-card_"] h4, div[class*="st-key-panel_"] h4{font-size:13px !important}
+div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{font-size:13px}
+div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p{font-size:11.5px;margin-top:-4px}
+div[data-testid="stMainBlockContainer"] h4{font-size:15px !important;margin:2px 0 0 !important;padding:0 !important}
+div[data-testid="stMainBlockContainer"] h3{font-size:16px !important;padding:4px 0 0 !important}
+div[data-testid="stMainBlockContainer"] hr{margin:.5rem 0 !important}
+div[data-testid="stMainBlockContainer"] p{margin-bottom:.4rem}
+div[data-testid="stCaptionContainer"] p{font-size:11.5px}
+div[data-testid="stWidgetLabel"] p{font-size:11.5px !important}
+div[data-testid="stAlertContainer"]{padding:8px 12px !important;border-radius:8px !important}
+div[data-testid="stDataFrame"]{margin-bottom:2px !important;border-radius:8px !important}
+/* expanders */
+div[data-testid="stExpander"] details{border-radius:10px !important}
+div[data-testid="stExpander"] details summary{padding:8px 12px !important;font-size:13px}
+div[data-testid="stExpander"] details summary p{font-size:13px !important}
+div[data-testid="stExpander"] details>div, div[data-testid="stExpander"] details>div>div{padding:8px 12px !important}
+/* sub tabs and in-page pickers */
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stButtonGroup"] button{
+    min-height:34px !important;padding:5px 14px 6px !important;font-size:13px !important}
+:is(.st-key-nav_sub, .st-key-io_sec, .st-key-proc_view, .st-key-ix_tab) div[data-testid="stSegmentedControl"]{margin:0 0 2px !important}
+:is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick) div[data-testid="stButtonGroup"] button{
+    min-height:30px !important;padding:3px 14px !important;font-size:12.5px !important}
+/* KPI tiles and strips: same proportions as the home strip */
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)){
+    border-radius:10px !important;padding:0 !important}
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) :is(.kpi-tile, div[data-testid="stMetric"]){
+    padding:9px 14px 10px !important}
+.kpi-tile{border-radius:10px;padding:9px 14px 10px}
+.kpi-tile .kl{font-size:11.5px;margin-bottom:2px}
+.kpi-tile .kv{font-size:21px;font-weight:700}
+.kpi-tile .ku{font-size:12px}
+.kpi-tile .ks{font-size:11.5px;margin-top:1px}
+div[class*="st-key-card_"] .kpi-tile{padding:8px 10px !important}
+div[class*="st-key-card_"] .kpi-tile .kv{font-size:17px}
+div[data-testid="stMetric"]{padding:9px 14px 10px !important;border-radius:10px !important}
+div[data-testid="stMetricLabel"] p{font-size:11.5px !important}
+div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] p{font-size:21px !important}
+div[data-testid="stMetricDelta"]{font-size:11.5px !important}
+/* tables drawn as HTML */
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl):not(.h2-t) thead tr th{padding:6px 10px !important;font-size:11.5px !important}
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl):not(.h2-t) tbody tr td{padding:5px 10px !important;font-size:12.5px !important}
+table.pl-tbl{font-size:12.5px;border-radius:8px}
+.pl-tbl th{padding:6px 10px;font-size:11.5px}
+.pl-tbl td{padding:5px 10px}
+.pl-note{font-size:11px}
+.pl-total td{font-size:13px}
+.cb-row{padding:5px 0;gap:10px}
+.cb-nm{font-size:12.5px}
+.cb-v{font-size:12.5px}
+.cb-nm span, .cb-v span{font-size:11px}
+.mc-head{padding:10px 14px;border-radius:10px;margin-bottom:0}
+.mc-big{font-size:22px}
+.mc-bar{margin-top:8px}
+.mc-groups{margin-top:6px;gap:6px 22px}
+.mc-d{width:13px;height:13px}
+.st-key-home_filters{border-radius:10px;padding:6px 12px 4px !important}
 </style>""", unsafe_allow_html=True)
 
 CONFIG_FILE  = os.path.join(os.path.dirname(__file__), "config.json")
@@ -6610,7 +6778,9 @@ def _excel_report_cached(cfg, ni, co, xr, ref_month, sel_buyer_id, todo=None, ca
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 0 — 요약 보고서
 # ══════════════════════════════════════════════════════════════════════════════
-if _page == PG_HOME and _sub == SUB_DASH:
+# dense HTML-grid home is the default (2026-11-27); ?v=1 still opens the previous card layout until it is removed
+_HOME_V2 = str(st.query_params.get("v", "")) != "1"
+if _page == PG_HOME and _sub == SUB_DASH and not _HOME_V2:
 
     # ── 필터 바: 분기, 매입사, 제품 (요약 카드/차트에 적용) + 엑셀 보고서 ──
     _ship_qs = sorted({_qtr(s["loading_date"]) for s in cfg.get("shipments", [])
@@ -6952,6 +7122,211 @@ if _page == PG_HOME and _sub == SUB_DASH:
 # ══════════════════════════════════════════════════════════════════════════════
 # 홈 > 월 마감 — 매달 확인하는 항목을 한 화면에 (기준 데이터, 선적/정산, 입금, 생산/재고 실사)
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# 홈 (기본) — 촘촘한 대시보드를 HTML 한 장(CSS grid)으로 그린다. 계산은 기존 함수 그대로.
+# 이전 카드형 홈은 ?v=1. 필터 위젯 키는 이전 홈과 같아서 전환해도 선택이 유지된다.
+# ══════════════════════════════════════════════════════════════════════════════
+if _page == PG_HOME and _sub == SUB_DASH and _HOME_V2:
+    import html as _hh
+    from urllib.parse import quote as _uq
+    _ships_all = cfg.get("shipments", [])
+    _bmap = {b["id"]: b for b in cfg["buyers"]}
+    _ship_qs = sorted({_qtr(s["loading_date"]) for s in _ships_all if _valid_date_str(s.get("loading_date", ""))})
+    _q_now = _qtr(_today().isoformat())
+    _q_opts = sorted(set(_ship_qs) | {_q_now}, reverse=True)
+    _q_dflt = max([q for q in _ship_qs if q <= _q_now], default=_q_now)
+    _f_buyers = {f"{b['name']} ({b.get('product', '?')})": b["id"] for b in cfg["buyers"]
+                 if any(s.get("buyer_id") == b["id"] for s in _ships_all)}
+    with st.container(key="h2_filters"):
+        _fc = st.columns([0.9, 1.3, 0.7, 0.9, 0.9, 2.3], vertical_alignment="bottom")
+        _f_q = _fc[0].selectbox("분기", _q_opts, index=_q_opts.index(_q_dflt), key="home_q")
+        _f_b = _fc[1].selectbox("매입사", ["전체"] + sorted(_f_buyers), key="home_buyer")
+        _f_p = _fc[2].selectbox("제품", ["전체", "BP", "BM"], key="home_prod")
+        _rpt_opts = hist_opts if hist_opts else [_today().strftime("%Y-%m")]
+        _rpt_m = _fc[3].selectbox("보고서 기준월", _rpt_opts, key="rpt_month_sel")
+        _slot_xl2 = _fc[4].container()
+        _slot_cap2 = _fc[5].container()
+
+    _f_bid = _f_buyers.get(_f_b)
+    _f_rows, _f_ships = _filtered_pnl(cfg, _f_bid, None if _f_p == "전체" else _f_p,
+                                      rows=_batch_pnl_rows(cfg, _pnl_context(cfg)))
+    _q_live = _f_q == _q_now
+    _q_days = (_today() - _q_start(_f_q)).days + 1 if _q_live else None
+    _qs = _quarter_stats(_f_rows, _f_ships, _f_q)
+    _qp = _quarter_stats(_f_rows, _f_ships, _qtr_prev(_f_q), _q_days)   # live quarter: same elapsed days
+    _todo = _todo_items(cfg)
+    _cf_rows = _receivable_rows(cfg, (NI, CO))
+    _fg = defaultdict(float)
+    for _sc in cfg.get("scrap_types", []):
+        _fg[_sc_product(_sc)] += _finished_goods_kg(cfg, _sc["id"])
+
+    def _m(v):
+        """$ amount, compact ($503k / $1.25M), HTML-safe dollar sign."""
+        a = abs(v or 0)
+        return ("-" if (v or 0) < 0 else "") + (f"&#36;{a / 1e6:.2f}M" if a >= 1e6 else f"&#36;{a / 1e3:,.0f}k")
+    def _dl(a, b):
+        if not b or a is None:
+            return ""
+        d = (a - b) / abs(b) * 100
+        return f'<span class="h2-d {"h2-up" if d >= 0 else "h2-dn"}">{"▲" if d >= 0 else "▼"} {abs(d):.1f}%</span>'
+    _qprev = _qtr_prev(_f_q)[-2:]
+
+    # ── KPI strip (6 cells) ──
+    _n_prov = sum(1 for s in _f_ships if (s.get("status") or "provisional") == "provisional")
+    _n_final = sum(1 for s in _f_ships if s.get("status") == "final")
+    _kpis = [
+        ("매출", _m(_qs["rev"]) + _dl(_qs["rev"], _qp["rev"]), f"선적 {_qs['cnt']}건, {_qs['out'] / 1000:,.1f} MT"),
+        ("실질 손익", _m(_qs["real"]) + _dl(_qs["real"], _qp["real"]),
+         f"마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else "마진 —"),
+        ("평균 단가", (f"&#36;{_qs['price']:.2f}<small>/kg</small>" if _qs["price"] else "—") + _dl(_qs["price"], _qp["price"]),
+         f"{_qprev} &#36;{_qp['price']:.2f}/kg" if _qp["price"] else f"{_qprev} 실적 없음"),
+        ("미수금", _m(sum(r["확정산 잔액"] for r in _cf_rows)), f"{len(_cf_rows)}건 미입금, 전체 매입사"),
+        ("미확정 정산", f"{_n_prov}<small>건</small>", f"확정산 미입금 {_n_final}건"),
+        ("완제품 재고", f"{sum(_fg.values()) / 1000:,.1f}<small>MT</small>",
+         ", ".join(f"{p} {v / 1000:,.1f}" for p, v in sorted(_fg.items()) if v) or "없음"),
+    ]
+    _kpi_h = "".join(f'<div class="h2-k"><div class="h2-kl">{l}</div><div class="h2-kv">{v}</div><div class="h2-ks">{s}</div></div>'
+                     for l, v, s in _kpis)
+
+    # ── monthly revenue bars + real P&L line (last 12 months) ──
+    _agg_m = _pnl_agg(_f_rows, lambda x: x["month"])
+    _end_m = max([_today().strftime("%Y-%m"), *_agg_m.keys()])
+    _ms = _month_range(_end_m, 12)
+    _rev = [(_agg_m[m]["bp"] if m in _agg_m else 0.0) for m in _ms]
+    _real = [((_agg_m[m]["bp"] - _agg_m[m]["raw"] - _agg_m[m]["pf"] - _agg_m[m]["eu"] - _agg_m[m]["stor"])
+              if m in _agg_m else 0.0) for m in _ms]
+    def _ax(v):
+        a = abs(v)
+        return ("-" if v < 0 else "") + (f"&#36;{a / 1e6:.1f}M" if a >= 1e6 else f"&#36;{a / 1e3:.0f}k")
+    def _chart_svg():
+        W, H, L, B, T = 560, 176, 44, 20, 8
+        mx, mn = max([*_rev, *_real, 1.0]), min([0.0, *_real])
+        span = (mx - mn) or 1.0
+        y = lambda v: T + (mx - v) / span * (H - T - B)
+        bw = (W - L) / len(_ms)
+        p = []
+        for k in range(3):
+            v = mn + span * k / 2
+            p.append(f'<line x1="{L}" x2="{W}" y1="{y(v):.1f}" y2="{y(v):.1f}" class="g"/>'
+                     f'<text x="{L - 6}" y="{y(v) + 3:.1f}" class="ya">{_ax(v)}</text>')
+        for i, mo in enumerate(_ms):
+            x0 = L + i * bw
+            if _qtr(mo) == _f_q:
+                p.append(f'<rect x="{x0:.1f}" y="{T}" width="{bw:.1f}" height="{H - T - B}" class="hl"/>')
+            top, bot = y(max(_rev[i], 0)), y(0)
+            p.append(f'<rect x="{x0 + bw * .2:.1f}" y="{top:.1f}" width="{bw * .6:.1f}" height="{max(bot - top, 0):.1f}" class="b">'
+                     f'<title>{mo} 매출 {_ax(_rev[i])}, 실질 손익 {_ax(_real[i])}</title></rect>')
+            lbl = f"{int(mo[5:7])}월" + (f" {mo[2:4]}" if (i == 0 or mo[5:7] == "01") else "")
+            p.append(f'<text x="{x0 + bw / 2:.1f}" y="{H - 5}" class="xa">{lbl}</text>')
+        p.append(f'<line x1="{L}" x2="{W}" y1="{y(0):.1f}" y2="{y(0):.1f}" class="z"/>')
+        pts = " ".join(f"{L + (i + .5) * bw:.1f},{y(v):.1f}" for i, v in enumerate(_real))
+        p.append(f'<polyline points="{pts}" class="ln"/>')
+        p += [f'<circle cx="{L + (i + .5) * bw:.1f}" cy="{y(v):.1f}" r="2.4" class="pt"/>' for i, v in enumerate(_real)]
+        return f'<svg viewBox="0 0 {W} {H}" class="h2-chart">{"".join(p)}</svg>'
+
+    # ── buyer revenue (selected quarter) ──
+    _ab = sorted(((k, v["bp"]) for k, v in _pnl_agg(_qs["rows"], lambda x: x["buyer_lbl"]).items() if v["bp"]),
+                 key=lambda kv: -kv[1])
+    _ab_tot = sum(v for _, v in _ab) or 1.0
+    _ab_max = max([v for _, v in _ab] or [1.0])
+    _buyer_h = "".join(f'<div class="h2-br"><span class="h2-bn">{_hh.escape(k)}</span>'
+                       f'<span class="h2-bb"><i style="width:{v / _ab_max * 100:.1f}%"></i></span>'
+                       f'<span class="h2-bv">{_m(v)}<em>{v / _ab_tot * 100:.0f}%</em></span></div>' for k, v in _ab) \
+        or '<div class="h2-empty">선택 분기 실적 없음</div>'
+
+    # ── to-do (compact) ──
+    _all_hbl = sorted({(s.get("hbl") or "").strip() for s in _ships_all if (s.get("hbl") or "").strip()}, key=len, reverse=True)
+    _ship_link = lambda h: f"?page=ship&sub={_uq(SUB_SHIP)}&hbl={_uq(h)}"
+    _td = []
+    for _dot, _title, _detail, _tab in _todo:
+        _hs = [h for h in _all_hbl if re.search(rf"(?<![\w\-]){re.escape(h)}(?![\w\-])", _detail)]
+        _hs = sorted(_hs, key=lambda h: _detail.find(h))
+        _more = re.search(r"외 (\d+)건", _detail)
+        _chips = "".join(f'<a class="h2-chip" target="_self" href="{_ship_link(h)}">{_hh.escape(h)}</a>' for h in _hs)
+        if _more:
+            _chips += f'<span class="h2-chip">+{_more.group(1)}</span>'
+        _td.append(f'<div class="h2-td"><span class="dot {"dot-r" if _dot == "🔴" else "dot-y"}"></span>'
+                   f'<span class="h2-tt">{_hh.escape(_title)}</span>{_chips}</div>')
+    _todo_h = "".join(_td) or '<div class="h2-empty">처리할 항목 없음</div>'
+
+    # ── recent shipments ──
+    _st_lbl = {"provisional": ("가정산", "h2-sp"), "final": ("확정산", "h2-sf"), "paid": ("입금완료", "h2-sd")}
+    _rs = sorted(_f_ships, key=lambda s: s.get("loading_date") or "", reverse=True)[:9]
+    _rs_h = "".join(
+        f'<tr><td>{(s.get("loading_date") or "")[5:10].replace("-", ".")}</td>'
+        f'<td><a target="_self" href="{_ship_link((s.get("hbl") or "").strip())}">{_hh.escape(s.get("hbl") or "HBL미정")}</a></td>'
+        f'<td>{_hh.escape(_bmap.get(s.get("buyer_id"), {}).get("name", "?"))} '
+        f'<span class="h2-mut">{_hh.escape(_bmap.get(s.get("buyer_id"), {}).get("product", ""))}</span></td>'
+        f'<td class="r">{float(s.get("weight_kg") or 0) / 1000:,.1f}</td>'
+        f'<td class="r">{_m(float(s.get("final_amount_usd") or s.get("invoice_usd") or 0))}</td>'
+        f'<td><span class="h2-s {_st_lbl.get(s.get("status") or "provisional", ("?", ""))[1]}">'
+        f'{_st_lbl.get(s.get("status") or "provisional", ("?", ""))[0]}</span></td></tr>' for s in _rs)
+
+    # ── news: top items of each tab merged, tagged ──
+    _nw = []
+    _nfail = 0
+    for _tab, _qs_list in _NEWS_TABS.items():
+        _items = []
+        for _q, _lang in _qs_list:
+            _got = _fetch_news(_q, _lang)
+            if _got is None:
+                _nfail += 1
+            else:
+                _items += _got
+        _items.sort(key=lambda x: x[0], reverse=True)
+        _seen = set()
+        for d, src, title, link in _items:
+            k = re.sub(r"\W+", "", title.lower())[:60]
+            if k in _seen:
+                continue
+            _seen.add(k)
+            _nw.append((d, _tab, src, title, link))
+            if len([x for x in _nw if x[1] == _tab]) >= 4:
+                break
+    _nw.sort(key=lambda x: x[0], reverse=True)
+    _news_h = "".join(
+        f'<a class="h2-nr" href="{_hh.escape(link, quote=True)}" target="_blank" rel="noopener noreferrer">'
+        f'<span class="h2-nd">{d[5:].replace("-", ".")}</span><span class="h2-ng">{_hh.escape(tab.split("/")[0])}</span>'
+        f'<span class="h2-nt">{_hh.escape(title)}</span><span class="h2-ns">{_hh.escape(src)}</span></a>'
+        for d, tab, src, title, link in _nw[:12]) or f'<div class="h2-empty">{"기사 불러오기 실패" if _nfail else "최근 기사 없음"}</div>'
+
+    _sg_ms = _month_range(_today().strftime("%Y-%m"), 12)
+    _sg_h = _status_grid_html(_f_ships, cfg["buyers"], _sg_ms, hl_months={m for m in _sg_ms if _qtr(m) == _f_q},
+                              link_fn=_ship_link) or '<div class="h2-empty">최근 12개월 선적 없음</div>'
+    _ix_h = _index_panel_html(cfg.get("index_history", []), cfg.get("eur_usd_rates", []), cfg.get("usd_krw_rates", []))
+
+    def _card(title, meta, body, cls=""):
+        return (f'<section class="h2-card {cls}"><header><b>{title}</b><span>{meta}</span></header>'
+                f'<div class="h2-body">{body}</div></section>')
+    _legend = '<i class="lg-b"></i>매출 <i class="lg-l"></i>실질 손익'
+    _html = (
+        f'<div class="h2"><div class="h2-kpis">{_kpi_h}</div>'
+        f'<div class="h2-row h2-r1">'
+        + _card("월별 매출, 실질 손익", _legend, _chart_svg())
+        + _card("매입사별 매출", _hh.escape(_f_q), _buyer_h)
+        + _card(f"할 일 {len(_todo)}", "", _todo_h)
+        + '</div><div class="h2-row h2-r2">'
+        + _card("최근 선적", f"{len(_f_ships)}건 중 9건",
+                '<table class="h2-t"><thead><tr><th>선적일</th><th>HBL</th><th>매입사</th><th class="r">MT</th>'
+                f'<th class="r">금액</th><th>상태</th></tr></thead><tbody>{_rs_h}</tbody></table>')
+        + _card("메탈 INDEX, 환율", "월별", _ix_h, "h2-ix")
+        + '</div><div class="h2-row h2-r3">'
+        + _card("선적 정산 상태", "최근 12개월, 선적월", _sg_h)
+        + _card("업계 동향", "Google News, 최근 14일", _news_h)
+        + "</div></div>")
+    st.markdown(_html, unsafe_allow_html=True)
+
+    with _slot_cap2:
+        st.caption(f"{_f_q}" + (f" {_q_days}일 경과, {_qprev} 같은 기간 대비" if _q_live else f", {_qprev} 대비")
+                   + f", [기존 홈](?page=home&sub={_uq(SUB_DASH)}&v=1)")
+    with _slot_xl2:
+        if active_buyers:
+            st.download_button("Excel 보고서", icon=":material/download:", width="stretch",
+                               data=_excel_report_cached(cfg, NI, CO, XR, _rpt_m, active_buyers[0]["id"], _todo, _cf_rows),
+                               file_name=f"BP_BM_요약보고서_{_rpt_m}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 if _page == PG_HOME and _sub == SUB_CLOSE:
     _mc_prev = (_today().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
     _mc_opts = sorted({_mc_prev, _today().strftime("%Y-%m")}
