@@ -8,6 +8,9 @@ st.set_page_config(page_title="BP/BM 재고/손익 관리", layout="wide", initi
 APP_BUILD = "2026-11-23 M"   # 사이드바에 표시 — 배포본이 최신 코드인지 확인용
 st.markdown("""
 <style>
+/* Pretendard webfont: theme.font in config.toml only sets the family name (the CSS URL there is never
+   requested on 1.56), so viewers without a local install fell back to the system font. */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
 /* ══════════════════════════════════════════════
    Refined dark — borderless surfaces, one accent
    bg:#EEF4F8  surface:#FFFFFF  surface-2:#F2F6F9  line:#D3DCE4
