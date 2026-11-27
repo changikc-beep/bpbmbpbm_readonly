@@ -64,8 +64,12 @@ python bp_ask.py tolling [--year 2026]                                 # 임가�
 
 ## 화면 디자인 규칙
 
-- 테마: 밝은 테마 A(Ice Blue / Graphite / Flame Orange). 값은 `.streamlit/config.toml`과 app.py 상단 CSS에 하드코딩돼 있어,
-  색을 바꿀 때는 둘을 함께 고친다. 배경 #EEF4F8, 카드 #FFFFFF, 사이드바 #E3EBF1, 테두리 #C9D3DC, 본문 #22272D, 제목 #3A4048, 보조 글자 #5E6670.
+- 테마: 밝은 테마 A(Ice Blue / Graphite / Flame Orange) + 배색 B(2026-11-27). 값은 `.streamlit/config.toml`과 app.py 상단 CSS에 하드코딩돼 있어,
+  색을 바꿀 때는 둘을 함께 고친다. 표면 3단계: 바탕 #E4EBF1(CSS로만 덮어씀, config의 backgroundColor #EEF4F8은 데이터 표 셀과 입력칸 색이라 유지)
+  / 카드 #FFFFFF(테두리 없이 옅은 그림자) / 카드 안 표와 타일 #F3F6F9, 표 머리글과 소계 띠 #E9EFF4.
+  사이드바 그래파이트 #22272D(글자 #AEB8C2, 선택 칩 #353C44, 로고 주황), 본문 #22272D, 제목 #3A4048, 보조 글자 #5E6670.
+- 손익 단계표(손익계산서, kg당 단가 분해, HBL 손익 분해)는 `_pl_table_html`/`_pk_table_html`로 그린다(차감 행 "−", 소계 회색 띠, 최종 주황 띠).
+  Styler로 배경을 칠할 때 흰 글자를 쓰지 않는다(옅은 배경 위 흰 글자는 읽히지 않음).
 - 색 역할: 본계열(매출 막대와 선) 스틸 #9AA8B6 / 강조, 총계, 실질 손익 선 주황 #F26B1D(채움 전용, 글자와 링크는 #B84A0C) /
   양수/완료 틸 #2A9D8F(글자 #0F766E) / 음수 #E0524A(글자 #B42318) / 대기/주의 황토 #D4A72C(글자 #A16207).
   주황 채움 위 글자는 흰색이 아니라 #22272D(흰색은 대비 3:1 미만).

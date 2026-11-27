@@ -12,10 +12,13 @@ st.markdown("""
    requested on 1.56), so viewers without a local install fell back to the system font. */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
 /* ══════════════════════════════════════════════
-   Refined dark — borderless surfaces, one accent
-   bg:#EEF4F8  surface:#FFFFFF  surface-2:#F2F6F9  line:#D3DCE4
-   text:#22272D  text-2:#5E6670  accent:#F26B1D
+   Scheme B — three surfaces + graphite sidebar, one accent
+   canvas:#E4EBF1  card:#FFFFFF  inset:#F3F6F9  inset-head:#E9EFF4  line:#D3DCE4
+   sidebar:#22272D  text:#22272D  text-2:#5E6670  accent:#F26B1D
+   (theme backgroundColor in config.toml stays #EEF4F8: it also paints dataframe cells and inputs;
+    only the page canvas is overridden here)
    ══════════════════════════════════════════════ */
+.stApp, div[data-testid="stAppViewContainer"], section[data-testid="stMain"]{background:#E4EBF1 !important}
 
 /* ── Layout ── */
 /* fill the width up to 1600px; 28px side padding (one spacing unit = 16px between cards) */
@@ -83,9 +86,9 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 /* ── Step income statement (P&L summary): tinted header, deduction rows, subtotal and total bands ── */
 table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9rem;font-variant-numeric:tabular-nums;
     border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px #DCE4EB}
-.pl-tbl th{background:#F2F6F9;color:#5E6670;font-weight:600;font-size:.8rem;padding:9px 14px;text-align:right;border-bottom:1px solid #DCE4EB}
+.pl-tbl th{background:#E9EFF4;color:#5E6670;font-weight:600;font-size:.8rem;padding:9px 14px;text-align:right;border-bottom:1px solid #DCE4EB}
 .pl-tbl th:first-child, .pl-tbl td:first-child{text-align:left}
-.pl-tbl td{padding:9px 14px;text-align:right;color:#22272D;border-bottom:1px solid #EEF4F8;white-space:nowrap}
+.pl-tbl td{padding:9px 14px;text-align:right;color:#22272D;border-bottom:1px solid #E4EBF1;white-space:nowrap}
 .pl-tbl td:first-child{white-space:normal}
 .pl-tbl tr:last-child td{border-bottom:none}
 .pl-note{display:block;font-size:.74rem;color:#8C98A5;font-weight:500;margin-top:1px}
@@ -94,7 +97,7 @@ table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9re
 .pl-cost td:first-child{padding-left:14px;color:#2E343B}
 .pl-op{display:inline-block;width:16px;color:#8C98A5}
 .pl-cost .pl-note{margin-left:16px}
-.pl-sub td{background:#F2F6F9;font-weight:700;border-top:1px solid #C9D3DC}
+.pl-sub td{background:#E9EFF4;font-weight:700;border-top:1px solid #C9D3DC}
 .pl-total td{background:rgba(242,107,29,.09);font-weight:700;border-top:2px solid #F26B1D;font-size:.95rem}
 .pl-pos{color:#0F766E !important}
 .pl-neg{color:#B42318 !important}
@@ -144,24 +147,28 @@ div[data-testid="stMetricDelta"]{font-size:.78rem !important}
 div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
 div[data-testid="stMetric"] svg{background:transparent !important}
 /* HTML stat tiles (_kpi_card): same scale as st.metric; nested in a card they sit one step lighter and smaller */
-.kpi-tile{background:#FFFFFF;border:none;border-radius:14px;padding:16px 18px;margin-bottom:0;box-shadow:0 0 0 1px #DCE4EB}
+.kpi-tile{background:#FFFFFF;border:none;border-radius:14px;padding:16px 18px;margin-bottom:0;box-shadow:0 1px 2px rgba(34,39,45,.06)}
 .kpi-tile .kl{font-size:.86rem;color:#5E6670;font-weight:600;margin-bottom:8px;line-height:1.3}
 .kpi-tile .kv{font-size:clamp(1.3rem,1.8vw,1.8rem);font-weight:650;letter-spacing:-.02em;line-height:1.2;
     white-space:nowrap;font-variant-numeric:tabular-nums}
 /* unit after the number ("건", "MT"): smaller, lighter, same baseline */
 .kpi-tile .ku{font-size:.55em;font-weight:600;color:#5E6670;margin-left:3px;letter-spacing:0}
 .kpi-tile .ks{font-size:.82rem;color:#5E6670;margin-top:6px;line-height:1.4}
-div[class*="st-key-card_"] .kpi-tile{background:#F2F6F9 !important;box-shadow:none;padding:12px 14px}
+/* inset tier: things inside a white card (stat tiles, tables) sit on #F3F6F9 */
+div[class*="st-key-card_"] .kpi-tile{background:#F3F6F9 !important;box-shadow:none;padding:12px 14px}
 div[class*="st-key-card_"] .kpi-tile .kv{font-size:clamp(1.1rem,1.4vw,1.4rem)}
+div[class*="st-key-card_"] table{background:#F3F6F9 !important;box-shadow:none !important}
 
+/* expanders: open = white card, collapsed = quiet inset strip with a hairline */
 div[data-testid="stExpander"] details{
     border-radius:14px !important;border:none !important;
-    background:#FFFFFF !important;overflow:hidden
+    background:#FFFFFF !important;overflow:hidden;box-shadow:0 1px 2px rgba(34,39,45,.06)
 }
+div[data-testid="stExpander"] details:not([open]){background:#F3F6F9 !important;box-shadow:none;border:1px solid #D3DCE4 !important}
 div[data-testid="stExpander"] details summary{
     padding:14px 18px !important;font-weight:600;background:transparent !important
 }
-div[data-testid="stExpander"] details summary:hover{background:#D3DCE4 !important}
+div[data-testid="stExpander"] details summary:hover{background:#E9EFF4 !important}
 div[data-testid="stExpander"] details[open]>summary{border-bottom:1px solid #D3DCE4 !important}
 div[data-testid="stExpander"] details>div,
 div[data-testid="stExpander"] details>div>div{padding:16px 20px !important}
@@ -271,7 +278,7 @@ div[data-testid="stMarkdown"] table:not(.pl-tbl){
     background:#FFFFFF;font-variant-numeric:tabular-nums
 }
 div[data-testid="stMarkdown"] table:not(.pl-tbl) thead tr th{
-    background:#F2F6F9 !important;color:#5E6670 !important;
+    background:#E9EFF4 !important;color:#5E6670 !important;
     font-weight:600 !important;padding:10px 14px !important;
     border-bottom:1px solid #D3DCE4 !important;font-size:.8rem !important;
     white-space:nowrap
@@ -303,28 +310,33 @@ div[data-testid="stMarkdown"] table:not(.pl-tbl) tbody tr:last-child td{border-b
 .b-ng{background:rgba(224,82,74,.12);color:#B42318}
 
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
-/* Sidebar (244px): brand row (logo square + name), "메뉴" label, compact 36px menu items,
-   ghost refresh button, data status list. Menu item rules live in "Sidebar menu" below. */
-section[data-testid="stSidebar"]{background:#E3EBF1 !important;min-width:244px !important;max-width:244px !important;width:244px !important}
+/* Sidebar (244px, graphite #22272D): brand row (orange logo square + name), "메뉴" label, compact 36px menu
+   items, ghost refresh button, data status list. Menu item rules live in "Sidebar menu" below. */
+section[data-testid="stSidebar"]{background:#22272D !important;border-right:none !important;
+    min-width:244px !important;max-width:244px !important;width:244px !important}
 section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding:0 !important}
 section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"]{padding:20px 14px 16px !important}
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"]{gap:6px !important}
 .sb-brand{display:grid;grid-template-columns:34px 1fr;column-gap:10px;align-items:center;margin:0 4px 12px}
-.sb-logo{grid-row:1 / span 2;width:34px;height:34px;border-radius:9px;background:#22272D;color:#FFFFFF;
+.sb-logo{grid-row:1 / span 2;width:34px;height:34px;border-radius:9px;background:#F26B1D;color:#22272D;
     display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;letter-spacing:.02em}
-.sb-name{font-size:.98rem;font-weight:700;color:#22272D;line-height:1.2;letter-spacing:-.01em}
-.sb-sub{font-size:.8rem;font-weight:500;color:#5E6670;line-height:1.3}
-section[data-testid="stSidebar"] .ro-pill{font-size:.72rem;padding:2px 8px;margin:0 4px 8px}
+.sb-name{font-size:.98rem;font-weight:700;color:#F2F6F9;line-height:1.2;letter-spacing:-.01em}
+.sb-sub{font-size:.8rem;font-weight:500;color:#9AA8B6;line-height:1.3}
+section[data-testid="stSidebar"] .ro-pill{font-size:.72rem;padding:2px 8px;margin:0 4px 8px;color:#F0C75E;background:rgba(212,167,44,.18)}
 /* the markdown block ends with a negative margin, so the label keeps its own bottom space */
-.sb-sec{font-size:.7rem;font-weight:600;color:#8C98A5;letter-spacing:.06em;margin:4px 10px 0;padding-bottom:12px}
+.sb-sec{font-size:.7rem;font-weight:600;color:#7A848E;letter-spacing:.06em;margin:4px 10px 0;padding-bottom:12px}
 .st-key-nav_top, .st-key-nav_top div[data-testid="stElementContainer"], .st-key-nav_top div[data-testid="stRadio"],
 .st-key-nav_top div[data-testid="stRadio"] > div{width:100% !important}
-section[data-testid="stSidebar"] hr{margin:10px 4px !important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button{
-    min-height:32px;padding:4px 10px;background:transparent !important;border-color:#C9D3DC !important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover{background:#EAF0F5 !important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"]{background:#F26B1D !important;border-color:#F26B1D !important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button p{font-size:.85rem}
+section[data-testid="stSidebar"] hr{margin:10px 4px !important;border-color:#3A4048 !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button{
+    min-height:32px;padding:4px 10px;background:transparent !important;border-color:#4A525B !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover{background:#2E343B !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"]{background:#F26B1D !important;border-color:#F26B1D !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button p{font-size:.85rem;color:#C9D3DC}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"] p{color:#22272D}
+/* disabled (read-only app): keep the label readable on graphite */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled{opacity:.55}
+section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled p{color:#9AA8B6 !important}
 
 /* Equal heights: cards placed side by side in columns (metrics, stat tiles, bordered cards)
    stretch to the tallest one in their row, whatever their line count */
@@ -396,22 +408,24 @@ div[data-testid="stNumberInput"] button{display:none !important}
 .st-key-nav_top label[data-testid="stRadioOption"] div:has(> div[data-testid="stMarkdownContainer"]) > div:not([data-testid]){display:none !important}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) div[data-testid="stMarkdownContainer"]{display:flex;align-items:center}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{
-    font-size:.95rem !important;font-weight:500;color:#5E6670;letter-spacing:-.01em;
+    font-size:.95rem !important;font-weight:500;color:#AEB8C2;letter-spacing:-.01em;
     margin:0 !important;padding:0 !important;line-height:1.3 !important;display:flex;align-items:center
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){
     font-size:1.15rem !important;margin-right:10px;line-height:1 !important;vertical-align:middle
 }
-.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#EAF0F5}
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#2E343B}
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]){
-    background:#FFFFFF;border-color:transparent;box-shadow:0 1px 2px rgba(34,39,45,.08)
+    background:#353C44;border-color:transparent;box-shadow:none
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"])::before{
     content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#F26B1D
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) p{
-    color:#22272D !important;font-weight:600
+    color:#FFFFFF !important;font-weight:600
 }
+.st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) span[data-testid="stIconMaterial"]{color:#AEB8C2}
+.st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]) span[data-testid="stIconMaterial"]{color:#FFFFFF}
 
 /* KPI cards: labels and delta descriptions wrap instead of being cut with "…" */
 div[data-testid="stMetricLabel"] p, div[data-testid="stMetricLabel"] div{white-space:normal !important;overflow:visible !important;text-overflow:clip !important}
@@ -427,18 +441,17 @@ a.hbl-chip:hover{background:#DFE8EF;border-color:#F26B1D}
 .td-note{color:#5E6670;font-size:.82rem;margin:0 0 4px 16px}
 a.td-go{margin-left:16px;font-size:.82rem;color:#B84A0C !important;text-decoration:none !important;font-weight:600}
 a.td-go:hover{text-decoration:underline !important}
-/* home filter bar stays visible while scrolling */
 /* home filter bar: a white strip card (filters + period caption/toggle) that stays visible while scrolling */
 .st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:#FFFFFF;border-radius:14px;
-    padding:10px 16px 8px !important;box-shadow:0 0 0 1px #DCE4EB, 0 4px 12px rgba(34,39,45,.04);gap:6px !important}
+    padding:10px 16px 8px !important;box-shadow:0 1px 2px rgba(34,39,45,.06), 0 4px 12px rgba(34,39,45,.04);gap:6px !important}
 .st-key-home_filters div[data-testid="stCaptionContainer"] p{font-size:.82rem;margin:0}
 /* sidebar data status card */
-.sb-status{background:#FFFFFF;border:none;border-radius:10px;
-    padding:10px 12px;margin-top:6px;font-size:.78rem;color:#8C98A5;line-height:1.5}
-.sb-status .row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid #EEF4F8}
-.sb-status .k{color:#66707A}
-.sb-status .v{color:#22272D;font-variant-numeric:tabular-nums;text-align:right}
-.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#22272D;margin-bottom:6px;font-size:.8rem}
+.sb-status{background:#2B3138;border:none;border-radius:10px;
+    padding:10px 12px;margin-top:6px;font-size:.78rem;color:#9AA8B6;line-height:1.5}
+.sb-status .row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid #3A4048}
+.sb-status .k{color:#9AA8B6}
+.sb-status .v{color:#E3EBF1;font-variant-numeric:tabular-nums;text-align:right}
+.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#E3EBF1;margin-bottom:6px;font-size:.8rem}
 .sb-status .ft{color:#7A848E;font-size:.72rem;margin-top:4px}
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
@@ -447,7 +460,8 @@ a.td-go:hover{text-decoration:underline !important}
    1px top highlight on cards for depth */
 :is(h1,h2,h3,h4),
 div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{color:#3A4048 !important}
-div[data-testid="stMetric"], div[class*="st-key-card_"]{box-shadow:0 0 0 1px #DCE4EB}
+/* cards lift off the canvas with a soft shadow instead of an outline */
+div[data-testid="stMetric"], div[class*="st-key-card_"], div[class*="st-key-panel_"], .mc-head{box-shadow:0 1px 2px rgba(34,39,45,.06)}
 div[data-testid="stMetricChart"] .mark-area path{fill:rgba(94,102,112,.10) !important}
 div[data-testid="stMetricChart"] .mark-line path{stroke:#8C98A5 !important}
 div[data-testid="stMetricChart"] .mark-symbol path{stroke:#8C98A5 !important}
@@ -1570,14 +1584,14 @@ def _cost_breakdown_html(items, rev, out_kg):
                 f'<div></div><div class="cb-v">&#36;{tot:,.0f}<span>{pkg_t}</span></div></div>')
     return "".join(rows)
 
-def _pl_table_html(rev, rows):
+def _pl_table_html(rev, rows, dec=0):
     """Step income statement as an HTML table. rows: [(kind, label, note, usd)] with kind
     cost (shown as a deduction), sub (subtotal band) or total (final band). Revenue is the first row."""
     import html as _h
     def money(v, deduct=False):
         if deduct:
-            return f"−&#36;{abs(v):,.0f}" if round(v) else "&#36;0"
-        return ("−" if v < 0 else ("+" if round(v) else "")) + f"&#36;{abs(v):,.0f}"
+            return f"−&#36;{abs(v):,.{dec}f}" if round(v, dec) else f"&#36;{0:.{dec}f}"
+        return ("−" if v < 0 else ("+" if round(v, dec) else "")) + f"&#36;{abs(v):,.{dec}f}"
     def pct(v):
         if rev <= 0:
             return "—"
@@ -1586,7 +1600,7 @@ def _pl_table_html(rev, rows):
     def lbl(text, note):
         return _h.escape(text) + (f'<span class="pl-note">{_h.escape(note)}</span>' if note else "")
     out = ['<table class="pl-tbl"><thead><tr><th>구분</th><th>금액</th><th>매출 대비</th></tr></thead><tbody>',
-           f'<tr class="pl-rev"><td>{lbl("매출", "BP 매각")}</td><td>&#36;{rev:,.0f}</td><td>100.0%</td></tr>']
+           f'<tr class="pl-rev"><td>{lbl("매출", "BP 매각")}</td><td>&#36;{rev:,.{dec}f}</td><td>100.0%</td></tr>']
     for kind, text, note, v in rows:
         if kind == "cost":
             out.append(f'<tr class="pl-cost"><td><span class="pl-op">−</span>{lbl(text, note)}</td>'
@@ -1595,6 +1609,36 @@ def _pl_table_html(rev, rows):
             sign = "pl-pos" if v >= 0 else "pl-neg"
             out.append(f'<tr class="pl-{kind}"><td>{lbl(text, note)}</td>'
                        f'<td class="{sign}">{money(v)}</td><td class="{sign}">{pct(v)}</td></tr>')
+    out.append("</tbody></table>")
+    return "".join(out)
+
+def _pk_table_html(heads, rows, dec=4):
+    """Per-kg comparison table in the same style as _pl_table_html.
+    heads: value column titles; rows: [(kind, label, [values...], diff)] with kind rev/cost/sub/total.
+    Costs are shown as deductions (−$x); the last column is the difference (blank when ~0)."""
+    import html as _h
+    def money(v, deduct=False):
+        if v is None:
+            return "—"
+        if deduct:
+            return f"−&#36;{abs(v):,.{dec}f}" if round(v, dec) else f"&#36;{0:.{dec}f}"
+        return ("−" if v < 0 else "") + f"&#36;{abs(v):,.{dec}f}"
+    def diff(v):
+        if v is None or abs(v) < 10 ** -(dec + 1):
+            return "—"
+        return ("−" if v < 0 else "+") + f"&#36;{abs(v):,.{dec}f}"
+    out = ['<table class="pl-tbl"><thead><tr><th>구분</th>'
+           + "".join(f"<th>{_h.escape(h)}</th>" for h in heads) + "<th>차이</th></tr></thead><tbody>"]
+    for kind, text, vals, d in rows:
+        if kind == "cost":
+            cells = "".join(f"<td>{money(v, True)}</td>" for v in vals)
+            out.append(f'<tr class="pl-cost"><td><span class="pl-op">−</span>{_h.escape(text)}</td>{cells}<td>{diff(d)}</td></tr>')
+        elif kind == "rev":
+            cells = "".join(f"<td>{money(v)}</td>" for v in vals)
+            out.append(f'<tr class="pl-rev"><td>{_h.escape(text)}</td>{cells}<td>{diff(d)}</td></tr>')
+        else:
+            cells = "".join(f'<td class="{"pl-pos" if (v or 0) >= 0 else "pl-neg"}">{money(v)}</td>' for v in vals)
+            out.append(f'<tr class="pl-{kind}"><td>{_h.escape(text)}</td>{cells}<td>{diff(d)}</td></tr>')
     out.append("</tbody></table>")
     return "".join(out)
 
@@ -2377,7 +2421,7 @@ if st.session_state.get("last_sync_time"):
 def _sb_status_html():
     """사이드바 '데이터 상태' 카드 — 저장 시각이 3일 넘으면 노란 점."""
     _rows = []
-    _dot = "#0F766E"
+    _dot = "#2A9D8F"
     if _sb_meta.get("saved_at"):
         try:
             _age = (_now().replace(tzinfo=None) - datetime.fromisoformat(_sb_meta["saved_at"][:19])).days
@@ -3499,7 +3543,7 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
         # ── BP 1kg당 단가 분해 ────────────────────────────────────────────────
         st.markdown("---")
         st.markdown("**BP 1kg당 단가 분해**",
-                    help="전체 배치 합산, 원료비 FIFO/이동평균 비교")
+                    help="전체 배치 합산, 원료비 FIFO/이동평균 비교, 차이 = FIFO − 이동평균")
         if _tot_out > 0:
 
             _bp_pk   = _tot_bp  / _tot_out
@@ -3513,56 +3557,16 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             _rlf_pk  = _gpf_pk - _eu_pk - _st_pk  # 실질손익 FIFO
             _rlm_pk  = _gpm_pk - _eu_pk - _st_pk  # 실질손익 이동평균
 
-            _bpkg_rows = [
-                ("BP 매각가 (매출)",    _bp_pk,  _bp_pk,  0.0),
-                ("  (−) 원료 매입비",   _rf_pk,  _rm_pk,  _rf_pk - _rm_pk),
-                ("  (−) 임가공비 (순)", _pf_pk,  _pf_pk,  0.0),
-                ("= 매출총이익",        _gpf_pk, _gpm_pk, _gpf_pk - _gpm_pk),
-                ("  (−) 수출비",        _eu_pk,  _eu_pk,  0.0),
-                ("  (−) 보관비",        _st_pk,  _st_pk,  0.0),
-                ("= 실질 손익",         _rlf_pk, _rlm_pk, _rlf_pk - _rlm_pk),
-            ]
-            _df_bpkg = pd.DataFrame(
-                _bpkg_rows,
-                columns=["항목", "FIFO 기준 ($/kg BP)", "이동평균 기준 ($/kg BP)", "차이"],
-            )
-
-            def _hl_bpkg(row):
-                lbl  = row["항목"]
-                fv   = row["FIFO 기준 ($/kg BP)"]
-                mv   = row["이동평균 기준 ($/kg BP)"]
-                diff = row["차이"]
-                if "실질 손익" in lbl:
-                    bg = "rgba(42,157,143,.14)" if fv >= 0 else "rgba(224,82,74,.12)"
-                    s  = f"background-color:{bg};color:white;font-weight:700"
-                    return ["font-weight:700", s, s, "font-weight:700"]
-                if lbl.startswith("="):
-                    return ["font-weight:700", "font-weight:700", "font-weight:700", "font-weight:700"]
-                if "BP 매각가" in lbl:
-                    return ["font-weight:700",
-                            "color:#B84A0C;font-weight:600",
-                            "color:#B84A0C;font-weight:600", ""]
-                if "원료" in lbl and abs(diff) > 0.0001:
-                    # 낮은 값(= 유리한 쪽)을 녹색으로 표시
-                    fc = "color:#0F766E;font-weight:600" if fv <= mv else "color:#B42318;font-weight:600"
-                    mc = "color:#0F766E;font-weight:600" if mv <= fv else "color:#B42318;font-weight:600"
-                    return ["color:#555", fc, mc, "font-weight:600"]
-                return ["color:#555", "", "", ""]
-
-            def _fmt_pk(v):
-                return _usd(v, 4) if v is not None else "—"
-
-            def _fmt_diff(v):
-                return _usd(v, 4) if v is not None and abs(v) > 0.00001 else "—"
-
-            st.dataframe(
-                _df_bpkg.style.apply(_hl_bpkg, axis=1).format({
-                    "FIFO 기준 ($/kg BP)":    _fmt_pk,
-                    "이동평균 기준 ($/kg BP)": _fmt_pk,
-                    "차이":                    _fmt_diff,
-                }),
-                width="stretch", hide_index=True,
-            )
+            # same table style as the step income statement; 차이 = FIFO − 이동평균
+            st.markdown(_pk_table_html(["FIFO 기준 ($/kg BP)", "이동평균 기준 ($/kg BP)"], [
+                ("rev",   "BP 매각가 (매출)", [_bp_pk,  _bp_pk],  0.0),
+                ("cost",  "원료 매입비",      [_rf_pk,  _rm_pk],  _rf_pk - _rm_pk),
+                ("cost",  "임가공비 (순)",    [_pf_pk,  _pf_pk],  0.0),
+                ("sub",   "매출총이익",       [_gpf_pk, _gpm_pk], _gpf_pk - _gpm_pk),
+                ("cost",  "수출비",           [_eu_pk,  _eu_pk],  0.0),
+                ("cost",  "보관비",           [_st_pk,  _st_pk],  0.0),
+                ("total", "실질 손익",        [_rlf_pk, _rlm_pk], _rlf_pk - _rlm_pk),
+            ]), unsafe_allow_html=True)
             _conv_avg = _tot_out / _tot_inp * 100 if _tot_inp > 0 else 0
             _rmc_gap  = abs(_rf_pk - _rm_pk)
             _gap_note = ""
@@ -3842,32 +3846,14 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                     _cl, _cr = st.container(), st.container()
                     with _cl:
                         st.markdown("**손익 분해**")
-                        _wf_df = pd.DataFrame([
-                            ("BP 매각 (매출)",       _h["bp_rev"]),
-                            ("  (−) 원료 매입비",    -_h["raw"]),
-                            ("  (−) 임가공비 (순)",  -_h["pf"]),
-                            ("= 매출총이익",          _hgp),
-                            ("  (−) 수출비",         -_h["eu"]),
-                            ("  (−) 보관비",         -_h["stor"]),
-                            ("= 실질 손익",           _hreal),
-                        ], columns=["항목", "금액 (USD)"])
-
-                        def _hl_wf(row):
-                            lbl = row["항목"]
-                            v   = row["금액 (USD)"]
-                            if "실질 손익" in lbl:
-                                bg = "rgba(42,157,143,.14)" if v >= 0 else "rgba(224,82,74,.12)"
-                                return ["font-weight:700",
-                                        f"background-color:{bg};color:white;font-weight:700"]
-                            if lbl.startswith("="):
-                                return ["font-weight:700", "font-weight:700"]
-                            return ["color:#666", ""]
-
-                        st.dataframe(
-                            _wf_df.style.apply(_hl_wf, axis=1)
-                                  .format({"금액 (USD)": (lambda v: _usd(v, 2))}),
-                            width="stretch", hide_index=True, height=280,
-                        )
+                        st.markdown(_pl_table_html(_h["bp_rev"], [
+                            ("cost",  "원료 매입비", "", _h["raw"]),
+                            ("cost",  "임가공비 (순)", "", _h["pf"]),
+                            ("sub",   "매출총이익", "", _hgp),
+                            ("cost",  "수출비", "", _h["eu"]),
+                            ("cost",  "보관비", "", _h["stor"]),
+                            ("total", "실질 손익", "", _hreal),
+                        ], dec=2), unsafe_allow_html=True)
                         _mk1, _mk2 = st.columns(2)
                         _mg_col = "#0F766E" if _hreal >= 0 else "#B42318"
                         _mk1.markdown(_kpi_card("BP 생산",  f"{_h['out']/1000:.2f} MT"), unsafe_allow_html=True)
