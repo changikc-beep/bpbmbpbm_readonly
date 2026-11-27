@@ -94,7 +94,7 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
 /* ══ Home v2 draft (?v=2): dense HTML grid. 13px base, 8px gaps, 10px radius, 28-30px table rows ══ */
 .st-key-h2_filters{background:#FFFFFF;border-radius:10px;padding:6px 12px 4px !important;gap:4px !important;
-    box-shadow:0 1px 2px rgba(34,39,45,.06);margin-bottom:-8px}
+    box-shadow:0 1px 2px rgba(34,39,45,.06)}
 .st-key-h2_filters div[data-testid="stWidgetLabel"] p{font-size:.8rem !important}
 .st-key-h2_filters div[data-testid="stCaptionContainer"] p{font-size:.84rem;margin:0 0 8px;text-align:right}
 .h2{font-size:13px;color:#22272D;font-variant-numeric:tabular-nums}
@@ -274,7 +274,7 @@ div[class*="st-key-card_"]{
 div[class*="st-key-card_"] div[data-testid="stVerticalBlock"]{gap:12px !important}
 div[class*="st-key-card_"] h4{font-size:1.07rem !important;margin:0 !important;padding:0 !important}
 div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{font-size:1.07rem;font-weight:650}
-div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p{font-size:.86rem;margin-top:-6px}
+div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p{font-size:.86rem;margin-top:0}
 div[data-testid="stMetric"]{
     background:#FFFFFF !important;border:none !important;
     border-radius:14px !important;padding:16px 18px !important
@@ -679,11 +679,17 @@ div[class*="st-key-card_"], div[class*="st-key-panel_"]{padding:10px 12px !impor
 div[class*="st-key-card_"] div[data-testid="stVerticalBlock"]{gap:6px !important}
 div[class*="st-key-card_"] h4, div[class*="st-key-panel_"] h4{font-size:13px !important}
 div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{font-size:13px}
-div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p{font-size:11.5px;margin-top:-4px}
+div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p{font-size:11.5px;margin-top:0}
 div[data-testid="stMainBlockContainer"] h4{font-size:15px !important;margin:2px 0 0 !important;padding:0 !important}
 div[data-testid="stMainBlockContainer"] h3{font-size:16px !important;padding:4px 0 0 !important}
 div[data-testid="stMainBlockContainer"] hr{margin:.5rem 0 !important}
 div[data-testid="stMainBlockContainer"] p{margin-bottom:.4rem}
+/* Streamlit pulls every markdown block up by -1rem (sized for its 16px gap and 1rem paragraph margin).
+   With the 8px gap that made headings/captions overlap the next block; drop it and the trailing margin instead. */
+div[data-testid="stMarkdownContainer"], div[data-testid="stCaptionContainer"],
+div[data-testid="stHeading"], div[data-testid="stHeading"] > div{margin-bottom:0 !important}
+div[data-testid="stMarkdownContainer"] > :last-child, div[data-testid="stCaptionContainer"] > :last-child{margin-bottom:0 !important}
+div[data-testid="stMarkdownContainer"] :is(h1,h2,h3,h4,h5){margin-bottom:0 !important;padding-bottom:0 !important}
 div[data-testid="stCaptionContainer"] p{font-size:11.5px}
 div[data-testid="stWidgetLabel"] p{font-size:11.5px !important}
 div[data-testid="stAlertContainer"]{padding:8px 12px !important;border-radius:8px !important}
@@ -708,6 +714,7 @@ div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):no
 .kpi-tile .kl{font-size:11.5px;margin-bottom:2px}
 .kpi-tile .kv{font-size:21px;font-weight:700}
 .kpi-tile .ku{font-size:12px}
+.kpi-tile .kt{font-size:16px;font-weight:650;letter-spacing:-.01em}
 .kpi-tile .ks{font-size:11.5px;margin-top:1px}
 div[class*="st-key-card_"] .kpi-tile{padding:8px 10px !important}
 div[class*="st-key-card_"] .kpi-tile .kv{font-size:17px}
@@ -2148,6 +2155,8 @@ _KV_UNIT = re.compile(r"^(.*\d)\s*([가-힣]{1,4}|%|[A-Za-z]{2,4})$")
 def _kv(value):
     """KPI value HTML: a trailing unit ("26건", "771.0 MT") is set smaller and lighter than the number."""
     v = str(value)
+    if "<" not in v and not re.search(r"\d", v):
+        return f'<span class="kt">{v}</span>'          # text-only value ("미정", a name): one step smaller
     m = _KV_UNIT.match(v) if "<" not in v else None
     return f'{m.group(1)}<span class="ku">{m.group(2)}</span>' if m else v
 
@@ -7717,7 +7726,9 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
                             f"이행량에 포함 (협의 물량으로 봄)")
 
                 _mc1, _mc2, _mc3, _mc4 = st.columns(4)
-                _rem_val = f"{_m['remaining_mt']:,.2f} MT" if _m["remaining_mt"] > 0 else "충족"
+                # always a number in the value line (same type as the other tiles); "충족" goes to the sub line
+                _rem_val = f"{max(_m['remaining_mt'], 0):,.2f} MT"
+                _rem_sub = "계약량 충족" if _m["remaining_mt"] <= 0 else f"이행률 {_m['fulfill_pct']:.1f}%"
                 _rem_col = "#B42318" if _m["remaining_mt"] > 0 else "#0F766E"
                 _avl_col = "#0F766E" if _m["total_avail_mt"] >= _m["remaining_mt"] else "#B42318"
                 _avl_sub = f"{_m['total_avail_mt']-_m['remaining_mt']:+.2f} MT 여유" if _m["remaining_mt"] > 0 else ""
@@ -7725,7 +7736,7 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
                                         f"허용 {_m['min_mt']:,.1f}~{_m['max_mt']:,.1f} MT"), unsafe_allow_html=True)
                 _mc2.markdown(_kpi_card("선적 완료",       f"{_m['shipped_mt']:,.2f} MT",
                                         f"이행률 {_m['fulfill_pct']:.1f}%"), unsafe_allow_html=True)
-                _mc3.markdown(_kpi_card("잔여 의무",       _rem_val, val_color=_rem_col), unsafe_allow_html=True)
+                _mc3.markdown(_kpi_card("잔여 의무",       _rem_val, _rem_sub, val_color=_rem_col), unsafe_allow_html=True)
                 _mc4.markdown(_kpi_card("충당 가능 (BP)",  f"{_m['total_avail_mt']:,.2f} MT",
                                         _avl_sub, val_color=_avl_col), unsafe_allow_html=True)
 
