@@ -80,6 +80,25 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 .cb-tot{border-bottom:none}
 .cb-tot .cb-nm,.cb-tot .cb-v{color:#B84A0C}
 
+/* ── Step income statement (P&L summary): tinted header, deduction rows, subtotal and total bands ── */
+table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9rem;font-variant-numeric:tabular-nums;
+    border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px #DCE4EB}
+.pl-tbl th{background:#F2F6F9;color:#5E6670;font-weight:600;font-size:.8rem;padding:9px 14px;text-align:right;border-bottom:1px solid #DCE4EB}
+.pl-tbl th:first-child, .pl-tbl td:first-child{text-align:left}
+.pl-tbl td{padding:9px 14px;text-align:right;color:#22272D;border-bottom:1px solid #EEF4F8;white-space:nowrap}
+.pl-tbl td:first-child{white-space:normal}
+.pl-tbl tr:last-child td{border-bottom:none}
+.pl-note{display:block;font-size:.74rem;color:#8C98A5;font-weight:500;margin-top:1px}
+.pl-rev td{font-weight:700}
+.pl-cost td{color:#5E6670}
+.pl-cost td:first-child{padding-left:14px;color:#2E343B}
+.pl-op{display:inline-block;width:16px;color:#8C98A5}
+.pl-cost .pl-note{margin-left:16px}
+.pl-sub td{background:#F2F6F9;font-weight:700;border-top:1px solid #C9D3DC}
+.pl-total td{background:rgba(242,107,29,.09);font-weight:700;border-top:2px solid #F26B1D;font-size:.95rem}
+.pl-pos{color:#0F766E !important}
+.pl-neg{color:#B42318 !important}
+
 /* ── Month-close progress header ── */
 .mc-head{background:#FFFFFF;border-radius:16px;padding:20px 22px;margin-bottom:10px}
 .mc-top{display:flex;justify-content:space-between;align-items:flex-start}
@@ -119,16 +138,18 @@ div[data-testid="stMetricValue"]{
     color:#22272D !important;font-size:1.95rem !important;font-weight:700;letter-spacing:-.03em;
     font-variant-numeric:tabular-nums
 }
-div[data-testid="stMetricValue"] p{font-size:1.95rem !important;font-weight:700 !important;line-height:1.15 !important}
+div[data-testid="stMetricValue"] p{font-size:1.8rem !important;font-weight:650 !important;letter-spacing:-.02em;line-height:1.2 !important}
 div[data-testid="stMetricLabel"] p{font-size:.86rem !important;color:#5E6670 !important;font-weight:600}
 div[data-testid="stMetricDelta"]{font-size:.78rem !important}
 div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
 div[data-testid="stMetric"] svg{background:transparent !important}
 /* HTML stat tiles (_kpi_card): same scale as st.metric; nested in a card they sit one step lighter and smaller */
 .kpi-tile{background:#FFFFFF;border:none;border-radius:14px;padding:16px 18px;margin-bottom:0;box-shadow:0 0 0 1px #DCE4EB}
-.kpi-tile .kl{font-size:.86rem;color:#5E6670;font-weight:600;margin-bottom:6px}
-.kpi-tile .kv{font-size:clamp(1.3rem,1.9vw,1.95rem);font-weight:700;letter-spacing:-.03em;line-height:1.15;
+.kpi-tile .kl{font-size:.86rem;color:#5E6670;font-weight:600;margin-bottom:8px;line-height:1.3}
+.kpi-tile .kv{font-size:clamp(1.3rem,1.8vw,1.8rem);font-weight:650;letter-spacing:-.02em;line-height:1.2;
     white-space:nowrap;font-variant-numeric:tabular-nums}
+/* unit after the number ("건", "MT"): smaller, lighter, same baseline */
+.kpi-tile .ku{font-size:.55em;font-weight:600;color:#5E6670;margin-left:3px;letter-spacing:0}
 .kpi-tile .ks{font-size:.82rem;color:#5E6670;margin-top:6px;line-height:1.4}
 div[class*="st-key-card_"] .kpi-tile{background:#F2F6F9 !important;box-shadow:none;padding:12px 14px}
 div[class*="st-key-card_"] .kpi-tile .kv{font-size:clamp(1.1rem,1.4vw,1.4rem)}
@@ -243,23 +264,23 @@ div[data-testid="stDataFrame"]{
 }
 
 /* ── Markdown tables ── */
-div[data-testid="stMarkdown"] table{
+div[data-testid="stMarkdown"] table:not(.pl-tbl){
     border-collapse:separate !important;border-spacing:0 !important;
     border:none !important;border-radius:12px !important;
     overflow:hidden !important;width:100%;margin-bottom:12px !important;
     background:#FFFFFF;font-variant-numeric:tabular-nums
 }
-div[data-testid="stMarkdown"] table thead tr th{
-    background:#FFFFFF !important;color:#5E6670 !important;
+div[data-testid="stMarkdown"] table:not(.pl-tbl) thead tr th{
+    background:#F2F6F9 !important;color:#5E6670 !important;
     font-weight:600 !important;padding:10px 14px !important;
     border-bottom:1px solid #D3DCE4 !important;font-size:.8rem !important;
     white-space:nowrap
 }
-div[data-testid="stMarkdown"] table tbody tr td{
+div[data-testid="stMarkdown"] table:not(.pl-tbl) tbody tr td{
     padding:9px 14px !important;border-bottom:1px solid #D3DCE4 !important;
     color:#2E343B !important;font-size:.84rem !important
 }
-div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !important}
+div[data-testid="stMarkdown"] table:not(.pl-tbl) tbody tr:last-child td{border-bottom:none !important}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
@@ -1549,6 +1570,34 @@ def _cost_breakdown_html(items, rev, out_kg):
                 f'<div></div><div class="cb-v">&#36;{tot:,.0f}<span>{pkg_t}</span></div></div>')
     return "".join(rows)
 
+def _pl_table_html(rev, rows):
+    """Step income statement as an HTML table. rows: [(kind, label, note, usd)] with kind
+    cost (shown as a deduction), sub (subtotal band) or total (final band). Revenue is the first row."""
+    import html as _h
+    def money(v, deduct=False):
+        if deduct:
+            return f"−&#36;{abs(v):,.0f}" if round(v) else "&#36;0"
+        return ("−" if v < 0 else ("+" if round(v) else "")) + f"&#36;{abs(v):,.0f}"
+    def pct(v):
+        if rev <= 0:
+            return "—"
+        p = v / rev * 100
+        return ("−" if p < 0 else ("+" if round(p, 1) else "")) + f"{abs(p):.1f}%"
+    def lbl(text, note):
+        return _h.escape(text) + (f'<span class="pl-note">{_h.escape(note)}</span>' if note else "")
+    out = ['<table class="pl-tbl"><thead><tr><th>구분</th><th>금액</th><th>매출 대비</th></tr></thead><tbody>',
+           f'<tr class="pl-rev"><td>{lbl("매출", "BP 매각")}</td><td>&#36;{rev:,.0f}</td><td>100.0%</td></tr>']
+    for kind, text, note, v in rows:
+        if kind == "cost":
+            out.append(f'<tr class="pl-cost"><td><span class="pl-op">−</span>{lbl(text, note)}</td>'
+                       f'<td>{money(v, True)}</td><td>{pct(-v)}</td></tr>')
+        else:
+            sign = "pl-pos" if v >= 0 else "pl-neg"
+            out.append(f'<tr class="pl-{kind}"><td>{lbl(text, note)}</td>'
+                       f'<td class="{sign}">{money(v)}</td><td class="{sign}">{pct(v)}</td></tr>')
+    out.append("</tbody></table>")
+    return "".join(out)
+
 def _close_progress_html(month, checks, sections):
     """Month-close header: done / total, progress bar, one dot per check grouped by section."""
     import html as _h
@@ -1590,13 +1639,21 @@ def _usd(v, dec=0, sign=True, md=False):
         return body
     return ("-" if v < 0 else ("+" if sign else "")) + body
 
+_KV_UNIT = re.compile(r"^(.*\d)\s*([A-Za-z가-힣%]{1,4})$")
+
+def _kv(value):
+    """KPI value HTML: a trailing unit ("26건", "771.0 MT") is set smaller and lighter than the number."""
+    v = str(value)
+    m = _KV_UNIT.match(v) if "<" not in v else None
+    return f'{m.group(1)}<span class="ku">{m.group(2)}</span>' if m else v
+
 def _kpi_card(label, value, sub="", val_color="#22272D", left_border=""):
     _bl    = f"border-left:3px solid {left_border};" if left_border else ""
     # same look as st.metric tiles (label 12px/600, value up to 27px); sizes live in CSS (.kpi-tile .kl/.kv/.ks)
     _sub_h = f'<div class="ks">{sub}</div>' if sub else ""
     return (f'<div class="kpi-tile" style="{_bl}">'
             f'<div class="kl">{label}</div>'
-            f'<div class="kv" style="color:{val_color}">{value}</div>'
+            f'<div class="kv" style="color:{val_color}">{_kv(value)}</div>'
             f'{_sub_h}</div>')
 
 def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
@@ -1609,7 +1666,7 @@ def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
     _sub_h = f'<div class="ks">{sub}</div>' if sub else ""
     return (f'<div class="kpi-tile" style="{_bl}">'
             f'<div class="kl">{label}{_bdg}</div>'
-            f'<div class="kv" style="color:{val_color}">{value}</div>'
+            f'<div class="kv" style="color:{val_color}">{_kv(value)}</div>'
             f'{_sub_h}</div>')
 
 def _conv_rate_for(cfg, scrap_id, processor_id=None):
@@ -2491,8 +2548,8 @@ Provisional 정산액과의 차액을 추가 수취 또는 반환합니다.
         m1.markdown(_kpi_card("총 선적건", f"{len(shipments)}건"), unsafe_allow_html=True)
         m2.markdown(_kpi_card("총 중량", f"{total_wkg/1000:,.1f} MT"), unsafe_allow_html=True)
         _p_col = "#A16207" if prov_cnt else "#22272D"
-        m3.markdown(_kpi_card("Provisional 정산", f"{prov_cnt}건", val_color=_p_col), unsafe_allow_html=True)
-        m4.markdown(_kpi_card("최종정산", f"{final_cnt}건"), unsafe_allow_html=True)
+        m3.markdown(_kpi_card("가정산", f"{prov_cnt}건", val_color=_p_col), unsafe_allow_html=True)
+        m4.markdown(_kpi_card("확정산", f"{final_cnt}건"), unsafe_allow_html=True)
         m5.markdown(_kpi_card("입금완료", f"{paid_cnt}건", val_color="#0F766E"), unsafe_allow_html=True)
         # ── 미완료 알림 ──
         _pend = [s for s in shipments if s.get("status") in ("provisional","final")]
@@ -3342,19 +3399,15 @@ if _page == PG_PNL and _sub == SUB_PNL_SUM:
             st.markdown("**단계식 손익계산서**" + ("" if _pl_in is None else f", {_pl_per if _pl_per != '기간 지정' else f'{_pl_lo} ~ {_pl_hi}'}"),
                         help=("매출 = 확정액(없으면 가정산) + 기타 조정, 배치 생산량 비율 배분 " f"(확정 {_rb_cnt['확정']}, 가정산 {_rb_cnt['가정산']}, 단가 {_rb_cnt['단가']}), " "스크랩 매각/BP 재매입은 임가공비(순)에 상계, 원료비 FIFO, 판관비는 월별 등록값 합계"))
             # ── 단계식 손익계산서 (상계 기준) ─────────────────────────────────────
-            def _pl_pct(v):
-                return f"{v/_tot_bp*100:+.1f}%" if _tot_bp > 0 else "—"
-            _pl_rows = [
-                f"| 매출 — BP 매각 | **\\${_tot_bp:,.0f}** | 100.0% |",
-                f"| (−) 원료 매입비 (FIFO) | −\\${_raw_fifo_s1:,.0f} | {_pl_pct(-_raw_fifo_s1)} |",
-                f"| (−) 임가공비 (순 — 스크랩 매각/재매입 상계) | −\\${_tot_pf:,.0f} | {_pl_pct(-_tot_pf)} |",
-                f"| **= 매출총이익** | **{_usd(_tot_gp_s1, 0, md=True)}** | **{_pl_pct(_tot_gp_s1)}** |",
-                f"| (−) 수출비 | −\\${_tot_eu:,.0f} | {_pl_pct(-_tot_eu)} |",
-                f"| (−) 보관비 | −\\${_stor_s1:,.0f} | {_pl_pct(-_stor_s1)} |",
-                f"| (−) 간접 판관비/기타 | −\\${_sga_s1 + _other_s1:,.0f} | {_pl_pct(-(_sga_s1 + _other_s1))} |",
-                f"| **= 영업이익 (실질 손익)** | **{_usd(_tot_op_s1, 0, md=True)}** | **{_pl_pct(_tot_op_s1)}** |",
-            ]
-            st.markdown("| 구분 | 금액 | 매출 대비 |\n|------|-----:|-----:|\n" + "\n".join(_pl_rows))
+            st.markdown(_pl_table_html(_tot_bp, [
+                ("cost", "원료 매입비", "FIFO", _raw_fifo_s1),
+                ("cost", "임가공비 (순)", "스크랩 매각/재매입 상계", _tot_pf),
+                ("sub",  "매출총이익", "", _tot_gp_s1),
+                ("cost", "수출비", "", _tot_eu),
+                ("cost", "보관비", "", _stor_s1),
+                ("cost", "간접 판관비/기타", "", _sga_s1 + _other_s1),
+                ("total", "영업이익", "실질 손익", _tot_op_s1),
+            ]), unsafe_allow_html=True)
             _rb_cnt = defaultdict(int)
             for _rb in _rev_map.values():
                 _rb_cnt[_rb[1]] += 1
