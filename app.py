@@ -18,15 +18,13 @@ st.markdown("""
    ══════════════════════════════════════════════ */
 
 /* ── Layout ── */
+/* fill the width up to 1600px; 28px side padding (one spacing unit = 16px between cards) */
 .main .block-container, div[data-testid="stMainBlockContainer"]{
-    padding-top:3.4rem;padding-bottom:3rem;max-width:1320px
+    padding:2.8rem 28px 2.5rem !important;max-width:1600px
 }
 /* the fixed top header would otherwise sit over the first row (sub tabs) */
 header[data-testid="stHeader"]{background:transparent !important}
-section[data-testid="stSidebar"]{
-    min-width:268px;max-width:300px;
-    border-right:1px solid #D3DCE4 !important
-}
+section[data-testid="stSidebar"]{border-right:1px solid #D3DCE4 !important}
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
 h4{font-size:1.15rem !important}
 .ro-pill{display:inline-block;font-size:.75rem;color:#A16207;background:rgba(212,167,44,.14);
@@ -101,24 +99,39 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 .mc-open{background:#FFFFFF;border:2px solid #D4A72C;box-sizing:border-box}
 
 /* ── Cards: bordered containers (key="card_*"), metrics, expanders, forms ── */
+/* Type scale (root 14px): card title 15px/650, body 14px, label/caption 12px, KPI value 27px.
+   Spacing: 16px between cards (rows and columns), 18x20px inside cards, 14px radius. */
+div[data-testid="stMainBlockContainer"] div[data-testid="stVerticalBlock"]{gap:16px !important}
+div[data-testid="stMainBlockContainer"] div[data-testid="stHorizontalBlock"]{gap:16px !important}
 div[class*="st-key-card_"]{
     background:#FFFFFF !important;border:none !important;
-    border-radius:16px !important;padding:20px 22px !important
+    border-radius:14px !important;padding:18px 20px !important
 }
+div[class*="st-key-card_"] div[data-testid="stVerticalBlock"]{gap:12px !important}
+div[class*="st-key-card_"] h4{font-size:1.07rem !important;margin:0 !important;padding:0 !important}
+div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{font-size:1.07rem;font-weight:650}
+div[class*="st-key-card_"] div[data-testid="stCaptionContainer"] p{font-size:.86rem;margin-top:-6px}
 div[data-testid="stMetric"]{
     background:#FFFFFF !important;border:none !important;
-    border-radius:16px !important;padding:16px 18px !important
+    border-radius:14px !important;padding:16px 18px !important
 }
 div[data-testid="stMetricValue"]{
-    color:#22272D !important;font-size:1.6rem !important;font-weight:700;letter-spacing:-.03em;
+    color:#22272D !important;font-size:1.95rem !important;font-weight:700;letter-spacing:-.03em;
     font-variant-numeric:tabular-nums
 }
-div[data-testid="stMetricLabel"] p{font-size:.8rem !important;color:#5E6670 !important;font-weight:500}
+div[data-testid="stMetricValue"] p{font-size:1.95rem !important;font-weight:700 !important;line-height:1.15 !important}
+div[data-testid="stMetricLabel"] p{font-size:.86rem !important;color:#5E6670 !important;font-weight:600}
 div[data-testid="stMetricDelta"]{font-size:.78rem !important}
 div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
 div[data-testid="stMetric"] svg{background:transparent !important}
-/* nested stat tiles inside a card sit one step lighter */
-div[class*="st-key-card_"] .kpi-tile{background:#F2F6F9 !important}
+/* HTML stat tiles (_kpi_card): same scale as st.metric; nested in a card they sit one step lighter and smaller */
+.kpi-tile{background:#FFFFFF;border:none;border-radius:14px;padding:16px 18px;margin-bottom:0;box-shadow:0 0 0 1px #DCE4EB}
+.kpi-tile .kl{font-size:.86rem;color:#5E6670;font-weight:600;margin-bottom:6px}
+.kpi-tile .kv{font-size:clamp(1.3rem,1.9vw,1.95rem);font-weight:700;letter-spacing:-.03em;line-height:1.15;
+    white-space:nowrap;font-variant-numeric:tabular-nums}
+.kpi-tile .ks{font-size:.82rem;color:#5E6670;margin-top:6px;line-height:1.4}
+div[class*="st-key-card_"] .kpi-tile{background:#F2F6F9 !important;box-shadow:none;padding:12px 14px}
+div[class*="st-key-card_"] .kpi-tile .kv{font-size:clamp(1.1rem,1.4vw,1.4rem)}
 
 div[data-testid="stExpander"] details{
     border-radius:14px !important;border:none !important;
@@ -219,7 +232,7 @@ div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){bac
 div[data-testid="stAlertContainer"] p, div[data-testid="stAlertContainer"] li{color:#2E343B !important}
 
 /* ── Spacing & dividers ── */
-div[data-testid="stHorizontalBlock"]{margin-bottom:12px !important}
+div[data-testid="stHorizontalBlock"]{margin-bottom:0 !important}
 hr{border-color:#D3DCE4 !important;margin:1.4rem 0}
 div[data-testid="stCaptionContainer"], div[data-testid="stCaptionContainer"] p{color:#66707A !important}
 
@@ -269,26 +282,28 @@ div[data-testid="stMarkdown"] table tbody tr:last-child td{border-bottom:none !i
 .b-ng{background:rgba(224,82,74,.12);color:#B42318}
 
 /* ── 페이지 내비게이션 (상위: 좌측 사이드바 메뉴 / 하위: 본문 상단 밑줄 탭) ── */
-section[data-testid="stSidebar"]{background:#E3EBF1 !important}
-section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding-top:.5rem}
-.sb-title{font-size:1.75rem;font-weight:700;letter-spacing:-.02em;color:#22272D;line-height:1.25;margin:0 0 16px 4px}
-.sb-title span{font-size:1.08rem;font-weight:500;color:#5E6670}
-section[data-testid="stSidebar"] .ro-pill{font-size:.82rem}
-.st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
-.st-key-nav_top label[data-baseweb="radio"]{
-    width:100%;margin:0 !important;padding:13px 16px !important;border-radius:10px;
-    cursor:pointer;transition:background .15s
-}
-.st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
-.st-key-nav_top label[data-baseweb="radio"] p{font-size:1.4rem !important;font-weight:500;color:#5E6670}
-.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{font-size:1.65rem !important}
-.st-key-nav_top label[data-baseweb="radio"]:hover{background:#EAF0F5}
-.st-key-nav_top label[data-baseweb="radio"]:has(input:checked){background:#F2F6F9}
-.st-key-nav_top label[data-baseweb="radio"]:has(input:checked) p{color:#22272D;font-weight:600}
-.st-key-nav_top label[data-baseweb="radio"] span[data-testid="stIconMaterial"]{margin-right:6px}
-section[data-testid="stSidebar"] hr{margin:.8rem 0}
-section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p{font-size:.95rem;line-height:1.6}
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button p{font-size:1.08rem}
+/* Sidebar (244px): brand row (logo square + name), "메뉴" label, compact 36px menu items,
+   ghost refresh button, data status list. Menu item rules live in "Sidebar menu" below. */
+section[data-testid="stSidebar"]{background:#E3EBF1 !important;min-width:244px !important;max-width:244px !important;width:244px !important}
+section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]{padding:0 !important}
+section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"]{padding:20px 14px 16px !important}
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"]{gap:6px !important}
+.sb-brand{display:grid;grid-template-columns:34px 1fr;column-gap:10px;align-items:center;margin:0 4px 12px}
+.sb-logo{grid-row:1 / span 2;width:34px;height:34px;border-radius:9px;background:#22272D;color:#FFFFFF;
+    display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;letter-spacing:.02em}
+.sb-name{font-size:.98rem;font-weight:700;color:#22272D;line-height:1.2;letter-spacing:-.01em}
+.sb-sub{font-size:.8rem;font-weight:500;color:#5E6670;line-height:1.3}
+section[data-testid="stSidebar"] .ro-pill{font-size:.72rem;padding:2px 8px;margin:0 4px 8px}
+/* the markdown block ends with a negative margin, so the label keeps its own bottom space */
+.sb-sec{font-size:.7rem;font-weight:600;color:#8C98A5;letter-spacing:.06em;margin:4px 10px 0;padding-bottom:12px}
+.st-key-nav_top, .st-key-nav_top div[data-testid="stElementContainer"], .st-key-nav_top div[data-testid="stRadio"],
+.st-key-nav_top div[data-testid="stRadio"] > div{width:100% !important}
+section[data-testid="stSidebar"] hr{margin:10px 4px !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button{
+    min-height:32px;padding:4px 10px;background:transparent !important;border-color:#C9D3DC !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover{background:#EAF0F5 !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"]{background:#F26B1D !important;border-color:#F26B1D !important}
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button p{font-size:.85rem}
 
 /* Equal heights: cards placed side by side in columns (metrics, stat tiles, bordered cards)
    stretch to the tallest one in their row, whatever their line count */
@@ -350,23 +365,25 @@ div[data-testid="stNumberInput"] button{display:none !important}
 
 /* ── Sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) ──
    solid surfaces, selected item = lighter chip with a blue accent bar; text vertically centred */
+.st-key-nav_top div[role="radiogroup"]{gap:2px !important;width:100%}
+.st-key-nav_top label[data-baseweb="radio"] > div:first-child{display:none !important}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]){
-    width:100%;margin:0 !important;padding:11px 14px !important;border-radius:10px;cursor:pointer;
+    width:100%;margin:0 !important;padding:8px 10px !important;border-radius:8px;cursor:pointer;
     position:relative;border:1px solid transparent;display:flex !important;align-items:center;
     transition:background .15s
 }
 .st-key-nav_top label[data-testid="stRadioOption"] div:has(> div[data-testid="stMarkdownContainer"]) > div:not([data-testid]){display:none !important}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) div[data-testid="stMarkdownContainer"]{display:flex;align-items:center}
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{
-    font-size:1.2rem !important;font-weight:500;color:#5E6670;letter-spacing:-.01em;
+    font-size:.95rem !important;font-weight:500;color:#5E6670;letter-spacing:-.01em;
     margin:0 !important;padding:0 !important;line-height:1.3 !important;display:flex;align-items:center
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){
-    font-size:1.35rem !important;margin-right:8px;line-height:1 !important;vertical-align:middle
+    font-size:1.15rem !important;margin-right:10px;line-height:1 !important;vertical-align:middle
 }
 .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]):hover{background:#EAF0F5}
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"]){
-    background:#F2F6F9;border-color:#DFE8EF
+    background:#FFFFFF;border-color:transparent;box-shadow:0 1px 2px rgba(34,39,45,.08)
 }
 .st-key-nav_top :is(label[data-baseweb="radio"]:has(input:checked), label[data-testid="stRadioOption"][data-selected="true"])::before{
     content:"";position:absolute;left:-1px;top:25%;bottom:25%;width:3px;border-radius:3px;background:#F26B1D
@@ -390,30 +407,24 @@ a.hbl-chip:hover{background:#DFE8EF;border-color:#F26B1D}
 a.td-go{margin-left:16px;font-size:.82rem;color:#B84A0C !important;text-decoration:none !important;font-weight:600}
 a.td-go:hover{text-decoration:underline !important}
 /* home filter bar stays visible while scrolling */
-.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:rgba(238,244,248,.92);
-    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:6px 0 10px;
-    border-bottom:1px solid #D3DCE4;margin-bottom:6px}
+/* home filter bar: a white strip card (filters + period caption/toggle) that stays visible while scrolling */
+.st-key-home_filters{position:sticky;top:2.9rem;z-index:50;background:#FFFFFF;border-radius:14px;
+    padding:10px 16px 8px !important;box-shadow:0 0 0 1px #DCE4EB, 0 4px 12px rgba(34,39,45,.04);gap:6px !important}
+.st-key-home_filters div[data-testid="stCaptionContainer"] p{font-size:.82rem;margin:0}
 /* sidebar data status card */
-.sb-status{background:#FFFFFF;border:1px solid #D3DCE4;border-radius:12px;
-    padding:10px 12px;margin-top:6px;font-size:.88rem;color:#8C98A5;line-height:1.55}
-.sb-status .row{display:flex;justify-content:space-between;gap:8px}
+.sb-status{background:#FFFFFF;border:none;border-radius:10px;
+    padding:10px 12px;margin-top:6px;font-size:.78rem;color:#8C98A5;line-height:1.5}
+.sb-status .row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid #EEF4F8}
 .sb-status .k{color:#66707A}
 .sb-status .v{color:#22272D;font-variant-numeric:tabular-nums;text-align:right}
-.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#22272D;margin-bottom:4px}
-.sb-status .ft{color:#7A848E;font-size:.76rem;margin-top:4px}
-
-@media (min-width:1500px){
-    .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) p{font-size:1.3rem !important}
-    .st-key-nav_top :is(label[data-baseweb="radio"], label[data-testid="stRadioOption"]) :is(span[data-testid="stIconMaterial"], span[role="img"]){font-size:1.45rem !important}
-    .sb-title{font-size:1.85rem}
-    section[data-testid="stSidebar"]{min-width:280px;max-width:310px}
-}
+.sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#22272D;margin-bottom:6px;font-size:.8rem}
+.sb-status .ft{color:#7A848E;font-size:.72rem;margin-top:4px}
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 
 /* Headings and card titles in Fog Silver, neutral KPI sparklines (sign lives in the delta badge),
    1px top highlight on cards for depth */
-:is(h1,h2,h3,h4), .sb-title,
+:is(h1,h2,h3,h4),
 div[class*="st-key-card_"] div[data-testid="stMarkdownContainer"] > p:only-child > strong:first-child{color:#3A4048 !important}
 div[data-testid="stMetric"], div[class*="st-key-card_"]{box-shadow:0 0 0 1px #DCE4EB}
 div[data-testid="stMetricChart"] .mark-area path{fill:rgba(94,102,112,.10) !important}
@@ -1581,14 +1592,11 @@ def _usd(v, dec=0, sign=True, md=False):
 
 def _kpi_card(label, value, sub="", val_color="#22272D", left_border=""):
     _bl    = f"border-left:3px solid {left_border};" if left_border else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#5E6670;margin-top:6px;line-height:1.4">'
-              f'{sub}</div>') if sub else ""
-    return (f'<div class="kpi-tile" style="background:#FFFFFF;border:none;border-radius:16px;'
-            f'padding:16px 18px;{_bl}'
-            f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#5E6670;margin-bottom:8px;font-weight:500">{label}</div>'
-            f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
-            f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
+    # same look as st.metric tiles (label 12px/600, value up to 27px); sizes live in CSS (.kpi-tile .kl/.kv/.ks)
+    _sub_h = f'<div class="ks">{sub}</div>' if sub else ""
+    return (f'<div class="kpi-tile" style="{_bl}">'
+            f'<div class="kl">{label}</div>'
+            f'<div class="kv" style="color:{val_color}">{value}</div>'
             f'{_sub_h}</div>')
 
 def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
@@ -1598,15 +1606,10 @@ def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
             f'border-radius:20px;font-size:.68rem;font-weight:600;'
             f'border:1px solid {badge_color}44;margin-left:7px;'
             f'vertical-align:middle">{badge_txt}</span>') if badge_txt else ""
-    _sub_h = (f'<div style="font-size:.75rem;color:#5E6670;margin-top:6px;line-height:1.4">'
-              f'{sub}</div>') if sub else ""
-    return (f'<div class="kpi-tile" style="background:#FFFFFF;border:none;border-radius:16px;'
-            f'padding:16px 18px;{_bl}'
-            f'margin-bottom:4px">'
-            f'<div style="font-size:.75rem;color:#5E6670;margin-bottom:8px;font-weight:500">'
-            f'{label}{_bdg}</div>'
-            f'<div style="font-size:clamp(1.1rem,1.7vw,1.5rem);font-weight:700;color:{val_color};'
-            f'letter-spacing:-.03em;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums">{value}</div>'
+    _sub_h = f'<div class="ks">{sub}</div>' if sub else ""
+    return (f'<div class="kpi-tile" style="{_bl}">'
+            f'<div class="kl">{label}{_bdg}</div>'
+            f'<div class="kv" style="color:{val_color}">{value}</div>'
             f'{_sub_h}</div>')
 
 def _conv_rate_for(cfg, scrap_id, processor_id=None):
@@ -2337,8 +2340,10 @@ def _sb_status_html():
             f'{_body}<div class="ft">앱 버전 {APP_BUILD}</div></div>')
 
 with st.sidebar:
-    st.markdown('<div class="sb-title">BP / BM<br><span>재고/손익 관리</span></div>'
-                + ('<div class="ro-pill">읽기 전용</div>' if READ_ONLY else ""),
+    st.markdown('<div class="sb-brand"><div class="sb-logo">BP</div>'
+                '<div class="sb-name">BP / BM</div><div class="sb-sub">재고/손익 관리</div></div>'
+                + ('<div class="ro-pill">읽기 전용</div>' if READ_ONLY else "")
+                + '<div class="sb-sec">메뉴</div>',
                 unsafe_allow_html=True)
     _sb_nav = st.container()          # 페이지 메뉴 자리
     _sb_foot = st.container()
@@ -6357,6 +6362,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
                  if any(s.get("buyer_id") == b["id"] for s in cfg.get("shipments", []))}
     with st.container(key="home_filters"):
         _fc = st.columns([1, 1.4, 0.8, 1, 1], vertical_alignment="bottom")
+        _slot_cap = st.container()     # period caption + same-period toggle (filled after the KPI stats)
     with _fc[0]:
         _f_q = st.selectbox("분기", _q_opts, index=_q_opts.index(_q_dflt), key="home_q",
                             help="카드/차트 기간 (증감은 직전 분기 대비)")
@@ -6512,8 +6518,6 @@ if _page == PG_HOME and _sub == SUB_DASH:
     _qs = _q_stats(_f_q)
     _qp = _q_stats(_qtr_prev(_f_q), _q_days if _cmp_same else None)
     _hide_delta = _q_live and not _cmp_same
-    _q_hist  = [q for q in sorted({_qtr(x["month"]) for x in _f_rows} | {_f_q}) if q <= _f_q]
-    _q_ser   = {q: _q_stats(q) for q in _q_hist}
 
     def _usd_s(v):
         return ("-" if v < 0 else "") + (f"${abs(v)/1_000_000:.2f}M" if abs(v) >= 1_000_000 else f"${abs(v)/1000:,.0f}k")
@@ -6524,23 +6528,19 @@ if _page == PG_HOME and _sub == SUB_DASH:
             return None
         _d = (_a - _b) / abs(_b) * 100
         return f"{_d:+.1f}%"
-    def _spark_q(key, scale=1.0):
-        _v = [(_q_ser[q][key] or 0) / scale for q in _q_hist]
-        return [round(v, 2) for v in _v] if len(_v) >= 2 else None
     _dd_q = (f"{_qtr_prev(_f_q)[-2:]} 같은 기간 대비" if _cmp_same else f"{_qtr_prev(_f_q)[-2:]} 대비")
 
     # ── KPI 4개: 분기 실적 2개(선택 분기, 직전 분기 대비) + 현재 잔액 2개(미수금/완제품 재고, 필터 무관) ──
     with _slot_kpi:
         with st.container(key="kpi_row"):
             _k = st.columns(4)
-        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"),
-                     chart_data=_spark_q("rev", 1000), chart_type="area", border=True,
+        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), border=True,
                      help=(f"확정액(없으면 가정산) + 기타 조정, "
                            f"선적 {_qs['cnt']}건, {_qs['out']/1000:,.1f} MT"
                            + (f", 평균 \\${_qs['price']:.2f}/kg" if _qs["price"] else "")))
         _k[1].metric("실질 손익", _usd_s(_qs["real"]), delta=_pct_d("real"),
                      delta_description=(f"마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else None),
-                     chart_data=_spark_q("real", 1000), chart_type="area", border=True,
+                     border=True,
                      help="매출 − 원료비/임가공비/수출비/보관비 (판관비 제외)")
         _ar_sum = sum(r["확정산 잔액"] for r in _cf_rows)
         _k[2].metric("미수금", _usd_s(_ar_sum), delta=f"{len(_cf_rows)}건 미입금", delta_color="off", delta_arrow="off",
@@ -6562,6 +6562,7 @@ if _page == PG_HOME and _sub == SUB_DASH:
         if _qs["nobatch"]:
             _cap += (f", 배치 없는 선적 {len(_qs['nobatch'])}건 매출 제외"
                      f"({', '.join((s.get('hbl') or '—') for s in _qs['nobatch'][:4])})")
+    with _slot_cap:
         if _q_live:
             _cc1, _cc2 = st.columns([5, 1.2], vertical_alignment="center")
             _cc1.caption(_cap)
