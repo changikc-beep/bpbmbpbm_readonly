@@ -373,6 +373,35 @@ div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile)
 div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile) div:has(.kpi-tile),
 div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"]){height:100%}
 .kpi-tile{box-sizing:border-box}
+
+/* Home KPI card: 2x2 metrics inside one white card (flat, hairline between the two rows) */
+.st-key-card_kpi div[data-testid="stMetric"]{background:transparent !important;box-shadow:none !important;padding:6px 4px !important;border-radius:0 !important}
+/* the two metric rows (each wrapped in stLayoutWrapper) share the card height; hairline between them */
+.st-key-card_kpi > div[data-testid="stLayoutWrapper"]{flex:1 1 0;display:flex;align-items:center}
+.st-key-card_kpi > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"]{width:100%}
+.st-key-card_kpi > div[data-testid="stLayoutWrapper"] + div[data-testid="stLayoutWrapper"]{border-top:1px solid #EEF2F5}
+.st-key-card_kpi div[data-testid="stMetricValue"] p{font-size:1.55rem !important}
+
+/* Stat strip: a row holding KPI tiles / metrics and nothing else (no card, chart, table, button, select, nested row)
+   becomes ONE white strip with
+   hairline dividers instead of several mostly-empty boxes. Rows inside cards keep the inset tile look. */
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)){
+    background:#FFFFFF;border-radius:14px;box-shadow:0 1px 2px rgba(34,39,45,.06);gap:0 !important;padding:2px 0
+}
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) > div[data-testid="stColumn"] + div[data-testid="stColumn"]{
+    border-left:1px solid #E4EBF1
+}
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) :is(.kpi-tile, div[data-testid="stMetric"]){
+    background:transparent !important;box-shadow:none !important;border-radius:0 !important;padding:12px 18px !important
+}
+div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)) .kpi-tile .kl{margin-bottom:4px}
+/* strips inside an expander or a card sit on the inset tint */
+:is(div[data-testid="stExpander"], div[class*="st-key-card_"]) div[data-testid="stHorizontalBlock"]:has(.kpi-tile, [data-testid="stMetric"]):not(:has([class*="st-key-card_"], [class*="st-key-panel_"], [data-testid="stDataFrame"], [data-testid="stPlotlyChart"], [data-testid="stExpander"], [data-testid="stButton"], [data-testid="stSelectbox"], [data-testid="stHorizontalBlock"], [data-testid="stMarkdown"] table)){
+    background:#F3F6F9;box-shadow:none
+}
+/* the home KPI card is already a card: no strip inside it */
+.st-key-card_kpi div[data-testid="stHorizontalBlock"]{background:transparent !important;box-shadow:none !important;padding:0 !important}
+.st-key-card_kpi div[data-testid="stColumn"] + div[data-testid="stColumn"]{border-left:none !important}
 /* P&L waterfall: the chart grows to fill its (equal-height) card */
 .st-key-card_wf div[data-testid="stElementContainer"]:has([data-testid="stPlotlyChart"]){flex:1 1 auto;min-height:320px}
 .st-key-card_wf div[data-testid="stPlotlyChart"]{height:100%}
@@ -4261,7 +4290,9 @@ if _page == PG_PNL and _sub == SUB_PNL_UNIT:
                 st.warning(f"원료단가 없는 배치 {_rmc_dflt_cnt}건, 시트 출고 탭 확인")
 
             st.markdown("---")
-            _ra1, _ra2, _ra3, _ra4, _ra5, _ra6 = st.columns(6)
+            # two strips of three: six tiles in one row leave ~180px per value at 1440px
+            _ra1, _ra2, _ra3 = st.columns(3)
+            _ra4, _ra5, _ra6 = st.columns(3)
             _gp_sub  = f"매출 대비 {_gp_pct_r:+.1f}%" if _tot_bp > 0 else ""
             _stor_sub = f"{_auto_stor_cnt}건 FIFO 자동" if _auto_stor_cnt else "미입력"
             _rn_col  = "#0F766E" if _real_net_r >= 0 else "#B42318"
@@ -6539,8 +6570,8 @@ if _page == PG_HOME and _sub == SUB_DASH:
     #    '분석 더 보기'를 켜면 그 아래에 (매입사별 | 스크랩 유형별) (정산 상태 | 임가공사별)
     #    → 운영 현황 — 꺼져 있으면 계산도 하지 않는다
     #    미수 현금 전망 카드는 뺐다(입금 추적 안 함, 2026-11). 계산(_cf_rows)은 KPI 미수금과 엑셀 보고서가 쓴다.
-    _slot_kpi   = st.container()
-    _hl, _hr    = st.columns([2, 1], gap="medium")
+    # row 1: KPI 2x2 card | monthly trend | to-do (the KPI card sits beside the chart instead of a full-width row)
+    _slot_kpi, _hl, _hr = st.columns([1, 1.6, 1], gap="medium")
     _r3a, _r3b  = st.columns([1.6, 1], gap="medium")
     _slot_grid  = st.container()
     _more = st.toggle("분석 더 보기", key="home_more", value=False,
@@ -6682,25 +6713,25 @@ if _page == PG_HOME and _sub == SUB_DASH:
 
     # ── KPI 4개: 분기 실적 2개(선택 분기, 직전 분기 대비) + 현재 잔액 2개(미수금/완제품 재고, 필터 무관) ──
     with _slot_kpi:
-        with st.container(key="kpi_row"):
-            _k = st.columns(4)
-        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), border=True,
+        with st.container(key="card_kpi"):
+            _k = [*st.columns(2), *st.columns(2)]
+        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), border=False,
                      help=(f"확정액(없으면 가정산) + 기타 조정, "
                            f"선적 {_qs['cnt']}건, {_qs['out']/1000:,.1f} MT"
                            + (f", 평균 \\${_qs['price']:.2f}/kg" if _qs["price"] else "")))
         _k[1].metric("실질 손익", _usd_s(_qs["real"]), delta=_pct_d("real"),
                      delta_description=(f"마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else None),
-                     border=True,
+                     border=False,
                      help="매출 − 원료비/임가공비/수출비/보관비 (판관비 제외)")
         _ar_sum = sum(r["확정산 잔액"] for r in _cf_rows)
         _k[2].metric("미수금", _usd_s(_ar_sum), delta=f"{len(_cf_rows)}건 미입금", delta_color="off", delta_arrow="off",
-                     border=True, help="미입금 확정산 잔액 합계 (전체 매입사)")
+                     border=False, help="미입금 확정산 잔액 합계 (전체 매입사)")
         _fg = {}
         for _sc in cfg.get("scrap_types", []):
             _fg[_sc_product(_sc)] = _fg.get(_sc_product(_sc), 0.0) + _finished_goods_kg(cfg, _sc["id"])
         _k[3].metric("완제품 재고", f"{sum(_fg.values())/1000:,.1f} MT",
                      delta=", ".join(f"{p} {v/1000:,.1f}" for p, v in sorted(_fg.items()) if v) or "없음",
-                     delta_color="off", delta_arrow="off", border=True,
+                     delta_color="off", delta_arrow="off", border=False,
                      help="누적 생산 − 선적된 배치 생산 (필터 무관)")
         if _q_live:
             _q0 = _q_start(_f_q)
