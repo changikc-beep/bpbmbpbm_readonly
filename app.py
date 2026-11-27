@@ -83,6 +83,29 @@ div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 .cb-tot{border-bottom:none}
 .cb-tot .cb-nm,.cb-tot .cb-v{color:#B84A0C}
 
+/* ── Industry news card (home): date | title | source rows ── */
+.nw-list{display:flex;flex-direction:column}
+a.nw-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:baseline;padding:8px 4px;
+    border-bottom:1px solid #EEF2F5;text-decoration:none !important;color:#22272D !important}
+a.nw-row:last-child{border-bottom:none}
+a.nw-row:hover{background:#F3F6F9}
+a.nw-row:hover .nw-t{color:#B84A0C}
+.nw-d{font-size:.75rem;color:#8C98A5;font-variant-numeric:tabular-nums}
+.nw-t{font-size:.88rem;line-height:1.4;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.nw-s{font-size:.72rem;color:#5E6670;background:#F3F6F9;border-radius:6px;padding:1px 7px;white-space:nowrap;max-width:130px;
+    overflow:hidden;text-overflow:ellipsis}
+
+/* ── Metal INDEX card (home): name | sparkline | value + MoM ── */
+.ix-row{display:grid;grid-template-columns:78px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #EEF2F5}
+.ix-nm{font-size:.9rem;font-weight:650;color:#22272D}
+.ix-nm span{display:block;font-size:.72rem;font-weight:500;color:#8C98A5;margin-top:1px}
+.ix-sp{width:100%;height:30px;overflow:visible}
+.ix-sp polyline{fill:none;stroke:#9AA8B6;stroke-width:1.6;vector-effect:non-scaling-stroke}
+.ix-sp circle{fill:#F26B1D}
+.ix-v{text-align:right;font-size:1rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums}
+.ix-chg{display:block;font-size:.74rem;font-weight:600;color:#5E6670;margin-top:2px}
+.ix-ft{font-size:.72rem;color:#8C98A5;margin-top:10px}
+
 /* ── Step income statement (P&L summary): tinted header, deduction rows, subtotal and total bands ── */
 table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9rem;font-variant-numeric:tabular-nums;
     border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px #DCE4EB}
@@ -1611,6 +1634,101 @@ def _pl_table_html(rev, rows, dec=0):
                        f'<td class="{sign}">{money(v)}</td><td class="{sign}">{pct(v)}</td></tr>')
     out.append("</tbody></table>")
     return "".join(out)
+
+# ── Industry news (home): Google News RSS search, headlines only (date, source, title link) ──
+# Not an official API: if the feed changes or is blocked the card just says so. Stdlib XML parsing
+# (no new dependency: requirements.txt cannot be edited locally).
+_NEWS_TABS = {
+    "시장/가격": [
+        ('"black mass" OR "battery recycling" OR "LME nickel" OR "cobalt price" -"market size" -forecast -album -concert -tour -film -movie -band', "en"),
+        ("블랙매스 OR 폐배터리 OR 배터리 재활용", "ko"),
+    ],
+    "매입사/경쟁사": [
+        ('EcoPro OR "POSCO Future M" OR SungEel OR Umicore OR "BASF battery" recycling', "en"),
+        ("에코프로 OR 성일하이텍 OR 포스코퓨처엠 OR 고려아연 배터리", "ko"),
+    ],
+    "규제": [
+        ('"EU Battery Regulation" OR "black mass" waste code OR "battery passport" -album -concert -film -movie', "en"),
+        ("배터리 규정 OR 폐기물 국가간 이동 OR 배터리 여권", "ko"),
+    ],
+}
+_NEWS_LOC = {"en": "hl=en-US&gl=US&ceid=US:en", "ko": "hl=ko&gl=KR&ceid=KR:ko"}
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _fetch_news(query, lang, days=14):
+    """[(date 'YYYY-MM-DD', source, title, link)] newest first, or None when the feed cannot be read."""
+    import requests, xml.etree.ElementTree as ET
+    from urllib.parse import quote
+    from email.utils import parsedate_to_datetime
+    url = f"https://news.google.com/rss/search?q={quote(f'{query} when:{days}d')}&{_NEWS_LOC[lang]}"
+    try:
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (bp-calculator news card)"})
+        r.raise_for_status()
+        items = ET.fromstring(r.content).findall("./channel/item")
+    except Exception:
+        return None
+    out = []
+    for it in items:
+        src = (it.findtext("source") or "").strip()
+        title = (it.findtext("title") or "").strip()
+        if src and title.endswith(" - " + src):           # Google appends " - Source" to the title
+            title = title[: -len(src) - 3].strip()
+        link = (it.findtext("link") or "").strip()
+        try:
+            from datetime import timezone as _tz
+            d = parsedate_to_datetime(it.findtext("pubDate")).astimezone(_tz(timedelta(hours=9))).strftime("%Y-%m-%d")
+        except Exception:
+            d = ""
+        if title and link.startswith(("https://", "http://")):
+            out.append((d, src, title, link))
+    out.sort(key=lambda x: x[0], reverse=True)
+    return out
+
+def _news_html(items, limit=8):
+    """Headline rows; duplicates (same title) dropped."""
+    import html as _h
+    seen, rows = set(), []
+    for d, src, title, link in items:
+        k = re.sub(r"\W+", "", title.lower())[:60]
+        if k in seen:
+            continue
+        seen.add(k)
+        rows.append(f'<a class="nw-row" href="{_h.escape(link, quote=True)}" target="_blank" rel="noopener noreferrer">'
+                    f'<span class="nw-d">{d[5:].replace("-", ".")}</span><span class="nw-t">{_h.escape(title)}</span>'
+                    f'<span class="nw-s">{_h.escape(src)}</span></a>')
+        if len(rows) >= limit:
+            break
+    return "".join(rows)
+
+def _index_panel_html(index_history, n=10):
+    """Metal INDEX rows (Ni, Co Mid, Co Low): sparkline of the last n months, latest value, month-on-month change."""
+    hist = sorted((h for h in index_history if h.get("month")), key=lambda h: h["month"])[-n:]
+    if not hist:
+        return ""
+    rows = []
+    for key, name, sub in (("ni_index", "Ni", "LME"), ("co_index", "Co Mid", "매입 기준"), ("co_low", "Co Low", "매각 기준")):
+        pts = [(h["month"], float(h[key])) for h in hist if h.get(key) not in (None, "")]
+        if not pts:
+            continue
+        vals = [v for _, v in pts]
+        lo, hi = min(vals), max(vals)
+        span = (hi - lo) or 1.0
+        w, ht = 120, 30
+        step = w / max(len(vals) - 1, 1)
+        poly = " ".join(f"{i * step:.1f},{ht - 3 - (v - lo) / span * (ht - 6):.1f}" for i, v in enumerate(vals))
+        last_x, last_y = poly.split(" ")[-1].split(",")
+        chg = (vals[-1] / vals[-2] - 1) * 100 if len(vals) >= 2 and vals[-2] else None
+        chg_h = (f'<span class="ix-chg">{"▲" if chg > 0 else ("▼" if chg < 0 else "")} {abs(chg):.1f}%</span>'
+                 if chg is not None else "")
+        rows.append(f'<div class="ix-row"><div class="ix-nm">{name}<span>{sub}</span></div>'
+                    f'<svg class="ix-sp" viewBox="0 0 {w} {ht}" preserveAspectRatio="none"><polyline points="{poly}"/>'
+                    f'<circle cx="{last_x}" cy="{last_y}" r="2.6"/></svg>'
+                    f'<div class="ix-v">&#36;{vals[-1]:,.0f}{chg_h}</div></div>')
+    m0, m1 = hist[0]["month"], hist[-1]["month"]
+    # sync fills an empty Co Mid with Co Low, so equal values usually mean "no Mid quote that month"
+    same = [h["month"][2:] for h in hist if h.get("co_index") not in (None, "") and h.get("co_index") == h.get("co_low")]
+    note = f'<br>Co Mid = Co Low인 달 {", ".join(same)} (시트 Co Mid 비어 Co Low로 대체된 값일 수 있음)' if same else ""
+    return "".join(rows) + f'<div class="ix-ft">{m0} ~ {m1}, $/t, 변화 = 전월 대비{note}</div>'
 
 def _pk_table_html(heads, rows, dec=4):
     """Per-kg comparison table in the same style as _pl_table_html.
@@ -6417,17 +6535,20 @@ if _page == PG_HOME and _sub == SUB_DASH:
         _slot_xl = st.container()      # 엑셀 보고서 다운로드 (아래에서 채움)
 
     # ── 화면 배치: 계산 순서와 무관하게 표시 위치를 고정 ──
-    #    기본: KPI 4 → (월별 추이 | 할 일) → (미수 현금 전망 | 매입사별 매출)
-    #    '분석 더 보기'를 켜면 그 아래에 (스크랩 유형별 | 정산 상태 | 임가공사별)
+    #    기본: KPI 4 → (월별 추이 | 할 일) → (업계 동향 | 메탈 INDEX) → 선적 정산 상태
+    #    '분석 더 보기'를 켜면 그 아래에 (매입사별 | 스크랩 유형별) (정산 상태 | 임가공사별)
     #    → 운영 현황 — 꺼져 있으면 계산도 하지 않는다
+    #    미수 현금 전망 카드는 뺐다(입금 추적 안 함, 2026-11). 계산(_cf_rows)은 KPI 미수금과 엑셀 보고서가 쓴다.
     _slot_kpi   = st.container()
     _hl, _hr    = st.columns([2, 1], gap="medium")
-    _r3a, _r3b  = st.columns([1.4, 1], gap="medium")
+    _r3a, _r3b  = st.columns([1.6, 1], gap="medium")
     _slot_grid  = st.container()
     _more = st.toggle("분석 더 보기", key="home_more", value=False,
-                      help="원료/정산 상태/임가공사별 매출, 운영 현황")
+                      help="매입사/원료/정산 상태/임가공사별, 운영 현황")
     if _more:
-        _g2        = st.columns(3, gap="small")
+        _g2a       = st.columns(2, gap="small")
+        _g2b       = st.columns(2, gap="small")
+        _g2        = [*_g2a, *_g2b]
         _slot_ops  = st.container()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -6489,50 +6610,40 @@ if _page == PG_HOME and _sub == SUB_DASH:
     # ══════════════════════════════════════════════════════════════════════════
     # 미수 현금 전망 — 미입금 선적건의 확정산 잔액 (청구 가능 vs INDEX 대기)
     # ══════════════════════════════════════════════════════════════════════════
-    _cf_rows = _receivable_rows(cfg, (NI, CO))
-    with _r3a, st.container(border=True, key="card_ar"):
-        st.markdown("#### 미수 현금 전망")
-        if not _cf_rows:
-            st.caption("미입금 선적 없음")
-        else:
-            _cf_now  = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] == "청구 가능")
-            _cf_wait = sum(r["확정산 잔액"] for r in _cf_rows if r["구분"] != "청구 가능")
-            _cf_tot  = _cf_now + _cf_wait
-            _cfc1, _cfc2, _cfc3 = st.columns(3)
-            _cfc1.markdown(_kpi_card("청구 가능", f"${_cf_now:,.0f}",
-                                     f"{sum(1 for r in _cf_rows if r['구분'] == '청구 가능')}건",
-                                     val_color="#0F766E" if _cf_now >= 0 else "#B42318"),
-                           unsafe_allow_html=True)
-            _cfc2.markdown(_kpi_card("INDEX 대기", f"${_cf_wait:,.0f}",
-                                     "추정치",
-                                     val_color="#5E6670"),
-                           unsafe_allow_html=True)
-            _cfc3.markdown(_kpi_card("미수 합계", f"${_cf_tot:,.0f}",
-                                     f"KRW ₩{_cf_tot*XR:,.0f}",
-                                     val_color="#0F766E" if _cf_tot >= 0 else "#B42318"),
-                           unsafe_allow_html=True)
-            # 월별 예상 입금 일정
-            _cf_by_mon = defaultdict(lambda: {"건수": 0, "금액": 0.0})
-            for _r in _cf_rows:
-                _cf_by_mon[_r["예상 입금월"]]["건수"] += 1
-                _cf_by_mon[_r["예상 입금월"]]["금액"] += _r["확정산 잔액"]
-            _cf_this_m = _today().strftime("%Y-%m")
-            _cf_mon_rows = [{"예상 입금월": _k, "건수": _v["건수"], "예상 입금액": round(_v["금액"], 0),
-                             "비고": "지연" if (_k != "미정" and _k < _cf_this_m) else ""}
-                            for _k, _v in sorted(_cf_by_mon.items())]
-            st.markdown("**월별 예상 입금**",
-                        help="예상 입금일 = ETA(없으면 선적일+60일) + 매입사 확정산 입금 조건(기본 30일). "
-                                               "'지연' = 예상월 경과")
-            st.dataframe(pd.DataFrame(_cf_mon_rows).style.format({"예상 입금액": "${:,.0f}"}),
-                         width="stretch", hide_index=True)
-            with st.expander("선적건별 상세", expanded=False):
-                st.caption("가정산은 수령 완료로 봄, '추정' = 최신 INDEX 참고치, 음수 = 반환 예정")
-                _cf_rows.sort(key=lambda r: (r["구분"] != "청구 가능", r["Final월"]))
-                st.dataframe(
-                    pd.DataFrame(_cf_rows), width="stretch", hide_index=True,
-                    column_config=_cc_money("가정산 수령", "확정산 잔액", dec=0),
-                )
+    _cf_rows = _receivable_rows(cfg, (NI, CO))      # KPI 미수금 + 엑셀 보고서 현금 전망 시트
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # 업계 동향 — Google News RSS 검색(영문+국문, 최근 14일), 제목/출처/날짜/링크만
+    # ══════════════════════════════════════════════════════════════════════════
+    with _r3a, st.container(border=True, key="card_news"):
+        st.markdown("#### 업계 동향", help="Google News 검색 결과(최근 14일, 6시간마다 갱신), 제목을 누르면 원문이 새 창으로 열림")
+        for _nt, (_nname, _nqs) in zip(st.tabs(list(_NEWS_TABS)), _NEWS_TABS.items()):
+            with _nt:
+                _nitems, _nfail = [], 0
+                for _q, _lang in _nqs:
+                    _got = _fetch_news(_q, _lang)
+                    if _got is None:
+                        _nfail += 1
+                    else:
+                        _nitems += _got
+                _nitems.sort(key=lambda x: x[0], reverse=True)
+                if _nitems:
+                    st.markdown(f'<div class="nw-list">{_news_html(_nitems)}</div>', unsafe_allow_html=True)
+                    if _nfail:
+                        st.caption("일부 피드를 불러오지 못함")
+                else:
+                    st.caption("기사 불러오기 실패" if _nfail else "최근 14일 기사 없음")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 메탈 INDEX — 정산 INDEX(마스터 > INDEX) 최근 10개월 추이와 전월 대비
+    # ══════════════════════════════════════════════════════════════════════════
+    with _r3b, st.container(border=True, key="card_index"):
+        st.markdown("#### 메탈 INDEX", help="정산에 쓰는 월별 INDEX(시트 INDEX 탭), Ni = LME, Co Mid = 매입 기준, Co Low = 매각 기준")
+        _ix_html = _index_panel_html(cfg.get("index_history", []))
+        if _ix_html:
+            st.markdown(_ix_html, unsafe_allow_html=True)
+        else:
+            st.caption("INDEX 없음")
     # ── 엑셀 보고서 (대시보드 요약과 동일 기준: 할 일/현금 전망/완제품 재고 포함) ──
     with _slot_xl:
         if active_buyers:
@@ -6680,7 +6791,6 @@ if _page == PG_HOME and _sub == SUB_DASH:
         return _hbar([(k, v["out"]) for k, v in _a.items()], _MT) if _a else None
 
     _panel(_hl, "월별 매출 추이", "", _b_trend)
-    _panel(_r3b, "매입사별 매출", _f_q, _b_buyer)
 
     # ── 선적 정산 상태 격자: 매입사 x 선적월(최근 12개월), 점 색 = 그 달 선적 중 가장 덜 진행된 상태 ──
     _sg_months = _month_range(_today().strftime("%Y-%m"), 12)
@@ -6697,9 +6807,10 @@ if _page == PG_HOME and _sub == SUB_DASH:
         else:
             st.caption("최근 12개월 선적 없음")
     if _more:
-        _panel(_g2[0], "스크랩 유형별 매출", _f_q, _b_scrap)
-        _panel(_g2[1], "정산 상태", f"{_f_q}, 건수", _b_status)
-        _panel(_g2[2], "임가공사별 생산", f"{_f_q}, 선적 배치", _b_proc)
+        _panel(_g2[0], "매입사별 매출", _f_q, _b_buyer)
+        _panel(_g2[1], "스크랩 유형별 매출", _f_q, _b_scrap)
+        _panel(_g2[2], "정산 상태", f"{_f_q}, 건수", _b_status)
+        _panel(_g2[3], "임가공사별 생산", f"{_f_q}, 선적 배치", _b_proc)
 
         # ── 현재 운영 현황 (필터와 무관한 전체 기준) ─────────────────────────────────
         _all_ships   = cfg.get("shipments", [])
