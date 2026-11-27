@@ -30,7 +30,7 @@ header[data-testid="stHeader"]{background:transparent !important}
 section[data-testid="stSidebar"]{border-right:1px solid #D3DCE4 !important}
 h1{font-weight:700 !important;letter-spacing:-.03em;font-size:1.9rem !important;padding-bottom:.2rem !important}
 h4{font-size:1.15rem !important}
-.ro-pill{display:inline-block;font-size:.75rem;color:#A16207;background:rgba(212,167,44,.14);
+.ro-pill{display:inline-block;font-size:.84rem;color:#A16207;background:rgba(212,167,44,.14);
     padding:3px 10px;border-radius:999px;margin-bottom:4px}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0 9px 2px 1px;vertical-align:middle}
 .dot-r{background:#F26B1D}
@@ -56,27 +56,35 @@ div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{display:none !important
 div[data-testid="stTabs"] [data-baseweb="tab-border"]{display:none !important}
 
 /* ── Shipment status grid (home): buyer x month dots ── */
-.sg-grid{display:grid;gap:6px 4px;align-items:center;margin-top:6px}
-.sg-mh{font-size:.7rem;color:#5E6670;text-align:center;line-height:1.15}
-.sg-mh.sg-hl{color:#B84A0C;font-weight:700}
-.sg-lbl{font-size:.8rem;color:#22272D;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sg-lbl span{font-size:.68rem;color:#5E6670;font-weight:500;margin-left:5px}
-.sg-c{display:flex;justify-content:center}
-.sg-c a{text-decoration:none !important}
-.sg-d{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
-    font-size:.7rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums}
-.sg-e{width:9px;height:9px;background:#DCE5EC}
+.sg-tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin-top:4px}
+.sg-tbl th, .sg-tbl td{padding:0;text-align:center;border:none}
+.sg-tbl thead th{font-size:.86rem;font-weight:600;color:#5E6670;padding:0 2px 8px;line-height:1.2;vertical-align:bottom}
+.sg-tbl thead th span{display:block;font-size:.8rem;font-weight:500;color:#8C98A5}
+.sg-tbl thead th.sg-hl{color:#B84A0C;font-weight:700}
+.sg-tbl tbody tr{height:42px}
+.sg-tbl tbody tr:nth-child(odd){background:#F6F8FA}
+.sg-tbl tbody tr:hover{background:#EEF2F5}
+.sg-tbl td.sg-hlc{background:rgba(242,107,29,.06)}
+.sg-tbl .sg-lbl{text-align:left;white-space:nowrap;font-size:.98rem;font-weight:650;color:#22272D;padding-left:12px;width:150px;
+    border-radius:8px 0 0 8px}
+.sg-tbl .sg-lbl span{font-size:.82rem;color:#5E6670;font-weight:500;margin-left:6px}
+.sg-tbl .sg-tot{font-size:.9rem;font-weight:650;color:#3A4048;text-align:right;padding-right:14px;width:64px}
+.sg-tbl thead .sg-tot{font-size:.86rem;font-weight:600;color:#5E6670}
+.sg-tbl a{text-decoration:none !important}
+.sg-d{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;
+    font-size:.86rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums;vertical-align:middle}
+.sg-e{width:8px;height:8px;background:#D3DCE4}
 .sg-provisional{background:#D4A72C}
 .sg-final{background:#6F8FB8}
 .sg-paid{background:#2A9D8F}
-.sg-sm{width:10px;height:10px;margin-right:6px;vertical-align:-1px}
-.sg-legend{display:flex;gap:16px;font-size:.75rem;color:#5E6670;margin-top:12px}
+.sg-sm{width:12px;height:12px;margin-right:6px;vertical-align:-1px}
+.sg-legend{display:flex;gap:18px;font-size:.9rem;color:#5E6670;margin-top:12px}
 
 /* ── Cost breakdown rows (P&L summary) ── */
 .cb-row{display:grid;grid-template-columns:minmax(130px,1.1fr) 2fr minmax(110px,.9fr);gap:14px;align-items:center;
     padding:9px 0;border-bottom:1px solid #EEF4F8}
 .cb-nm{font-size:.85rem;font-weight:600;color:#22272D}
-.cb-nm span,.cb-v span{display:block;font-size:.72rem;color:#5E6670;font-weight:500;margin-top:2px}
+.cb-nm span,.cb-v span{display:block;font-size:.8rem;color:#5E6670;font-weight:500;margin-top:2px}
 .cb-bar{height:8px;background:#EEF4F8;border-radius:20px;overflow:hidden}
 .cb-bar i{display:block;height:100%;background:#9AA8B6;border-radius:20px}
 .cb-v{text-align:right;font-size:.9rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums}
@@ -90,9 +98,9 @@ a.nw-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:b
 a.nw-row:last-child{border-bottom:none}
 a.nw-row:hover{background:#F3F6F9}
 a.nw-row:hover .nw-t{color:#B84A0C}
-.nw-d{font-size:.75rem;color:#8C98A5;font-variant-numeric:tabular-nums}
+.nw-d{font-size:.84rem;color:#8C98A5;font-variant-numeric:tabular-nums}
 .nw-t{font-size:.88rem;line-height:1.4;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.nw-s{font-size:.72rem;color:#5E6670;background:#F3F6F9;border-radius:6px;padding:1px 7px;white-space:nowrap;max-width:130px;
+.nw-s{font-size:.8rem;color:#5E6670;background:#F3F6F9;border-radius:6px;padding:1px 7px;white-space:nowrap;max-width:130px;
     overflow:hidden;text-overflow:ellipsis}
 
 /* ── Metal INDEX card (home): name | sparkline | value + MoM ── */
@@ -104,13 +112,13 @@ a.nw-row:hover .nw-t{color:#B84A0C}
 .ix-panel{display:flex;flex-direction:column;height:100%}
 .ix-row{flex:1 1 auto;display:grid;grid-template-columns:86px 1fr auto;gap:14px;align-items:center;padding:8px 0;border-bottom:1px solid #EEF2F5}
 .ix-nm{font-size:.9rem;font-weight:650;color:#22272D}
-.ix-nm span{display:block;font-size:.72rem;font-weight:500;color:#8C98A5;margin-top:1px}
+.ix-nm span{display:block;font-size:.8rem;font-weight:500;color:#8C98A5;margin-top:1px}
 .ix-sp{width:100%;height:30px;overflow:visible}
 .ix-sp polyline{fill:none;stroke:#9AA8B6;stroke-width:1.6;vector-effect:non-scaling-stroke}
 .ix-sp circle{fill:#F26B1D}
 .ix-v{text-align:right;font-size:1rem;font-weight:700;color:#22272D;font-variant-numeric:tabular-nums}
-.ix-chg{display:block;font-size:.74rem;font-weight:600;color:#5E6670;margin-top:2px}
-.ix-ft{font-size:.72rem;color:#8C98A5;margin-top:10px}
+.ix-chg{display:block;font-size:.82rem;font-weight:600;color:#5E6670;margin-top:2px}
+.ix-ft{font-size:.8rem;color:#8C98A5;margin-top:10px}
 
 /* ── Step income statement (P&L summary): tinted header, deduction rows, subtotal and total bands ── */
 table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9rem;font-variant-numeric:tabular-nums;
@@ -120,7 +128,7 @@ table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9re
 .pl-tbl td{padding:9px 14px;text-align:right;color:#22272D;border-bottom:1px solid #E4EBF1;white-space:nowrap}
 .pl-tbl td:first-child{white-space:normal}
 .pl-tbl tr:last-child td{border-bottom:none}
-.pl-note{display:block;font-size:.74rem;color:#8C98A5;font-weight:500;margin-top:1px}
+.pl-note{display:block;font-size:.82rem;color:#8C98A5;font-weight:500;margin-top:1px}
 .pl-rev td{font-weight:700}
 .pl-cost td{color:#5E6670}
 .pl-cost td:first-child{padding-left:14px;color:#2E343B}
@@ -134,16 +142,16 @@ table.pl-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:.9re
 /* ── Month-close progress header ── */
 .mc-head{background:#FFFFFF;border-radius:16px;padding:20px 22px;margin-bottom:10px}
 .mc-top{display:flex;justify-content:space-between;align-items:flex-start}
-.mc-cap{font-size:.75rem;color:#5E6670;font-weight:600;letter-spacing:.04em}
+.mc-cap{font-size:.84rem;color:#5E6670;font-weight:600;letter-spacing:.04em}
 .mc-big{font-size:2rem;font-weight:700;color:#22272D;letter-spacing:-.03em;line-height:1.2;font-variant-numeric:tabular-nums}
 .mc-big span{font-size:1.1rem;color:#5E6670;font-weight:600}
-.mc-st{font-size:.78rem;font-weight:600;color:#A16207;background:rgba(212,167,44,.15);padding:4px 11px;border-radius:999px}
+.mc-st{font-size:.86rem;font-weight:600;color:#A16207;background:rgba(212,167,44,.15);padding:4px 11px;border-radius:999px}
 .mc-st.mc-st-ok{color:#0F766E;background:rgba(42,157,143,.13)}
 .mc-bar{height:8px;background:#EEF4F8;border-radius:20px;overflow:hidden;margin-top:12px}
 .mc-bar i{display:block;height:100%;background:#F26B1D;border-radius:20px}
-.mc-pct{font-size:.72rem;color:#5E6670;text-align:right;margin-top:4px}
+.mc-pct{font-size:.8rem;color:#5E6670;text-align:right;margin-top:4px}
 .mc-groups{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:10px}
-.mc-gl{font-size:.75rem;color:#5E6670;margin-bottom:6px}
+.mc-gl{font-size:.84rem;color:#5E6670;margin-bottom:6px}
 .mc-gl b{color:#22272D}
 .mc-d{display:inline-block;width:16px;height:16px;border-radius:50%;margin-right:5px}
 .mc-ok{background:#2A9D8F}
@@ -172,7 +180,7 @@ div[data-testid="stMetricValue"]{
 }
 div[data-testid="stMetricValue"] p{font-size:1.8rem !important;font-weight:650 !important;letter-spacing:-.02em;line-height:1.2 !important}
 div[data-testid="stMetricLabel"] p{font-size:.86rem !important;color:#5E6670 !important;font-weight:600}
-div[data-testid="stMetricDelta"]{font-size:.78rem !important}
+div[data-testid="stMetricDelta"]{font-size:.86rem !important}
 div[data-testid="stMetricDelta"] svg{width:12px;height:12px}
 div[data-testid="stMetric"] svg{background:transparent !important}
 /* HTML stat tiles (_kpi_card): same scale as st.metric; nested in a card they sit one step lighter and smaller */
@@ -186,7 +194,7 @@ div[data-testid="stMetric"] svg{background:transparent !important}
 /* inset tier: things inside a white card (stat tiles, tables) sit on #F3F6F9 */
 div[class*="st-key-card_"] .kpi-tile{background:#F3F6F9 !important;box-shadow:none;padding:12px 14px}
 div[class*="st-key-card_"] .kpi-tile .kv{font-size:clamp(1.1rem,1.4vw,1.4rem)}
-div[class*="st-key-card_"] table{background:#F3F6F9 !important;box-shadow:none !important}
+div[class*="st-key-card_"] table:not(.sg-tbl){background:#F3F6F9 !important;box-shadow:none !important}
 
 /* expanders: open = white card, collapsed = quiet inset strip with a hairline */
 div[data-testid="stExpander"] details{
@@ -300,23 +308,23 @@ div[data-testid="stDataFrame"]{
 }
 
 /* ── Markdown tables ── */
-div[data-testid="stMarkdown"] table:not(.pl-tbl){
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl){
     border-collapse:separate !important;border-spacing:0 !important;
     border:none !important;border-radius:12px !important;
     overflow:hidden !important;width:100%;margin-bottom:12px !important;
     background:#FFFFFF;font-variant-numeric:tabular-nums
 }
-div[data-testid="stMarkdown"] table:not(.pl-tbl) thead tr th{
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl) thead tr th{
     background:#E9EFF4 !important;color:#5E6670 !important;
     font-weight:600 !important;padding:10px 14px !important;
     border-bottom:1px solid #D3DCE4 !important;font-size:.8rem !important;
     white-space:nowrap
 }
-div[data-testid="stMarkdown"] table:not(.pl-tbl) tbody tr td{
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl) tbody tr td{
     padding:9px 14px !important;border-bottom:1px solid #D3DCE4 !important;
     color:#2E343B !important;font-size:.84rem !important
 }
-div[data-testid="stMarkdown"] table:not(.pl-tbl) tbody tr:last-child td{border-bottom:none !important}
+div[data-testid="stMarkdown"] table:not(.pl-tbl):not(.sg-tbl) tbody tr:last-child td{border-bottom:none !important}
 
 /* ── mbox — BP/BM price cards ── */
 .mbox{
@@ -330,7 +338,7 @@ div[data-testid="stMarkdown"] table:not(.pl-tbl) tbody tr:last-child td{border-b
 .sp{font-size:.8rem;color:#5E6670;margin-bottom:3px}
 
 /* ── Status badges — tint only, no outline ── */
-.b-bp,.b-bm,.b-sc,.b-ok,.b-wn,.b-ng{padding:2px 9px;border-radius:6px;font-size:.72rem;font-weight:600}
+.b-bp,.b-bm,.b-sc,.b-ok,.b-wn,.b-ng{padding:2px 9px;border-radius:6px;font-size:.8rem;font-weight:600}
 .b-bp{background:rgba(111,143,184,.16);color:#3B5B85}
 .b-bm{background:rgba(42,157,143,.13);color:#0F766E}
 .b-sc{background:rgba(212,167,44,.16);color:#A16207}
@@ -348,12 +356,12 @@ section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"]{padding
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"]{gap:6px !important}
 .sb-brand{display:grid;grid-template-columns:34px 1fr;column-gap:10px;align-items:center;margin:0 4px 12px}
 .sb-logo{grid-row:1 / span 2;width:34px;height:34px;border-radius:9px;background:#F26B1D;color:#22272D;
-    display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;letter-spacing:.02em}
+    display:flex;align-items:center;justify-content:center;font-size:.86rem;font-weight:700;letter-spacing:.02em}
 .sb-name{font-size:.98rem;font-weight:700;color:#F2F6F9;line-height:1.2;letter-spacing:-.01em}
 .sb-sub{font-size:.8rem;font-weight:500;color:#9AA8B6;line-height:1.3}
-section[data-testid="stSidebar"] .ro-pill{font-size:.72rem;padding:2px 8px;margin:0 4px 8px;color:#F0C75E;background:rgba(212,167,44,.18)}
+section[data-testid="stSidebar"] .ro-pill{font-size:.8rem;padding:2px 8px;margin:0 4px 8px;color:#F0C75E;background:rgba(212,167,44,.18)}
 /* the markdown block ends with a negative margin, so the label keeps its own bottom space */
-.sb-sec{font-size:.7rem;font-weight:600;color:#7A848E;letter-spacing:.06em;margin:4px 10px 0;padding-bottom:12px}
+.sb-sec{font-size:.8rem;font-weight:600;color:#7A848E;letter-spacing:.06em;margin:4px 10px 0;padding-bottom:12px}
 .st-key-nav_top, .st-key-nav_top div[data-testid="stElementContainer"], .st-key-nav_top div[data-testid="stRadio"],
 .st-key-nav_top div[data-testid="stRadio"] > div{width:100% !important}
 section[data-testid="stSidebar"] hr{margin:10px 4px !important;border-color:#3A4048 !important}
@@ -380,7 +388,28 @@ div[data-testid="stColumn"] div[data-testid="stElementContainer"]:has(.kpi-tile)
 div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st-key-card_"]){height:100%}
 .kpi-tile{box-sizing:border-box}
 
-/* Home KPI card: 2x2 metrics inside one white card (flat, hairline between the two rows) */
+/* Home KPI card: HTML 2x2 grid (.kg) that fills the card height; hairlines between cells */
+.st-key-card_kpi{padding:6px 8px !important}
+.st-key-card_kpi > div[data-testid="stElementContainer"]:has(.kg){flex:1 1 auto}
+.st-key-card_kpi :is(div[data-testid="stElementContainer"], div[data-testid="stMarkdown"], div[data-testid="stMarkdownContainer"]):has(.kg),
+.st-key-card_kpi div:has(> div[data-testid="stMarkdownContainer"] > .kg){height:100%}
+.st-key-card_kpi div[data-testid="stMarkdownContainer"]:has(> .kg){margin-bottom:0 !important}
+.kg{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;height:100%;min-height:220px}
+.kg-c{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:12px 14px;min-width:0}
+.kg-c:nth-child(odd){border-right:1px solid #EEF2F5}
+.kg-c:nth-child(-n+2){border-bottom:1px solid #EEF2F5}
+.kg-l{font-size:.9rem;font-weight:600;color:#5E6670;display:flex;align-items:center;gap:6px}
+.kg-q{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
+    border:1px solid #AEB8C2;color:#8C98A5;font-size:.7rem;font-weight:700;cursor:help}
+.kg-v{font-size:1.95rem;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:#22272D;white-space:nowrap;font-variant-numeric:tabular-nums}
+.kg-v .ku{font-size:.55em;font-weight:600;color:#5E6670;margin-left:3px}
+.kg-m{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.kg-b{font-size:.84rem;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.kg-neg{background:rgba(224,82,74,.12);color:#B42318}
+.kg-pos{background:rgba(42,157,143,.13);color:#0F766E}
+.kg-neutral{background:#EEF2F5;color:#5E6670}
+.kg-n{font-size:.84rem;color:#5E6670;white-space:nowrap}
+/* (legacy) st.metric inside the KPI card */
 .st-key-card_kpi div[data-testid="stMetric"]{background:transparent !important;box-shadow:none !important;padding:6px 4px !important;border-radius:0 !important}
 /* the two metric rows (each wrapped in stLayoutWrapper) share the card height; hairline between them */
 .st-key-card_kpi > div[data-testid="stLayoutWrapper"]{flex:1 1 0;display:flex;align-items:center}
@@ -391,7 +420,7 @@ div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st
 .st-key-card_kpi div[data-testid="stMetric"]{display:flex !important;flex-direction:column;justify-content:center;padding:4px 6px !important}
 /* delta badge + description ("마진 69.4%") wrap together on one baseline instead of clipping */
 div[data-testid="stMetric"] div:has(> div[data-testid="stMetricDelta"]){flex-wrap:wrap !important;align-items:center !important;column-gap:6px;row-gap:4px}
-div[data-testid="stMetricDeltaDescription"]{white-space:nowrap !important;margin:0 !important;font-size:.78rem}
+div[data-testid="stMetricDeltaDescription"]{white-space:nowrap !important;margin:0 !important;font-size:.86rem}
 /* Streamlit gives markdown blocks a -14px bottom margin; for HTML stat tiles that made the tile 14px shorter
    than its content, so the last line spilled out of strips and cards */
 div[data-testid="stMarkdownContainer"]:has(> .kpi-tile){margin-bottom:0 !important}
@@ -459,7 +488,7 @@ div[data-testid="stNumberInput"] button{display:none !important}
 }
 :is(.st-key-io_sc, .st-key-proc_pick, .st-key-buyer_pick, .st-key-rfq_pick){margin-bottom:6px}
 /* 숨긴 메뉴 링크 줄 (경로 표시는 하위 탭과 중복이라 제거) */
-.nav-crumb{font-size:.78rem;color:#66707A;text-align:right;margin:2px 2px 0}
+.nav-crumb{font-size:.86rem;color:#66707A;text-align:right;margin:2px 2px 0}
 .nav-crumb a{color:#5E6670 !important}
 
 /* ── Sidebar menu (both radio DOMs: Streamlit 1.56 baseweb label / 1.59+ stRadioOption) ──
@@ -513,12 +542,12 @@ a.td-go:hover{text-decoration:underline !important}
 .st-key-home_filters div[data-testid="stCaptionContainer"] p{font-size:.82rem;margin:0}
 /* sidebar data status card */
 .sb-status{background:#2B3138;border:none;border-radius:10px;
-    padding:10px 12px;margin-top:6px;font-size:.78rem;color:#9AA8B6;line-height:1.5}
+    padding:10px 12px;margin-top:6px;font-size:.86rem;color:#9AA8B6;line-height:1.5}
 .sb-status .row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid #3A4048}
 .sb-status .k{color:#9AA8B6}
 .sb-status .v{color:#E3EBF1;font-variant-numeric:tabular-nums;text-align:right}
 .sb-status .hd{display:flex;align-items:center;gap:6px;font-weight:600;color:#E3EBF1;margin-bottom:6px;font-size:.8rem}
-.sb-status .ft{color:#7A848E;font-size:.72rem;margin-top:4px}
+.sb-status .ft{color:#7A848E;font-size:.8rem;margin-top:4px}
 
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 
@@ -1590,7 +1619,8 @@ _SG_RANK = {"provisional": 0, "final": 1, "paid": 2}
 _SG_LBL  = {"provisional": "가정산", "final": "확정산", "paid": "입금완료"}
 
 def _status_grid_html(ships, buyers, months, hl_months=(), link_fn=None):
-    """Buyer x loading-month dot grid. Each cell = shipment count, colored by the least advanced status."""
+    """Buyer x loading-month table of dots. Each dot = shipment count, colored by the least advanced status;
+    zebra rows and a per-buyer total column keep the wide grid readable."""
     import html as _h
     bm = {b["id"]: b for b in buyers}
     mset = set(months)
@@ -1604,33 +1634,51 @@ def _status_grid_html(ships, buyers, months, hl_months=(), link_fn=None):
     if not rows:
         return ""
     cnt = defaultdict(int)
-    head = ['<div class="sg-lbl"></div>'] + [
-        f'<div class="sg-mh{" sg-hl" if m in hl_months else ""}">'
-        f'{int(m[5:7])}월{"<br>" + m[:4] if (i == 0 or m[5:7] == "01") else ""}</div>'
-        for i, m in enumerate(months)]
+    head = "".join(
+        f'<th class="{"sg-hl" if m in hl_months else ""}">{int(m[5:7])}월'
+        f'{"<span>" + m[:4] + "</span>" if (i == 0 or m[5:7] == "01") else ""}</th>'
+        for i, m in enumerate(months))
     body = []
     for bid in rows:
         b = bm.get(bid, {})
-        body.append(f'<div class="sg-lbl">{_h.escape(b.get("name", "?"))}'
-                    f'<span>{_h.escape(b.get("product", ""))}</span></div>')
+        tds, tot = [], 0
         for m in months:
             ss = cells.get((bid, m), [])
             if not ss:
-                body.append('<div class="sg-c"><span class="sg-d sg-e"></span></div>')
+                tds.append(f'<td class="{"sg-hlc" if m in hl_months else ""}"><span class="sg-d sg-e"></span></td>')
                 continue
             st_ = min((s.get("status") or "provisional" for s in ss), key=lambda x: _SG_RANK.get(x, 0))
             for s in ss:
                 cnt[s.get("status") or "provisional"] += 1
+            tot += len(ss)
             tip = "&#10;".join(_h.escape(f'{(s.get("hbl") or "HBL미정").strip()}, '
                                          f'{_SG_LBL.get(s.get("status") or "provisional", "?")}') for s in ss)
             dot = f'<span class="sg-d sg-{st_}">{len(ss)}</span>'
             if link_fn and len(ss) == 1 and (ss[0].get("hbl") or "").strip():
                 dot = f'<a target="_self" href="{link_fn(ss[0]["hbl"].strip())}">{dot}</a>'
-            body.append(f'<div class="sg-c" title="{_h.escape(b.get("name", ""))} {m}&#10;{tip}">{dot}</div>')
+            tds.append(f'<td class="{"sg-hlc" if m in hl_months else ""}" '
+                       f'title="{_h.escape(b.get("name", ""))} {m}&#10;{tip}">{dot}</td>')
+        body.append(f'<tr><th class="sg-lbl">{_h.escape(b.get("name", "?"))}<span>{_h.escape(b.get("product", ""))}</span></th>'
+                    + "".join(tds) + f'<td class="sg-tot">{tot}건</td></tr>')
     legend = "".join(f'<span><span class="sg-d sg-{k} sg-sm"></span>{v} {cnt.get(k, 0)}</span>'
                      for k, v in _SG_LBL.items())
-    return (f'<div class="sg-grid" style="grid-template-columns:minmax(110px,1.3fr) repeat({len(months)},minmax(26px,1fr))">'
-            + "".join(head + body) + f'</div><div class="sg-legend">{legend}</div>')
+    return (f'<table class="sg-tbl"><thead><tr><th class="sg-lbl"></th>{head}<th class="sg-tot">합계</th></tr></thead>'
+            f'<tbody>{"".join(body)}</tbody></table><div class="sg-legend">{legend}</div>')
+def _kpi_grid_html(items):
+    """Home KPI 2x2 grid in one card. items: [{label, value, delta, tone, note, help}] where delta is a
+    short badge text ("+3.1%"), tone pos/neg/neutral picks its tint, note is grey text after the badge."""
+    import html as _h
+    cells = []
+    for it in items:
+        hlp = (f'<span class="kg-q" title="{_h.escape(it["help"], quote=True)}">?</span>' if it.get("help") else "")
+        tone = it.get("tone") or "neutral"
+        arrow = {"pos": "↑ ", "neg": "↓ "}.get(tone, "")
+        badge = f'<span class="kg-b kg-{tone}">{arrow}{_h.escape(it["delta"])}</span>' if it.get("delta") else ""
+        note = f'<span class="kg-n">{_h.escape(it["note"])}</span>' if it.get("note") else ""
+        cells.append(f'<div class="kg-c"><div class="kg-l">{_h.escape(it["label"])}{hlp}</div>'
+                     f'<div class="kg-v">{_kv(it["value"])}</div>'
+                     + (f'<div class="kg-m">{badge}{note}</div>' if badge or note else "") + "</div>")
+    return f'<div class="kg">{"".join(cells)}</div>'
 
 def _cost_breakdown_html(items, rev, out_kg):
     """Cost rows with a horizontal bar: [(label, usd)] -> share of revenue, $/kg BP, bar scaled to the largest."""
@@ -1853,7 +1901,8 @@ def _usd(v, dec=0, sign=True, md=False):
         return body
     return ("-" if v < 0 else ("+" if sign else "")) + body
 
-_KV_UNIT = re.compile(r"^(.*\d)\s*([A-Za-z가-힣%]{1,4})$")
+# unit = Korean word, "%" or 2+ letters ("MT", "kg"); single-letter scale suffixes ("$503k", "$1.2M") stay attached
+_KV_UNIT = re.compile(r"^(.*\d)\s*([가-힣]{1,4}|%|[A-Za-z]{2,4})$")
 
 def _kv(value):
     """KPI value HTML: a trailing unit ("26건", "771.0 MT") is set smaller and lighter than the number."""
@@ -1874,7 +1923,7 @@ def _kpi_card_badge(label, badge_txt, badge_color, value, sub="",
                     val_color="#22272D", left_border=""):
     _bl  = f"border-left:3px solid {left_border};" if left_border else ""
     _bdg = (f'<span style="background:{badge_color}26;color:{badge_color};padding:1px 8px;'
-            f'border-radius:20px;font-size:.68rem;font-weight:600;'
+            f'border-radius:20px;font-size:.8rem;font-weight:600;'
             f'border:1px solid {badge_color}44;margin-left:7px;'
             f'vertical-align:middle">{badge_txt}</span>') if badge_txt else ""
     _sub_h = f'<div class="ks">{sub}</div>' if sub else ""
@@ -6736,26 +6785,28 @@ if _page == PG_HOME and _sub == SUB_DASH:
 
     # ── KPI 4개: 분기 실적 2개(선택 분기, 직전 분기 대비) + 현재 잔액 2개(미수금/완제품 재고, 필터 무관) ──
     with _slot_kpi:
-        with st.container(key="card_kpi"):
-            _k = [*st.columns(2), *st.columns(2)]
-        _k[0].metric("매출", _usd_s(_qs["rev"]), delta=_pct_d("rev"), border=False,
-                     help=(f"확정액(없으면 가정산) + 기타 조정, "
-                           f"선적 {_qs['cnt']}건, {_qs['out']/1000:,.1f} MT"
-                           + (f", 평균 \\${_qs['price']:.2f}/kg" if _qs["price"] else "")))
-        _k[1].metric("실질 손익", _usd_s(_qs["real"]), delta=_pct_d("real"),
-                     delta_description=(f"마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else None),
-                     border=False,
-                     help="매출 − 원료비/임가공비/수출비/보관비 (판관비 제외)")
+        # 2x2 KPI grid drawn as one HTML block (st.metric cells left wide gaps and clipped the margin note)
         _ar_sum = sum(r["확정산 잔액"] for r in _cf_rows)
-        _k[2].metric("미수금", _usd_s(_ar_sum), delta=f"{len(_cf_rows)}건 미입금", delta_color="off", delta_arrow="off",
-                     border=False, help="미입금 확정산 잔액 합계 (전체 매입사)")
         _fg = {}
         for _sc in cfg.get("scrap_types", []):
             _fg[_sc_product(_sc)] = _fg.get(_sc_product(_sc), 0.0) + _finished_goods_kg(cfg, _sc["id"])
-        _k[3].metric("완제품 재고", f"{sum(_fg.values())/1000:,.1f} MT",
-                     delta=", ".join(f"{p} {v/1000:,.1f}" for p, v in sorted(_fg.items()) if v) or "없음",
-                     delta_color="off", delta_arrow="off", border=False,
-                     help="누적 생산 − 선적된 배치 생산 (필터 무관)")
+        def _tone(d):
+            return None if not d else ("neg" if d.startswith("-") else "pos")
+        _d_rev, _d_real = _pct_d("rev"), _pct_d("real")
+        with st.container(key="card_kpi"):
+            st.markdown(_kpi_grid_html([
+                {"label": "매출", "value": _usd_s(_qs["rev"]), "delta": _d_rev, "tone": _tone(_d_rev),
+                 "help": (f"확정액(없으면 가정산) + 기타 조정, 선적 {_qs['cnt']}건, {_qs['out']/1000:,.1f} MT"
+                          + (f", 평균 ${_qs['price']:.2f}/kg" if _qs["price"] else ""))},
+                {"label": "실질 손익", "value": _usd_s(_qs["real"]), "delta": _d_real, "tone": _tone(_d_real),
+                 "note": (f"마진 {_qs['margin']:.1f}%" if _qs["margin"] is not None else None),
+                 "help": "매출 − 원료비/임가공비/수출비/보관비 (판관비 제외)"},
+                {"label": "미수금", "value": _usd_s(_ar_sum), "delta": f"{len(_cf_rows)}건 미입금", "tone": "neutral",
+                 "help": "미입금 확정산 잔액 합계 (전체 매입사)"},
+                {"label": "완제품 재고", "value": f"{sum(_fg.values())/1000:,.1f} MT",
+                 "delta": ", ".join(f"{p} {v/1000:,.1f}" for p, v in sorted(_fg.items()) if v) or "없음", "tone": "neutral",
+                 "help": "누적 생산 − 선적된 배치 생산 (필터 무관)"},
+            ]).replace("$", "&#36;"), unsafe_allow_html=True)
         if _q_live:
             _q0 = _q_start(_f_q)
             _q_len = (date(_q0.year + (_q0.month == 10), 1 if _q0.month == 10 else _q0.month + 3, 1) - _q0).days
@@ -7183,7 +7234,7 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
     <span style="font-size:.85rem;font-weight:600;color:#22272D">
       {_bname}  /  {_scname}{_sub_lbl}
     </span>
-    <span style="font-size:.75rem;font-weight:600;color:{_bar_color};
+    <span style="font-size:.84rem;font-weight:600;color:{_bar_color};
                  background:{_stat_badge_color};border-radius:5px;padding:2px 8px">
       {_stat_label}
     </span>
@@ -7194,7 +7245,7 @@ if _page == PG_SHIP and _sub == SUB_CONTRACT:
                   background:linear-gradient(90deg,{_bar_color}cc,{_bar_color});
                   border-radius:20px"></div>
     </div>
-    <span style="font-size:.78rem;color:#5E6670;white-space:nowrap;min-width:160px;text-align:right">
+    <span style="font-size:.86rem;color:#5E6670;white-space:nowrap;min-width:160px;text-align:right">
       {_m['shipped_mt']:,.1f} / {_m['qty_mt']:,.1f} MT &nbsp;({_m['fulfill_pct']:.1f}%)
     </span>
   </div>
