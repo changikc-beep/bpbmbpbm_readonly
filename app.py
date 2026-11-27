@@ -96,7 +96,13 @@ a.nw-row:hover .nw-t{color:#B84A0C}
     overflow:hidden;text-overflow:ellipsis}
 
 /* ── Metal INDEX card (home): name | sparkline | value + MoM ── */
-.ix-row{display:grid;grid-template-columns:78px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #EEF2F5}
+/* the panel fills the card height (the card is stretched to the news card beside it) and rows share it */
+.st-key-card_index > div[data-testid="stElementContainer"]:has(.ix-panel){flex:1 1 auto}
+.st-key-card_index :is(div[data-testid="stElementContainer"], div[data-testid="stMarkdown"], div[data-testid="stMarkdownContainer"]):has(.ix-panel),
+.st-key-card_index div:has(> div[data-testid="stMarkdownContainer"] > .ix-panel){height:100%}
+.st-key-card_index div[data-testid="stMarkdownContainer"]:has(> .ix-panel){margin-bottom:0 !important}
+.ix-panel{display:flex;flex-direction:column;height:100%}
+.ix-row{flex:1 1 auto;display:grid;grid-template-columns:86px 1fr auto;gap:14px;align-items:center;padding:8px 0;border-bottom:1px solid #EEF2F5}
 .ix-nm{font-size:.9rem;font-weight:650;color:#22272D}
 .ix-nm span{display:block;font-size:.72rem;font-weight:500;color:#8C98A5;margin-top:1px}
 .ix-sp{width:100%;height:30px;overflow:visible}
@@ -380,7 +386,15 @@ div[data-testid="stColumn"] :is([data-testid="stMetric"], .kpi-tile, [class*="st
 .st-key-card_kpi > div[data-testid="stLayoutWrapper"]{flex:1 1 0;display:flex;align-items:center}
 .st-key-card_kpi > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"]{width:100%}
 .st-key-card_kpi > div[data-testid="stLayoutWrapper"] + div[data-testid="stLayoutWrapper"]{border-top:1px solid #EEF2F5}
-.st-key-card_kpi div[data-testid="stMetricValue"] p{font-size:1.55rem !important}
+.st-key-card_kpi div[data-testid="stMetricValue"] p{font-size:1.85rem !important}
+/* each metric fills its half of the card and centres its content vertically (no empty band underneath) */
+.st-key-card_kpi div[data-testid="stMetric"]{display:flex !important;flex-direction:column;justify-content:center;padding:4px 6px !important}
+/* delta badge + description ("마진 69.4%") wrap together on one baseline instead of clipping */
+div[data-testid="stMetric"] div:has(> div[data-testid="stMetricDelta"]){flex-wrap:wrap !important;align-items:center !important;column-gap:6px;row-gap:4px}
+div[data-testid="stMetricDeltaDescription"]{white-space:nowrap !important;margin:0 !important;font-size:.78rem}
+/* Streamlit gives markdown blocks a -14px bottom margin; for HTML stat tiles that made the tile 14px shorter
+   than its content, so the last line spilled out of strips and cards */
+div[data-testid="stMarkdownContainer"]:has(> .kpi-tile){margin-bottom:0 !important}
 
 /* Stat strip: a row holding KPI tiles / metrics and nothing else (no card, chart, table, button, select, nested row)
    becomes ONE white strip with
@@ -1729,14 +1743,22 @@ def _news_html(items, limit=8):
             break
     return "".join(rows)
 
-def _index_panel_html(index_history, n=10):
-    """Metal INDEX rows (Ni, Co Mid, Co Low): sparkline of the last n months, latest value, month-on-month change."""
+def _index_panel_html(index_history, eur_usd=(), usd_krw=(), n=10):
+    """Metal INDEX (Ni, Co Mid, Co Low) and FX (EUR/USD, USD/KRW) rows: sparkline of the last n months,
+    latest value, month-on-month change. Rows stretch to fill the card (.ix-panel is a flex column)."""
     hist = sorted((h for h in index_history if h.get("month")), key=lambda h: h["month"])[-n:]
-    if not hist:
-        return ""
+    def series(recs, key):
+        recs = sorted((r for r in recs if r.get("month") and r.get(key) not in (None, "")), key=lambda r: r["month"])[-n:]
+        return [(r["month"], float(r[key])) for r in recs]
+    specs = [
+        ("Ni", "LME, $/t", series(hist, "ni_index"), lambda v: f"&#36;{v:,.0f}"),
+        ("Co Mid", "매입 기준, $/t", series(hist, "co_index"), lambda v: f"&#36;{v:,.0f}"),
+        ("Co Low", "매각 기준, $/t", series(hist, "co_low"), lambda v: f"&#36;{v:,.0f}"),
+        ("EUR/USD", "월말, ECB", series(list(eur_usd), "rate"), lambda v: f"{v:.4f}"),
+        ("USD/KRW", "월말", series(list(usd_krw), "rate"), lambda v: f"{v:,.0f}"),
+    ]
     rows = []
-    for key, name, sub in (("ni_index", "Ni", "LME"), ("co_index", "Co Mid", "매입 기준"), ("co_low", "Co Low", "매각 기준")):
-        pts = [(h["month"], float(h[key])) for h in hist if h.get(key) not in (None, "")]
+    for name, sub, pts, fmt in specs:
         if not pts:
             continue
         vals = [v for _, v in pts]
@@ -1752,13 +1774,14 @@ def _index_panel_html(index_history, n=10):
         rows.append(f'<div class="ix-row"><div class="ix-nm">{name}<span>{sub}</span></div>'
                     f'<svg class="ix-sp" viewBox="0 0 {w} {ht}" preserveAspectRatio="none"><polyline points="{poly}"/>'
                     f'<circle cx="{last_x}" cy="{last_y}" r="2.6"/></svg>'
-                    f'<div class="ix-v">&#36;{vals[-1]:,.0f}{chg_h}</div></div>')
-    m0, m1 = hist[0]["month"], hist[-1]["month"]
+                    f'<div class="ix-v">{fmt(vals[-1])}{chg_h}</div></div>')
+    if not rows:
+        return ""
+    foot = f"{hist[0]['month']} ~ {hist[-1]['month']}, 변화 = 전월 대비" if hist else "변화 = 전월 대비"
     # sync fills an empty Co Mid with Co Low, so equal values usually mean "no Mid quote that month"
     same = [h["month"][2:] for h in hist if h.get("co_index") not in (None, "") and h.get("co_index") == h.get("co_low")]
     note = f'<br>Co Mid = Co Low인 달 {", ".join(same)} (시트 Co Mid 비어 Co Low로 대체된 값일 수 있음)' if same else ""
-    return "".join(rows) + f'<div class="ix-ft">{m0} ~ {m1}, $/t, 변화 = 전월 대비{note}</div>'
-
+    return f'<div class="ix-panel">{"".join(rows)}<div class="ix-ft">{foot}{note}</div></div>'
 def _pk_table_html(heads, rows, dec=4):
     """Per-kg comparison table in the same style as _pl_table_html.
     heads: value column titles; rows: [(kind, label, [values...], diff)] with kind rev/cost/sub/total.
@@ -6669,8 +6692,8 @@ if _page == PG_HOME and _sub == SUB_DASH:
     # 메탈 INDEX — 정산 INDEX(마스터 > INDEX) 최근 10개월 추이와 전월 대비
     # ══════════════════════════════════════════════════════════════════════════
     with _r3b, st.container(border=True, key="card_index"):
-        st.markdown("#### 메탈 INDEX", help="정산에 쓰는 월별 INDEX(시트 INDEX 탭), Ni = LME, Co Mid = 매입 기준, Co Low = 매각 기준")
-        _ix_html = _index_panel_html(cfg.get("index_history", []))
+        st.markdown("#### 메탈 INDEX, 환율", help="정산에 쓰는 월별 INDEX(시트 INDEX 탭)와 월말 환율(시트 환율 탭, 없으면 ECB 자동), Ni = LME, Co Mid = 매입 기준, Co Low = 매각 기준")
+        _ix_html = _index_panel_html(cfg.get("index_history", []), cfg.get("eur_usd_rates", []), cfg.get("usd_krw_rates", []))
         if _ix_html:
             st.markdown(_ix_html, unsafe_allow_html=True)
         else:
